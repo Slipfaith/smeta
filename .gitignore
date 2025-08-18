@@ -35,6 +35,7 @@ telegram/config.py
 *.txt
 session.json
 settings.json
+*.xlsx
 
 # System
 .DS_Store
