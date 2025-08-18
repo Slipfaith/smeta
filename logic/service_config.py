@@ -1,6 +1,7 @@
 class ServiceConfig:
-    """Конфигурация услуг и их параметров"""
+    """Конфигурация услуг и коэффициентов."""
 
+    # ---- Услуги перевода (без редактирования) ----
     TRANSLATION_ROWS = [
         {"name": "Перевод, новые слова (100%)", "multiplier": 1.0, "is_base": True},
         {"name": "Перевод, совпадения 75-94% (66%)", "multiplier": 0.66, "is_base": False},
@@ -8,13 +9,7 @@ class ServiceConfig:
         {"name": "Перевод, повторы и 100% совпадения (30%)", "multiplier": 0.30, "is_base": False}
     ]
 
-    EDITING_ROWS = [
-        {"name": "Редактирование новых слов", "multiplier": 1.0, "is_base": True},
-        {"name": "Редактирование повторов", "multiplier": 0.5, "is_base": False},
-        {"name": "Корректорская правка", "multiplier": 1.0, "is_base": True},
-        {"name": "Стилистическая правка", "multiplier": 1.0, "is_base": True}
-    ]
-
+    # ---- Доп. услуги ----
     ADDITIONAL_SERVICES = {
         "Верстка": [
             {"name": "InDesign верстка", "multiplier": 1.0, "is_base": True},

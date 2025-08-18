@@ -4,7 +4,8 @@ from typing import Dict, List, Any
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter, QFrame
+    QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter,
+    QFrame, QComboBox, QSlider
 )
 from PySide6.QtCore import Qt
 
@@ -12,13 +13,17 @@ from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
 from gui.styles import APP_STYLE
 from logic.excel_exporter import ExcelExporter
+from logic.user_config import load_languages, add_language
 
 class TranslationCostCalculator(QMainWindow):
     """Главное окно приложения"""
 
     def __init__(self):
         super().__init__()
-        self.language_pairs = {}  # словарь виджетов языковых пар
+        self.language_pairs: Dict[str, LanguagePairWidget] = {}
+        self.pair_headers: Dict[str, str] = {}  # pair_key -> header_title (RU/EN целевого или кастом)
+        self.lang_display_ru: bool = True       # True=RU, False=EN
+        self._languages: List[Dict[str, str]] = load_languages()
         self.setup_ui()
         self.setup_style()
 
@@ -30,217 +35,231 @@ class TranslationCostCalculator(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QHBoxLayout()
-
-        # Создаем Splitter для изменяемого размера панелей
         splitter = QSplitter(Qt.Horizontal)
 
-        # Левая панель - основные данные и управление
         left_panel = self.create_left_panel()
-        splitter.addWidget(left_panel)
-
-        # Правая панель - языковые пары и услуги
         right_panel = self.create_right_panel()
+
+        splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
 
-        # Устанавливаем пропорции
-        splitter.setSizes([300, 900])
+        # чуть уже левая панель
+        splitter.setSizes([240, 960])
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
 
+    # ---------- LEFT ----------
     def create_left_panel(self) -> QWidget:
-        """Создает левую панель с основными данными"""
-        widget = QWidget()
-        layout = QVBoxLayout()
+        w = QWidget()
+        lay = QVBoxLayout()
 
-        # Основная информация о проекте
+        # Проект
         project_group = QGroupBox("Информация о проекте")
-        project_layout = QVBoxLayout()
+        p = QVBoxLayout()
+        p.addWidget(QLabel("Название проекта:"))
+        self.project_name_edit = QLineEdit(); p.addWidget(self.project_name_edit)
+        p.addWidget(QLabel("Номер/код проекта:"))
+        self.project_code_edit = QLineEdit(); p.addWidget(self.project_code_edit)
+        p.addWidget(QLabel("Название клиента:"))
+        self.client_name_edit = QLineEdit(); p.addWidget(self.client_name_edit)
+        p.addWidget(QLabel("Контактное лицо:"))
+        self.contact_person_edit = QLineEdit(); p.addWidget(self.contact_person_edit)
+        p.addWidget(QLabel("E-mail:"))
+        self.email_edit = QLineEdit(); p.addWidget(self.email_edit)
+        project_group.setLayout(p); lay.addWidget(project_group)
 
-        # Название проекта
-        project_layout.addWidget(QLabel("Название проекта:"))
-        self.project_name_edit = QLineEdit()
-        project_layout.addWidget(self.project_name_edit)
-
-        # Номер проекта
-        project_layout.addWidget(QLabel("Номер/код проекта:"))
-        self.project_code_edit = QLineEdit()
-        project_layout.addWidget(self.project_code_edit)
-
-        # Клиент
-        project_layout.addWidget(QLabel("Название клиента:"))
-        self.client_name_edit = QLineEdit()
-        project_layout.addWidget(self.client_name_edit)
-
-        # Контактное лицо
-        project_layout.addWidget(QLabel("Контактное лицо:"))
-        self.contact_person_edit = QLineEdit()
-        project_layout.addWidget(self.contact_person_edit)
-
-        # Email
-        project_layout.addWidget(QLabel("E-mail:"))
-        self.email_edit = QLineEdit()
-        project_layout.addWidget(self.email_edit)
-
-        project_group.setLayout(project_layout)
-        layout.addWidget(project_group)
-
-        # Управление языковыми парами
+        # Языковые пары
         pairs_group = QGroupBox("Языковые пары")
-        pairs_layout = QVBoxLayout()
+        pg = QVBoxLayout()
 
-        # Поля для добавления новой пары
-        add_pair_layout = QHBoxLayout()
+        # Переключатель RU/EN
+        mode = QHBoxLayout()
+        mode.addWidget(QLabel("Названия языков:")); mode.addStretch(1)
+        mode.addWidget(QLabel("EN"))
+        self.lang_mode_slider = QSlider(Qt.Horizontal); self.lang_mode_slider.setRange(0, 1); self.lang_mode_slider.setValue(1)
+        self.lang_mode_slider.setFixedWidth(70); self.lang_mode_slider.valueChanged.connect(self.on_lang_mode_changed)
+        mode.addWidget(self.lang_mode_slider); mode.addWidget(QLabel("RU"))
+        pg.addLayout(mode)
 
-        self.source_lang_edit = QLineEdit()
-        self.source_lang_edit.setPlaceholderText("Исходный язык")
-        add_pair_layout.addWidget(self.source_lang_edit)
+        # Добавление пары
+        add_pair = QHBoxLayout()
+        self.source_lang_combo = self._make_lang_combo(); self.source_lang_combo.setEditable(True); add_pair.addWidget(self.source_lang_combo)
+        add_pair.addWidget(QLabel("→"))
+        self.target_lang_combo = self._make_lang_combo(); self.target_lang_combo.setEditable(True); add_pair.addWidget(self.target_lang_combo)
+        pg.addLayout(add_pair)
 
-        add_pair_layout.addWidget(QLabel("→"))
-
-        self.target_lang_edit = QLineEdit()
-        self.target_lang_edit.setPlaceholderText("Целевой язык")
-        add_pair_layout.addWidget(self.target_lang_edit)
-
-        pairs_layout.addLayout(add_pair_layout)
-
-        # Кнопка добавления пары
         self.add_pair_btn = QPushButton("Добавить языковую пару")
         self.add_pair_btn.clicked.connect(self.add_language_pair)
-        pairs_layout.addWidget(self.add_pair_btn)
+        pg.addWidget(self.add_pair_btn)
 
-        # Список текущих пар
-        pairs_layout.addWidget(QLabel("Текущие пары:"))
-        self.pairs_list = QTextEdit()
-        self.pairs_list.setMaximumHeight(100)
-        self.pairs_list.setReadOnly(True)
-        pairs_layout.addWidget(self.pairs_list)
+        pg.addWidget(QLabel("Текущие пары:"))
+        self.pairs_list = QTextEdit(); self.pairs_list.setMaximumHeight(110); self.pairs_list.setReadOnly(True)
+        pg.addWidget(self.pairs_list)
 
-        pairs_group.setLayout(pairs_layout)
-        layout.addWidget(pairs_group)
+        # Добавление языка в справочник (без кода)
+        add_lang_group = QGroupBox("Добавить язык в справочник")
+        lg = QVBoxLayout()
+        r1 = QHBoxLayout(); r1.addWidget(QLabel("Название RU:")); self.new_lang_ru = QLineEdit(); self.new_lang_ru.setPlaceholderText("Персидский"); r1.addWidget(self.new_lang_ru); lg.addLayout(r1)
+        r2 = QHBoxLayout(); r2.addWidget(QLabel("Название EN:")); self.new_lang_en = QLineEdit(); self.new_lang_en.setPlaceholderText("Persian");  r2.addWidget(self.new_lang_en); lg.addLayout(r2)
+        self.btn_add_lang = QPushButton("Добавить язык"); self.btn_add_lang.clicked.connect(self.handle_add_language); lg.addWidget(self.btn_add_lang)
+        add_lang_group.setLayout(lg); pg.addWidget(add_lang_group)
 
-        # Кнопки действий
-        actions_group = QGroupBox("Действия")
-        actions_layout = QVBoxLayout()
+        pairs_group.setLayout(pg); lay.addWidget(pairs_group)
 
-        # Выбор шаблона
-        template_layout = QHBoxLayout()
-        self.template_path_edit = QLineEdit()
-        self.template_path_edit.setPlaceholderText("Путь к шаблону Excel")
-        template_layout.addWidget(self.template_path_edit)
+        # Действия
+        actions = QGroupBox("Действия"); a = QVBoxLayout()
+        t = QHBoxLayout(); self.template_path_edit = QLineEdit(); self.template_path_edit.setPlaceholderText("Путь к шаблону Excel"); t.addWidget(self.template_path_edit)
+        btn = QPushButton("Выбрать"); btn.clicked.connect(self.select_template); t.addWidget(btn); a.addLayout(t)
+        self.save_excel_btn = QPushButton("Сохранить Excel"); self.save_excel_btn.clicked.connect(self.save_excel); a.addWidget(self.save_excel_btn)
+        self.save_pdf_btn = QPushButton("Сохранить PDF");   self.save_pdf_btn.clicked.connect(self.save_pdf);   a.addWidget(self.save_pdf_btn)
+        a.addWidget(QFrame())
+        self.save_project_btn = QPushButton("Сохранить проект"); self.save_project_btn.clicked.connect(self.save_project); a.addWidget(self.save_project_btn)
+        self.load_project_btn = QPushButton("Загрузить проект"); self.load_project_btn.clicked.connect(self.load_project); a.addWidget(self.load_project_btn)
+        actions.setLayout(a); lay.addWidget(actions)
 
-        select_template_btn = QPushButton("Выбрать")
-        select_template_btn.clicked.connect(self.select_template)
-        template_layout.addWidget(select_template_btn)
+        lay.addStretch()
+        w.setLayout(lay)
+        return w
 
-        actions_layout.addLayout(template_layout)
+    def _make_lang_combo(self) -> QComboBox:
+        cb = QComboBox()
+        self.populate_lang_combo(cb)
+        return cb
 
-        # Сохранение
-        self.save_excel_btn = QPushButton("Сохранить Excel")
-        self.save_excel_btn.clicked.connect(self.save_excel)
-        actions_layout.addWidget(self.save_excel_btn)
+    def populate_lang_combo(self, combo: QComboBox):
+        """Заполняет комбобокс по _languages; при смене режима RU/EN старается сохранить выбор."""
+        prev_text = combo.currentText() if combo.isEditable() else ""
+        prev_idx = combo.currentIndex()
+        prev_obj = combo.itemData(prev_idx) if prev_idx >= 0 else None
 
-        self.save_pdf_btn = QPushButton("Сохранить PDF")
-        self.save_pdf_btn.clicked.connect(self.save_pdf)
-        actions_layout.addWidget(self.save_pdf_btn)
+        combo.blockSignals(True)
+        combo.clear()
+        for lang in self._languages:
+            name = lang["ru"] if self.lang_display_ru else lang["en"]
+            label = f"{name}"
+            combo.addItem(label, lang)
+        combo.blockSignals(False)
 
-        # Загрузка/сохранение проекта
-        actions_layout.addWidget(QFrame())  # разделитель
+        # восстановление выбора по объекту (en/ru)
+        if isinstance(prev_obj, dict):
+            for i in range(combo.count()):
+                d = combo.itemData(i)
+                if isinstance(d, dict) and d.get("en") == prev_obj.get("en") and d.get("ru") == prev_obj.get("ru"):
+                    combo.setCurrentIndex(i)
+                    break
+        elif prev_text:
+            combo.setEditable(True)
+            combo.setCurrentIndex(-1)
+            combo.setEditText(prev_text)
 
-        self.save_project_btn = QPushButton("Сохранить проект")
-        self.save_project_btn.clicked.connect(self.save_project)
-        actions_layout.addWidget(self.save_project_btn)
+    def on_lang_mode_changed(self, value: int):
+        self.lang_display_ru = (value == 1)
+        self.populate_lang_combo(self.source_lang_combo)
+        self.populate_lang_combo(self.target_lang_combo)
 
-        self.load_project_btn = QPushButton("Загрузить проект")
-        self.load_project_btn.clicked.connect(self.load_project)
-        actions_layout.addWidget(self.load_project_btn)
-
-        actions_group.setLayout(actions_layout)
-        layout.addWidget(actions_group)
-
-        layout.addStretch()  # Добавляем растяжение внизу
-        widget.setLayout(layout)
-        return widget
-
+    # ---------- RIGHT ----------
     def create_right_panel(self) -> QWidget:
-        """Создает правую панель с услугами"""
-        widget = QWidget()
-        layout = QVBoxLayout()
-
-        # Создаем вкладки
+        w = QWidget(); lay = QVBoxLayout()
         self.tabs = QTabWidget()
 
-        # Вкладка для языковых пар
         self.pairs_scroll = QScrollArea()
         self.pairs_widget = QWidget()
         self.pairs_layout = QVBoxLayout()
         self.pairs_widget.setLayout(self.pairs_layout)
         self.pairs_scroll.setWidget(self.pairs_widget)
         self.pairs_scroll.setWidgetResizable(True)
-
         self.tabs.addTab(self.pairs_scroll, "Языковые пары")
 
-        # Вкладка для дополнительных услуг
         self.additional_services_widget = AdditionalServicesWidget()
-        additional_scroll = QScrollArea()
-        additional_scroll.setWidget(self.additional_services_widget)
-        additional_scroll.setWidgetResizable(True)
+        add_scroll = QScrollArea()
+        add_scroll.setWidget(self.additional_services_widget)
+        add_scroll.setWidgetResizable(True)
+        self.tabs.addTab(add_scroll, "Дополнительные услуги")
 
-        self.tabs.addTab(additional_scroll, "Дополнительные услуги")
-
-        layout.addWidget(self.tabs)
-        widget.setLayout(layout)
-        return widget
+        lay.addWidget(self.tabs); w.setLayout(lay)
+        return w
 
     def setup_style(self):
-        """Настраивает стили приложения"""
         self.setStyleSheet(APP_STYLE)
 
-    def add_language_pair(self):
-        """Добавляет новую языковую пару"""
-        source_lang = self.source_lang_edit.text().strip()
-        target_lang = self.target_lang_edit.text().strip()
+    # ---------- LANG ADD ----------
+    def handle_add_language(self):
+        ru = (self.new_lang_ru.text() or "").strip()
+        en = (self.new_lang_en.text() or "").strip()
 
-        if not source_lang or not target_lang:
-            QMessageBox.warning(self, "Ошибка", "Введите оба языка")
+        if not (ru or en):
+            QMessageBox.warning(self, "Ошибка", "Укажите хотя бы одно название (RU или EN).")
             return
 
-        pair_name = f"{source_lang} → {target_lang}"
+        if add_language(en, ru):
+            QMessageBox.information(self, "Готово", "Язык сохранён в конфиг.")
+            self._languages = load_languages()
+            self.populate_lang_combo(self.source_lang_combo)
+            self.populate_lang_combo(self.target_lang_combo)
+            # очистим поля
+            self.new_lang_ru.clear(); self.new_lang_en.clear()
+        else:
+            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить язык в конфиг.")
 
-        if pair_name in self.language_pairs:
+    # ---------- ACTIONS ----------
+    def _parse_combo(self, combo: QComboBox) -> Dict[str, Any]:
+        """Если текущий текст совпадает с одним из элементов — это словарный; иначе кастом."""
+        text = combo.currentText().strip()
+        idx = combo.currentIndex()
+        if idx >= 0 and text == combo.itemText(idx):
+            data = combo.itemData(idx)
+            if isinstance(data, dict):
+                return {"en": data.get("en", ""), "ru": data.get("ru", ""), "text": text, "dict": True}
+        return {"en": "", "ru": "", "text": text, "dict": False}
+
+    def add_language_pair(self):
+        src = self._parse_combo(self.source_lang_combo)
+        tgt = self._parse_combo(self.target_lang_combo)
+        if not src["text"] or not tgt["text"]:
+            QMessageBox.warning(self, "Ошибка", "Выберите/введите оба языка")
+            return
+
+        # внутренний ключ пары фиксируем по EN (если есть), иначе по RU/тексту — стабильно при смене режима
+        def key_name(obj: Dict[str, Any]) -> str:
+            return obj["en"] or obj["ru"] or obj["text"]
+
+        left_key = key_name(src)
+        right_key = key_name(tgt)
+        pair_key = f"{left_key} → {right_key}"
+
+        if pair_key in self.language_pairs:
             QMessageBox.warning(self, "Ошибка", "Такая языковая пара уже существует")
             return
 
-        # Создаем виджет для языковой пары
-        pair_widget = LanguagePairWidget(pair_name)
-        self.language_pairs[pair_name] = pair_widget
+        # Заголовок для Excel = текущее отображаемое имя целевого
+        if tgt["dict"]:
+            header_title = (tgt["ru"] if self.lang_display_ru else tgt["en"])
+        else:
+            header_title = tgt["text"]
+        self.pair_headers[pair_key] = header_title
 
-        # Добавляем в интерфейс
-        self.pairs_layout.addWidget(pair_widget)
+        widget = LanguagePairWidget(pair_key)  # только Перевод
+        self.language_pairs[pair_key] = widget
+        self.pairs_layout.addWidget(widget)
 
-        # Обновляем список пар
         self.update_pairs_list()
 
-        # Очищаем поля ввода
-        self.source_lang_edit.clear()
-        self.target_lang_edit.clear()
+        self.source_lang_combo.setCurrentIndex(0)
+        self.target_lang_combo.setCurrentIndex(0)
 
     def update_pairs_list(self):
-        """Обновляет список языковых пар"""
-        pairs_text = "\n".join(self.language_pairs.keys())
-        self.pairs_list.setText(pairs_text)
+        self.pairs_list.setText("\n".join(
+            f"{name}   [заголовок: {self.pair_headers.get(name, name)}]"
+            for name in self.language_pairs.keys()
+        ))
 
     def select_template(self):
-        """Выбирает файл шаблона Excel"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Выбрать шаблон Excel", "",
-            "Excel files (*.xlsx *.xls)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать шаблон Excel", "", "Excel files (*.xlsx *.xls)")
         if file_path:
             self.template_path_edit.setText(file_path)
 
     def collect_project_data(self) -> Dict[str, Any]:
-        """Собирает все данные проекта"""
         data = {
             "project_name": self.project_name_edit.text(),
             "project_code": self.project_code_edit.text(),
@@ -250,47 +269,33 @@ class TranslationCostCalculator(QMainWindow):
             "language_pairs": [],
             "additional_services": {}
         }
-
-        # Собираем данные языковых пар
-        for pair_widget in self.language_pairs.values():
-            pair_data = pair_widget.get_data()
-            if pair_data["services"]:  # Только если есть выбранные услуги
-                data["language_pairs"].append(pair_data)
-
-        # Собираем данные дополнительных услуг
-        additional_data = self.additional_services_widget.get_data()
-        if additional_data:
-            data["additional_services"] = additional_data
-
+        for pair_key, pair_widget in self.language_pairs.items():
+            p = pair_widget.get_data()
+            if p["services"]:
+                p["header_title"] = self.pair_headers.get(pair_key, pair_key)
+                data["language_pairs"].append(p)
+        additional = self.additional_services_widget.get_data()
+        if additional:
+            data["additional_services"] = additional
         return data
 
     def save_excel(self):
-        """Сохраняет данные в Excel файл"""
         if not self.client_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название клиента")
             return
-
         project_data = self.collect_project_data()
-
         if not project_data["language_pairs"] and not project_data["additional_services"]:
             QMessageBox.warning(self, "Ошибка", "Добавьте хотя бы одну услугу")
             return
 
-        # Генерируем имя файла
         client_name = project_data["client_name"].replace(" ", "_")
         date_str = datetime.now().strftime("%Y%m%d")
         filename = f"КП_{client_name}_{date_str}.xlsx"
 
-        # Выбираем папку для сохранения
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить Excel файл", filename,
-            "Excel files (*.xlsx)"
-        )
-
+        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить Excel файл", filename, "Excel files (*.xlsx)")
         if not file_path:
             return
 
-        # Экспортируем данные
         template_path = self.template_path_edit.text().strip()
         exporter = ExcelExporter(template_path if template_path else None)
 
@@ -300,34 +305,22 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
 
     def save_pdf(self):
-        """Сохраняет данные в PDF файл"""
         QMessageBox.information(
-            self,
-            "Функция PDF",
+            self, "Функция PDF",
             "Функция сохранения в PDF будет реализована в следующей версии.\n"
             "Пока вы можете сохранить Excel файл и конвертировать его в PDF вручную."
         )
 
     def save_project(self):
-        """Сохраняет проект в JSON файл"""
         if not self.project_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название проекта")
             return
-
         project_data = self.collect_project_data()
-
-        # Генерируем имя файла
         project_name = project_data["project_name"].replace(" ", "_")
         filename = f"Проект_{project_name}.json"
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить проект", filename,
-            "JSON files (*.json)"
-        )
-
+        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить проект", filename, "JSON files (*.json)")
         if not file_path:
             return
-
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(project_data, f, ensure_ascii=False, indent=2)
@@ -336,93 +329,54 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить проект: {e}")
 
     def load_project(self):
-        """Загружает проект из JSON файла"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Загрузить проект", "",
-            "JSON files (*.json)"
-        )
-
+        file_path, _ = QFileDialog.getOpenFileName(self, "Загрузить проект", "", "JSON files (*.json)")
         if not file_path:
             return
-
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 project_data = json.load(f)
-
             self.load_project_data(project_data)
             QMessageBox.information(self, "Успех", "Проект загружен")
-
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить проект: {e}")
 
     def load_project_data(self, project_data: Dict[str, Any]):
-        """Загружает данные проекта в интерфейс"""
-        # Основная информация
         self.project_name_edit.setText(project_data.get("project_name", ""))
         self.project_code_edit.setText(project_data.get("project_code", ""))
         self.client_name_edit.setText(project_data.get("client_name", ""))
         self.contact_person_edit.setText(project_data.get("contact_person", ""))
         self.email_edit.setText(project_data.get("email", ""))
 
-        # Очищаем текущие языковые пары
-        for pair_widget in self.language_pairs.values():
-            pair_widget.setParent(None)
+        for w in self.language_pairs.values():
+            w.setParent(None)
         self.language_pairs.clear()
+        self.pair_headers.clear()
 
-        # Загружаем языковые пары
         for pair_data in project_data.get("language_pairs", []):
-            pair_name = pair_data["pair_name"]
+            pair_key = pair_data["pair_name"]  # в твоём текущем формате это строка, оставляем как есть
+            header_title = pair_data.get("header_title", pair_key)
+            widget = LanguagePairWidget(pair_key)
+            self.language_pairs[pair_key] = widget
+            self.pairs_layout.addWidget(widget)
+            self.pair_headers[pair_key] = header_title
 
-            # Создаем виджет пары
-            pair_widget = LanguagePairWidget(pair_name)
-            self.language_pairs[pair_name] = pair_widget
-            self.pairs_layout.addWidget(pair_widget)
-
-            # Загружаем данные услуг
             services = pair_data.get("services", {})
-
             if "translation" in services:
-                pair_widget.translation_group.setChecked(True)
-                self.load_table_data(pair_widget.translation_group.table, services["translation"])
+                widget.translation_group.setChecked(True)
+                self.load_table_data(widget.translation_group.table, services["translation"])
 
-            if "editing" in services:
-                pair_widget.editing_group.setChecked(True)
-                self.load_table_data(pair_widget.editing_group.table, services["editing"])
-
-        # Обновляем список пар
         self.update_pairs_list()
 
-        # Загружаем дополнительные услуги
-        additional_services = project_data.get("additional_services", {})
-        for service_name, service_data in additional_services.items():
-            group = self.additional_services_widget.service_groups.get(service_name)
+        additional = project_data.get("additional_services", {})
+        for name, data in additional.items():
+            group = self.additional_services_widget.service_groups.get(name)
             if group:
                 group.setChecked(True)
-                self.load_table_data(group.table, service_data)
+                self.load_table_data(group.table, data)
 
     def load_table_data(self, table, data: List[Dict[str, Any]]):
-        """Загружает данные в таблицу"""
         for row, row_data in enumerate(data):
             if row < table.rowCount():
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
                 table.item(row, 2).setText(str(row_data.get("rate", 0)))
                 table.item(row, 3).setText(str(row_data.get("total", 0)))
-
-    def calculate_total_cost(self) -> float:
-        """Вычисляет общую стоимость проекта"""
-        total = 0.0
-
-        # Суммируем языковые пары
-        for pair_widget in self.language_pairs.values():
-            pair_data = pair_widget.get_data()
-            for service_data in pair_data.get("services", {}).values():
-                for row_data in service_data:
-                    total += row_data["total"]
-
-        # Суммируем дополнительные услуги
-        additional_data = self.additional_services_widget.get_data()
-        for service_data in additional_data.values():
-            for row_data in service_data:
-                total += row_data["total"]
-
-        return total
