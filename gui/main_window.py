@@ -29,7 +29,9 @@ class TranslationCostCalculator(QMainWindow):
 
     def setup_ui(self):
         self.setWindowTitle("Калькулятор стоимости переводческих проектов")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1000, 600)
+        self.setMinimumSize(900, 600)
+        self.resize(1000, 650)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

@@ -35,6 +35,8 @@ class LanguagePairWidget(QWidget):
         group.setCheckable(True)
         group.setChecked(False)
 
+        vbox = QVBoxLayout()
+
         table = QTableWidget(len(rows), 4)
         table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
 
@@ -63,29 +65,58 @@ class LanguagePairWidget(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
-        group.setLayout(QVBoxLayout())
-        group.layout().addWidget(table)
+        vbox.addWidget(table)
 
+        # --- Промежуточная сумма для этой таблицы ---
+        subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
+        subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        subtotal_label.setObjectName("subtotal_label")
+        vbox.addWidget(subtotal_label)
+
+        group.setLayout(vbox)
+
+        # сохранить ссылки
         setattr(group, 'table', table)
         setattr(group, 'rows_config', rows)
         setattr(group, 'base_rate_row', base_rate_row)
+        setattr(group, 'subtotal_label', subtotal_label)
+
+        # начальный пересчёт
+        self.update_rates_and_sums(table, rows, base_rate_row)
+
         return group
 
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
             base_rate = 0.0
-            if base_rate_row is not None:
+            if base_rate_row is not None and table.item(base_rate_row, 2):
                 base_rate = float(table.item(base_rate_row, 2).text() or "0")
 
+            subtotal = 0.0
             for row in range(table.rowCount()):
                 row_cfg = rows[row]
+                # авто-ставки для непервой строки
                 if not row_cfg["is_base"] and base_rate_row is not None:
                     auto_rate = base_rate * row_cfg["multiplier"]
-                    table.item(row, 2).setText(f"{auto_rate:.2f}")
+                    if table.item(row, 2):
+                        table.blockSignals(True)
+                        table.item(row, 2).setText(f"{auto_rate:.2f}")
+                        table.blockSignals(False)
 
-                volume = float(table.item(row, 1).text() or "0")
-                rate = float(table.item(row, 2).text() or "0")
-                table.item(row, 3).setText(f"{volume * rate:.2f}")
+                volume = float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0")
+                rate = float((table.item(row, 2).text() if table.item(row, 2) else "0") or "0")
+                total = volume * rate
+                if table.item(row, 3):
+                    table.blockSignals(True)
+                    table.item(row, 3).setText(f"{total:.2f}")
+                    table.blockSignals(False)
+                subtotal += total
+
+            # обновить «Промежуточную сумму»
+            parent_group: QGroupBox = self.translation_group
+            lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
+            if lbl:
+                lbl.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
         except (ValueError, AttributeError):
             pass
 
@@ -99,9 +130,9 @@ class LanguagePairWidget(QWidget):
         out = []
         for row in range(table.rowCount()):
             out.append({
-                "parameter": table.item(row, 0).text(),
-                "volume": float(table.item(row, 1).text() or "0"),
-                "rate":   float(table.item(row, 2).text() or "0"),
-                "total":  float(table.item(row, 3).text() or "0"),
+                "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
+                "volume": float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0"),
+                "rate":   float((table.item(row, 2).text() if table.item(row, 2) else "0") or "0"),
+                "total":  float((table.item(row, 3).text() if table.item(row, 3) else "0") or "0"),
             })
         return out
