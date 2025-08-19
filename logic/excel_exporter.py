@@ -7,8 +7,10 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 
-# ЖЁСТКИЙ ПУТЬ НА ВРЕМЯ РАЗРАБОТКИ
-DEFAULT_TEMPLATE_PATH = r"E:\PythonProjects\smeta\templates\шаблон.modern.xlsx"
+# Шаблон теперь ищем относительно корня проекта, чтобы код работал на любой машине
+DEFAULT_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "templates", "шаблон.modern.xlsx"
+)
 
 START_PH = "{{translation_table}}"
 END_PH = "{{subtotal_translation_table}}"
@@ -266,6 +268,10 @@ class ExcelExporter:
             # 10) Сохраняем адрес ячейки субтотала (для общего итога) и фиксируем фактический конец блока
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
             last_block_end = max(last_block_end, t_subtotal_row)
+
+            # Обновляем исходные границы шаблонного блока на случай, если его высота изменилась
+            end_row = last_block_end
+            tpl_height = end_row - start_row + 1
 
         return subtot_cells
 
