@@ -230,6 +230,10 @@ class TranslationCostCalculator(QMainWindow):
         right_key = key_name(tgt)
         pair_key = f"{left_key} → {right_key}"
 
+        # Видимое название пары берём непосредственно из полей ввода,
+        # чтобы оно соответствовало выбору пользователя (RU/EN)
+        display_name = f"{src['text']} - {tgt['text']}"
+
         if pair_key in self.language_pairs:
             QMessageBox.warning(self, "Ошибка", "Такая языковая пара уже существует")
             return
@@ -241,7 +245,7 @@ class TranslationCostCalculator(QMainWindow):
             header_title = tgt["text"]
         self.pair_headers[pair_key] = header_title
 
-        widget = LanguagePairWidget(pair_key)  # только Перевод
+        widget = LanguagePairWidget(display_name)  # только Перевод
         self.language_pairs[pair_key] = widget
         self.pairs_layout.addWidget(widget)
 
@@ -252,8 +256,8 @@ class TranslationCostCalculator(QMainWindow):
 
     def update_pairs_list(self):
         self.pairs_list.setText("\n".join(
-            f"{name}   [заголовок: {self.pair_headers.get(name, name)}]"
-            for name in self.language_pairs.keys()
+            f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
+            for key, w in self.language_pairs.items()
         ))
 
     def select_template(self):
@@ -274,7 +278,7 @@ class TranslationCostCalculator(QMainWindow):
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
             if p["services"]:
-                p["header_title"] = self.pair_headers.get(pair_key, pair_key)
+                p["header_title"] = self.pair_headers.get(pair_key, pair_widget.pair_name)
                 data["language_pairs"].append(p)
         additional = self.additional_services_widget.get_data()
         if additional:
