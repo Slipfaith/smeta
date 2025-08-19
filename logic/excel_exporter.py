@@ -272,6 +272,7 @@ class ExcelExporter:
             # Обновляем исходные границы шаблонного блока на случай, если его высота изменилась
             end_row = last_block_end
             tpl_height = end_row - start_row + 1
+            subtotal_rel = tpl_height - 1
 
         return subtot_cells
 
