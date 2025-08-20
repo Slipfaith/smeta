@@ -297,5 +297,10 @@ class ExcelExporter:
                     t = v.strip()
                     if t == "{{total}}":
                         ws.cell(r, c, total_formula)
-                    elif t in strict_map:
-                        ws.cell(r, c, strict_map[t])
+                    else:
+                        new_v = v
+                        for ph, val in strict_map.items():
+                            if ph in new_v:
+                                new_v = new_v.replace(ph, str(val))
+                        if new_v != v:
+                            ws.cell(r, c, new_v)
