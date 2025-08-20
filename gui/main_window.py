@@ -13,10 +13,12 @@ from PySide6.QtGui import QAction
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
 from gui.styles import APP_STYLE
+from gui.project_manager_dialog import ProjectManagerDialog
 from logic.excel_exporter import ExcelExporter
 from logic.user_config import load_languages, add_language
 from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
+from logic.pm_store import load_pm_history, save_pm_history
 
 
 class DropArea(QScrollArea):
@@ -188,17 +190,22 @@ class TranslationCostCalculator(QMainWindow):
     def __init__(self):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
-        self.pair_headers: Dict[str, str] = {}  # pair_key -> header_title (RU/EN целевого или кастом)
-        self.lang_display_ru: bool = True  # True=RU, False=EN
+        self.pair_headers: Dict[str, str] = {}
+        self.lang_display_ru: bool = True
         self._languages: List[Dict[str, str]] = load_languages()
+        self.pm_managers, self.pm_last_index = load_pm_history()
+        if 0 <= self.pm_last_index < len(self.pm_managers):
+            self.current_pm = self.pm_managers[self.pm_last_index]
+        else:
+            self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
         self.setup_ui()
         self.setup_style()
 
     def setup_ui(self):
-        self.setWindowTitle("Калькулятор стоимости переводческих проектов")
         self.setGeometry(100, 100, 1000, 600)
         self.setMinimumSize(600, 400)
         self.resize(1000, 650)
+        self.update_title()
 
         # меню с действиями загрузки/сохранения проекта
         project_menu = self.menuBar().addMenu("Проект")
@@ -208,6 +215,10 @@ class TranslationCostCalculator(QMainWindow):
         load_action = QAction("Загрузить проект", self)
         load_action.triggered.connect(self.load_project)
         project_menu.addAction(load_action)
+
+        pm_action = QAction("Проджект менеджер", self)
+        pm_action.triggered.connect(self.show_pm_dialog)
+        self.menuBar().addAction(pm_action)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -328,14 +339,6 @@ class TranslationCostCalculator(QMainWindow):
         # Действия
         actions = QGroupBox("Действия");
         a = QVBoxLayout()
-        t = QHBoxLayout();
-        self.template_path_edit = QLineEdit();
-        self.template_path_edit.setPlaceholderText("Путь к шаблону Excel");
-        t.addWidget(self.template_path_edit)
-        btn = QPushButton("Выбрать");
-        btn.clicked.connect(self.select_template);
-        t.addWidget(btn);
-        a.addLayout(t)
         self.save_excel_btn = QPushButton("Сохранить Excel");
         self.save_excel_btn.clicked.connect(self.save_excel);
         a.addWidget(self.save_excel_btn)
@@ -464,6 +467,24 @@ class TranslationCostCalculator(QMainWindow):
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
+
+    def update_title(self):
+        name = self.current_pm.get("name_ru") or self.current_pm.get("name_en") or ""
+        if name:
+            self.setWindowTitle(f"RateApp - {name}")
+        else:
+            self.setWindowTitle("RateApp")
+
+    def show_pm_dialog(self):
+        dlg = ProjectManagerDialog(self.pm_managers, self.pm_last_index, self)
+        if dlg.exec():
+            self.pm_managers, self.pm_last_index = dlg.result()
+            save_pm_history(self.pm_managers, self.pm_last_index)
+            if 0 <= self.pm_last_index < len(self.pm_managers):
+                self.current_pm = self.pm_managers[self.pm_last_index]
+            else:
+                self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
+            self.update_title()
 
     # ---------- LANG ADD ----------
     def handle_add_language(self):
@@ -672,11 +693,6 @@ class TranslationCostCalculator(QMainWindow):
             print(f"ERROR: {error_msg}")
             QMessageBox.critical(self, "Ошибка", error_msg)
 
-    def select_template(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать шаблон Excel", "", "Excel files (*.xlsx *.xls)")
-        if file_path:
-            self.template_path_edit.setText(file_path)
-
     def collect_project_data(self) -> Dict[str, Any]:
         data = {
             "project_name": self.project_name_edit.text(),
@@ -685,7 +701,9 @@ class TranslationCostCalculator(QMainWindow):
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
             "language_pairs": [],
-            "additional_services": {}
+            "additional_services": {},
+            "pm_name": self.current_pm.get("name_ru", ""),
+            "pm_email": self.current_pm.get("email", ""),
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -714,8 +732,7 @@ class TranslationCostCalculator(QMainWindow):
         if not file_path:
             return
 
-        template_path = self.template_path_edit.text().strip()
-        exporter = ExcelExporter(template_path if template_path else None)
+        exporter = ExcelExporter()
 
         if exporter.export_to_excel(project_data, file_path):
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
