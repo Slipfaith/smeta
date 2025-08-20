@@ -273,8 +273,8 @@ class TranslationCostCalculator(QMainWindow):
         pg.addWidget(self.pairs_list)
 
         info_layout = QHBoxLayout()
-        self.languages_count_label = QLabel("Загружено языков: 0")
-        info_layout.addWidget(self.languages_count_label)
+        self.language_pairs_count_label = QLabel("Загружено языковых пар: 0")
+        info_layout.addWidget(self.language_pairs_count_label)
         info_layout.addStretch()
         self.clear_pairs_btn = QPushButton("Очистить")
         self.clear_pairs_btn.clicked.connect(self.clear_language_pairs)
@@ -519,11 +519,10 @@ class TranslationCostCalculator(QMainWindow):
             f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
             for key, w in self.language_pairs.items()
         ))
-        langs = set()
-        for key in self.language_pairs.keys():
-            parts = key.split(" → ")
-            langs.update(parts)
-        self.languages_count_label.setText(f"Загружено языков: {len(langs)}")
+        pair_count = len(self.language_pairs)
+        self.language_pairs_count_label.setText(
+            f"Загружено языковых пар: {pair_count}"
+        )
 
     def remove_language_pair(self, pair_key: str):
         widget = self.language_pairs.pop(pair_key, None)
