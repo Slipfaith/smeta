@@ -2,9 +2,9 @@ from typing import Dict, List, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy
+    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from logic.service_config import ServiceConfig
@@ -12,6 +12,8 @@ from logic.service_config import ServiceConfig
 
 class LanguagePairWidget(QWidget):
     """Виджет для одной языковой пары (только Перевод)"""
+
+    remove_requested = Signal()
 
     def __init__(self, pair_name: str):
         super().__init__()
@@ -22,9 +24,15 @@ class LanguagePairWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout()
 
+        header = QHBoxLayout()
         title = QLabel(f"Языковая пара: {self.pair_name}")
         title.setFont(QFont("Arial", 10, QFont.Bold))
-        layout.addWidget(title)
+        header.addWidget(title)
+        header.addStretch()
+        remove_btn = QPushButton("Удалить")
+        remove_btn.clicked.connect(self.remove_requested.emit)
+        header.addWidget(remove_btn)
+        layout.addLayout(header)
 
         self.services_layout = QVBoxLayout()
 
