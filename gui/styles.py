@@ -32,7 +32,7 @@ QPushButton:pressed {
 QLineEdit, QTextEdit {
     border: 1px solid #ddd;
     border-radius: 4px;
-    padding: 5px;
+    padding: 2px;
 }
 QTableWidget {
     border: 1px solid #ddd;

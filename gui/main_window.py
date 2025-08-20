@@ -389,7 +389,6 @@ class TranslationCostCalculator(QMainWindow):
         self.tabs = QTabWidget()
 
         # Создаем основной скроллируемый контейнер для языковых пар
-        # но БЕЗ двойного скроллинга - таблицы будут показаны полностью
         self.pairs_scroll = QScrollArea()
         self.pairs_scroll.setWidgetResizable(True)
         self.pairs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -437,9 +436,6 @@ class TranslationCostCalculator(QMainWindow):
         return w
 
     def setup_drag_drop(self):
-        """Настройка drag & drop для области языковых пар"""
-        # Заменяем стандартную область на нашу DropArea
-        # Создаем новую DropArea которая обрабатывает перетаскивание
         drop_area = DropArea(self.handle_xml_drop)
 
         # Переносим содержимое в новую область
@@ -451,7 +447,6 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_scroll = drop_area
 
     def _hide_drop_hint(self):
-        """Удаляет подсказку и убирает декоративную рамку drag & drop."""
         if getattr(self, "drop_hint_label", None):
             self.pairs_layout.removeWidget(self.drop_hint_label)
             self.drop_hint_label.deleteLater()
