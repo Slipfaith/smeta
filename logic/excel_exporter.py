@@ -194,10 +194,11 @@ class ExcelExporter:
             t_first_data = block_top + first_data_rel
             t_subtotal_row = block_top + subtotal_rel
 
-            # 3) Заголовок блока (язык)
+            # 3) Заголовок блока (языковая пара)
             for c in range(1, ws.max_column + 1):
                 if ws.cell(block_top, c).value == START_PH:
-                    ws.cell(block_top, c, pair.get("header_title") or pair.get("pair_name") or "")
+                    ws.cell(block_top, c, pair.get("pair_name") or pair.get("header_title") or "")
+                    break
 
             # 4) Заголовки колонок — заменим токены на подписи
             for c in range(1, ws.max_column + 1):
