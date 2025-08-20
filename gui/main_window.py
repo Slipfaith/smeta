@@ -222,7 +222,7 @@ class TranslationCostCalculator(QMainWindow):
         splitter.addWidget(right_panel)
 
         # чуть уже левая панель
-        splitter.setSizes([240, 960])
+        splitter.setSizes([600, 960])
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
