@@ -5,9 +5,10 @@ from typing import Dict, List, Any
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter,
-    QFrame, QComboBox, QSlider
+    QComboBox, QSlider
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
@@ -196,8 +197,17 @@ class TranslationCostCalculator(QMainWindow):
     def setup_ui(self):
         self.setWindowTitle("Калькулятор стоимости переводческих проектов")
         self.setGeometry(100, 100, 1000, 600)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(600, 400)
         self.resize(1000, 650)
+
+        # меню с действиями загрузки/сохранения проекта
+        project_menu = self.menuBar().addMenu("Проект")
+        save_action = QAction("Сохранить проект", self)
+        save_action.triggered.connect(self.save_project)
+        project_menu.addAction(save_action)
+        load_action = QAction("Загрузить проект", self)
+        load_action.triggered.connect(self.load_project)
+        project_menu.addAction(load_action)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -219,7 +229,7 @@ class TranslationCostCalculator(QMainWindow):
 
     # ---------- LEFT ----------
     def create_left_panel(self) -> QWidget:
-        w = QWidget()
+        container = QWidget()
         lay = QVBoxLayout()
 
         # Проект
@@ -332,19 +342,17 @@ class TranslationCostCalculator(QMainWindow):
         self.save_pdf_btn = QPushButton("Сохранить PDF");
         self.save_pdf_btn.clicked.connect(self.save_pdf);
         a.addWidget(self.save_pdf_btn)
-        a.addWidget(QFrame())
-        self.save_project_btn = QPushButton("Сохранить проект");
-        self.save_project_btn.clicked.connect(self.save_project);
-        a.addWidget(self.save_project_btn)
-        self.load_project_btn = QPushButton("Загрузить проект");
-        self.load_project_btn.clicked.connect(self.load_project);
-        a.addWidget(self.load_project_btn)
         actions.setLayout(a);
         lay.addWidget(actions)
 
         lay.addStretch()
-        w.setLayout(lay)
-        return w
+        container.setLayout(lay)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(container)
+        scroll.setMinimumWidth(260)
+        return scroll
 
     def _make_lang_combo(self) -> QComboBox:
         cb = QComboBox()
