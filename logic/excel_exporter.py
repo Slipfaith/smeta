@@ -160,53 +160,43 @@ class ExcelExporter:
             raise RuntimeError("В шаблоне не найден {{subtotal_translation_table}} ниже {{translation_table}}")
         end_row, _ = end
 
-        tpl_height = end_row - start_row + 1  # ОБЯЗАТЕЛЬНО: в шаблоне одна образцовая строка
+        template_height = end_row - start_row + 1
         headers_rel = 1
         first_data_rel = 2
-        subtotal_rel = tpl_height - 1
+        subtotal_rel = template_height - 1
 
-        header_row_idx = start_row + headers_rel
-        hmap = self._header_map(ws, header_row_idx)
-
-        # Загрузим отдельную копию шаблона для копирования блоков, чтобы
-        # плейсхолдеры {{translation_table}} и {{subtotal_translation_table}}
-        # сохранялись для каждой новой языковой пары.
         template_wb = load_workbook(self.template_path)
         template_ws = template_wb.active
 
         subtot_cells: List[str] = []
-        last_block_end = end_row  # фактический конец последнего заполненного блока (первый — исходный)
+        current_row = start_row
 
-        # Итерируем по языковым парам
         for i, pair in enumerate(pairs):
-            # 1) КУДА ставим блок
-            if i == 0:
-                block_top = start_row                      # первый — на месте эталона
-            else:
-                insert_at = last_block_end + 1             # одна пустая строка-разделитель
-                ws.insert_rows(insert_at, tpl_height)      # вставляем место под новый блок
-                self._copy_block(ws, template_ws, start_row, end_row, insert_at)
-                block_top = insert_at
-                last_block_end = insert_at + tpl_height - 1  # временно, до подгонки строк
+            # Если не первый блок - добавляем новый
+            if i > 0:
+                ws.insert_rows(current_row, template_height)
+                self._copy_block(ws, template_ws, start_row, end_row, current_row)
 
-            # 2) Координаты частей внутри блока
+            block_top = current_row
             t_headers_row = block_top + headers_rel
             t_first_data = block_top + first_data_rel
             t_subtotal_row = block_top + subtotal_rel
 
-            # 3) Заголовок блока (языковая пара)
+            # Заголовок блока (заменяем плейсхолдер)
             for c in range(1, ws.max_column + 1):
                 if ws.cell(block_top, c).value == START_PH:
                     ws.cell(block_top, c, pair.get("pair_name") or pair.get("header_title") or "")
                     break
 
-            # 4) Заголовки колонок — заменим токены на подписи
+            # Заголовки колонок (заменяем плейсхолдеры на русские названия)
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(t_headers_row, c).value
                 if isinstance(v, str) and v.strip() in HDR_TITLES:
                     ws.cell(t_headers_row, c, HDR_TITLES[v.strip()])
 
-            # 5) Данные из GUI (строго столько, сколько строк в виджете)
+            hmap = self._header_map(ws, t_headers_row)
+
+            # Подготовка данных
             items: List[Dict[str, Any]] = []
             for _svc, rows in (pair.get("services") or {}).items():
                 for r in rows:
@@ -216,32 +206,35 @@ class ExcelExporter:
                         "rate": float(r.get("rate") or 0),
                     })
 
-            # 6) Подгоняем количество строк ДАННЫХ ВНУТРИ БЛОКА
-            cur_cap = max(0, t_subtotal_row - t_first_data)  # сколько строк между заголовками и subtotal
+            # Подгонка количества строк данных
+            cur_cap = max(0, t_subtotal_row - t_first_data)
             need = len(items)
 
             if need > cur_cap:
                 add = need - cur_cap
                 ws.insert_rows(t_subtotal_row, add)
-                # копируем стиль последней строки данных
-                tpl_row = max(t_first_data, t_subtotal_row - 1)
+                # Копируем стиль строки данных
+                if t_first_data < t_subtotal_row:
+                    tpl_row = t_first_data
+                else:
+                    tpl_row = t_subtotal_row - 1
                 for k in range(add):
                     dst = t_subtotal_row + k
                     for c in range(1, ws.max_column + 1):
                         self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
                 t_subtotal_row += add
-                last_block_end += add  # БЛОК УВЕЛИЧИЛСЯ → смещаем фактический конец
             elif need < cur_cap:
-                ws.delete_rows(t_first_data + need, cur_cap - need)
-                t_subtotal_row -= (cur_cap - need)
-                last_block_end -= (cur_cap - need)
+                delete_count = cur_cap - need
+                if delete_count > 0:
+                    ws.delete_rows(t_first_data + need, delete_count)
+                    t_subtotal_row -= delete_count
 
-            # 7) Полная очистка диапазона данных в блоке
+            # Очистка всех строк данных
             for rr in range(t_first_data, t_subtotal_row):
                 for c in range(1, ws.max_column + 1):
                     ws.cell(rr, c).value = None
 
-            # 8) Заполняем строки и ставим формулы в «Итого»
+            # Заполнение данными
             col_param = hmap.get("param", 1)
             col_type = hmap.get("type", 2)
             col_unit = hmap.get("unit", 3)
@@ -252,8 +245,8 @@ class ExcelExporter:
             r = t_first_data
             for it in items:
                 ws.cell(r, col_param, it["parameter"])
-                ws.cell(r, col_type, "")           # Type — пусто
-                ws.cell(r, col_unit, "Слово")      # Unit — Слово
+                ws.cell(r, col_type, "")
+                ws.cell(r, col_unit, "Слово")
                 ws.cell(r, col_qty, it["volume"])
                 ws.cell(r, col_rate, it["rate"])
                 qtyL = get_column_letter(col_qty)
@@ -261,27 +254,22 @@ class ExcelExporter:
                 ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
                 r += 1
 
-            # 9) Подпись и формула субтотала — ВСЕГДА по фактическому диапазону этого блока
-            # подпись
+            # Субтотал (заменяем плейсхолдер и ставим формулу)
             for c in range(1, ws.max_column + 1):
                 if ws.cell(t_subtotal_row, c).value == END_PH:
                     ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
                     break
-            # формула
+
             totalL = get_column_letter(col_total)
             if r == t_first_data:
                 ws.cell(t_subtotal_row, col_total, 0)
             else:
-                ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r-1})")
+                ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
 
-            # 10) Сохраняем адрес ячейки субтотала (для общего итога) и фиксируем фактический конец блока
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
-            last_block_end = max(last_block_end, t_subtotal_row)
 
-            # Обновляем исходные границы шаблонного блока на случай, если его высота изменилась
-            end_row = last_block_end
-            tpl_height = end_row - start_row + 1
-            subtotal_rel = tpl_height - 1
+            # Переходим к следующему блоку
+            current_row = t_subtotal_row + 1
 
         return subtot_cells
 
