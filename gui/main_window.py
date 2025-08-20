@@ -14,6 +14,33 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.styles import APP_STYLE
 from logic.excel_exporter import ExcelExporter
 from logic.user_config import load_languages, add_language
+from logic.trados_xml_parser import parse_reports
+from logic.service_config import ServiceConfig
+
+
+class DropWidget(QWidget):
+    """Принимает перетаскивание XML-файлов и отдаёт список путей в колбек."""
+
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._callback = callback
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):  # noqa: D401
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.toLocalFile().lower().endswith('.xml'):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):  # noqa: D401
+        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.toLocalFile().lower().endswith('.xml')]
+        if paths:
+            self._callback(paths)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 class TranslationCostCalculator(QMainWindow):
     """Главное окно приложения"""
@@ -166,7 +193,7 @@ class TranslationCostCalculator(QMainWindow):
         self.tabs = QTabWidget()
 
         self.pairs_scroll = QScrollArea()
-        self.pairs_widget = QWidget()
+        self.pairs_widget = DropWidget(self.handle_xml_drop)
         self.pairs_layout = QVBoxLayout()
         self.pairs_widget.setLayout(self.pairs_layout)
         self.pairs_scroll.setWidget(self.pairs_widget)
@@ -259,6 +286,33 @@ class TranslationCostCalculator(QMainWindow):
             f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
             for key, w in self.language_pairs.items()
         ))
+
+    def handle_xml_drop(self, paths: List[str], replace: bool = False):
+        data, warnings = parse_reports(paths)
+        if warnings:
+            QMessageBox.warning(self, "Предупреждение", "\n".join(warnings))
+        for pair_key, volumes in data.items():
+            widget = self.language_pairs.get(pair_key)
+            display_name = pair_key.replace(" → ", " - ")
+            if widget is None:
+                widget = LanguagePairWidget(display_name)
+                self.language_pairs[pair_key] = widget
+                self.pairs_layout.addWidget(widget)
+                tgt = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
+                self.pair_headers[pair_key] = tgt
+            group = widget.translation_group
+            table = group.table
+            group.setChecked(True)
+            for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
+                row_name = row_info["name"]
+                add_val = volumes.get(row_name, 0)
+                if replace:
+                    table.item(idx, 1).setText(str(add_val))
+                else:
+                    prev = float((table.item(idx, 1).text() if table.item(idx, 1) else "0") or "0")
+                    table.item(idx, 1).setText(str(prev + add_val))
+            widget.update_rates_and_sums(table, group.rows_config, group.base_rate_row)
+        self.update_pairs_list()
 
     def select_template(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать шаблон Excel", "", "Excel files (*.xlsx *.xls)")
