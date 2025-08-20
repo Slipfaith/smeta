@@ -28,12 +28,22 @@ class DropArea(QScrollArea):
         self.setWidgetResizable(True)
 
         # Стилизация для drag & drop
-        self.setStyleSheet("""
+        self._base_style = """
             QScrollArea {
                 border: 2px dashed #cccccc;
                 border-radius: 5px;
                 background-color: #fafafa;
             }
+            QScrollArea[dragOver="true"] {
+                border: 2px dashed #4CAF50;
+                background-color: #e8f5e8;
+            }
+        """
+        self.setStyleSheet(self._base_style)
+
+    def disable_hint_style(self):
+        """Удаляет базовую рамку, оставляя стиль подсветки при перетаскивании."""
+        self.setStyleSheet("""
             QScrollArea[dragOver="true"] {
                 border: 2px dashed #4CAF50;
                 background-color: #e8f5e8;
@@ -390,8 +400,10 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout = QVBoxLayout()
 
         # Добавляем подсказку для пользователя
-        hint_label = QLabel("Перетащите XML файлы отчетов Trados сюда для автоматического заполнения")
-        hint_label.setStyleSheet("""
+        self.drop_hint_label = QLabel(
+            "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения"
+        )
+        self.drop_hint_label.setStyleSheet("""
             QLabel {
                 color: #666666;
                 font-style: italic;
@@ -399,8 +411,8 @@ class TranslationCostCalculator(QMainWindow):
                 text-align: center;
             }
         """)
-        hint_label.setAlignment(Qt.AlignCenter)
-        self.pairs_layout.addWidget(hint_label)
+        self.drop_hint_label.setAlignment(Qt.AlignCenter)
+        self.pairs_layout.addWidget(self.drop_hint_label)
 
         # Добавляем растягивающийся элемент в конце
         self.pairs_layout.addStretch()
@@ -437,6 +449,15 @@ class TranslationCostCalculator(QMainWindow):
         self.tabs.removeTab(0)
         self.tabs.insertTab(0, drop_area, "Языковые пары")
         self.pairs_scroll = drop_area
+
+    def _hide_drop_hint(self):
+        """Удаляет подсказку и убирает декоративную рамку drag & drop."""
+        if getattr(self, "drop_hint_label", None):
+            self.pairs_layout.removeWidget(self.drop_hint_label)
+            self.drop_hint_label.deleteLater()
+            self.drop_hint_label = None
+        if isinstance(self.pairs_scroll, DropArea):
+            self.pairs_scroll.disable_hint_style()
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -571,6 +592,8 @@ class TranslationCostCalculator(QMainWindow):
                     "Проверьте консоль для детальной информации."
                 )
                 return
+
+            self._hide_drop_hint()
 
             added_pairs = 0
             updated_pairs = 0
