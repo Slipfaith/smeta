@@ -27,21 +27,149 @@ class DropArea(QScrollArea):
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
 
-    def dragEnterEvent(self, event):  # noqa: D401
+        # Стилизация для drag & drop
+        self.setStyleSheet("""
+            QScrollArea {
+                border: 2px dashed #cccccc;
+                border-radius: 5px;
+                background-color: #fafafa;
+            }
+            QScrollArea[dragOver="true"] {
+                border: 2px dashed #4CAF50;
+                background-color: #e8f5e8;
+            }
+        """)
+
+    def dragEnterEvent(self, event):
+        """Обработка входа перетаскиваемых файлов в область."""
+        print("=== DRAG ENTER EVENT ===")
+        print(f"Mime data has URLs: {event.mimeData().hasUrls()}")
+
         if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                if url.toLocalFile().lower().endswith('.xml'):
-                    event.acceptProposedAction()
-                    return
+            urls = event.mimeData().urls()
+            print(f"Number of URLs: {len(urls)}")
+
+            all_paths = []
+            xml_paths = []
+
+            for url in urls:
+                path = url.toLocalFile()
+                all_paths.append(path)
+                print(f"Path: '{path}'")
+
+                # Более гибкая проверка XML файлов
+                if path.lower().endswith('.xml') or path.lower().endswith('.XML'):
+                    xml_paths.append(path)
+                    print(f"  -> Valid XML file")
+                else:
+                    print(f"  -> Not an XML file")
+
+            print(f"Total paths: {len(all_paths)}, XML paths: {len(xml_paths)}")
+
+            if xml_paths:
+                print("Accepting drag operation")
+                event.acceptProposedAction()
+                # Визуальная обратная связь
+                self.setProperty("dragOver", True)
+                self.style().unpolish(self)
+                self.style().polish(self)
+                return
+
+        print("Ignoring drag operation")
         event.ignore()
 
-    def dropEvent(self, event):  # noqa: D401
-        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.toLocalFile().lower().endswith('.xml')]
-        if paths:
-            self._callback(paths)
+    def dragMoveEvent(self, event):
+        """Обработка движения перетаскиваемых файлов над областью."""
+        if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Обработка выхода перетаскиваемых файлов из области."""
+        print("=== DRAG LEAVE EVENT ===")
+        # Убираем визуальную обратную связь
+        self.setProperty("dragOver", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def dropEvent(self, event):
+        """Обработка сброса файлов в область."""
+        print("=== DROP EVENT ===")
+
+        # Убираем визуальную обратную связь
+        self.setProperty("dragOver", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        if not event.mimeData().hasUrls():
+            print("No URLs in drop event")
+            event.ignore()
+            return
+
+        urls = event.mimeData().urls()
+        print(f"Processing {len(urls)} dropped URLs")
+
+        all_paths = []
+        xml_paths = []
+
+        for i, url in enumerate(urls):
+            path = url.toLocalFile()
+            all_paths.append(path)
+            print(f"URL {i + 1}: '{path}'")
+
+            # Проверяем существование файла
+            try:
+                import os
+                if not os.path.exists(path):
+                    print(f"  -> File does not exist!")
+                    continue
+
+                if not os.path.isfile(path):
+                    print(f"  -> Not a file!")
+                    continue
+
+                print(f"  -> File exists, size: {os.path.getsize(path)} bytes")
+            except Exception as e:
+                print(f"  -> Error checking file: {e}")
+                continue
+
+            # Более гибкая проверка XML
+            if path.lower().endswith(('.xml', '.XML')):
+                xml_paths.append(path)
+                print(f"  -> Added as XML file")
+            else:
+                # Пробуем проверить содержимое файла
+                try:
+                    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                        first_line = f.readline().strip()
+                        if first_line.startswith('<?xml') or '<' in first_line:
+                            xml_paths.append(path)
+                            print(f"  -> Added as XML file (detected by content)")
+                        else:
+                            print(f"  -> Not an XML file (content check)")
+                except Exception as e:
+                    print(f"  -> Could not check file content: {e}")
+
+        print(f"Final result: {len(xml_paths)} XML files out of {len(all_paths)} total")
+
+        if xml_paths:
+            print("Calling callback with XML files...")
+            try:
+                self._callback(xml_paths)
+                event.acceptProposedAction()
+                print("Callback completed successfully")
+            except Exception as e:
+                print(f"Error in callback: {e}")
+                QMessageBox.critical(None, "Ошибка", f"Ошибка при обработке файлов: {e}")
+        else:
+            print("No valid XML files found")
+            if all_paths:
+                QMessageBox.warning(None, "Предупреждение",
+                                    f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n"
+                                    "Поддерживаются только файлы с расширением .xml")
+            event.ignore()
+
 
 class TranslationCostCalculator(QMainWindow):
     """Главное окно приложения"""
@@ -50,7 +178,7 @@ class TranslationCostCalculator(QMainWindow):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
         self.pair_headers: Dict[str, str] = {}  # pair_key -> header_title (RU/EN целевого или кастом)
-        self.lang_display_ru: bool = True       # True=RU, False=EN
+        self.lang_display_ru: bool = True  # True=RU, False=EN
         self._languages: List[Dict[str, str]] = load_languages()
         self.setup_ui()
         self.setup_style()
@@ -88,16 +216,22 @@ class TranslationCostCalculator(QMainWindow):
         project_group = QGroupBox("Информация о проекте")
         p = QVBoxLayout()
         p.addWidget(QLabel("Название проекта:"))
-        self.project_name_edit = QLineEdit(); p.addWidget(self.project_name_edit)
+        self.project_name_edit = QLineEdit();
+        p.addWidget(self.project_name_edit)
         p.addWidget(QLabel("Номер/код проекта:"))
-        self.project_code_edit = QLineEdit(); p.addWidget(self.project_code_edit)
+        self.project_code_edit = QLineEdit();
+        p.addWidget(self.project_code_edit)
         p.addWidget(QLabel("Название клиента:"))
-        self.client_name_edit = QLineEdit(); p.addWidget(self.client_name_edit)
+        self.client_name_edit = QLineEdit();
+        p.addWidget(self.client_name_edit)
         p.addWidget(QLabel("Контактное лицо:"))
-        self.contact_person_edit = QLineEdit(); p.addWidget(self.contact_person_edit)
+        self.contact_person_edit = QLineEdit();
+        p.addWidget(self.contact_person_edit)
         p.addWidget(QLabel("E-mail:"))
-        self.email_edit = QLineEdit(); p.addWidget(self.email_edit)
-        project_group.setLayout(p); lay.addWidget(project_group)
+        self.email_edit = QLineEdit();
+        p.addWidget(self.email_edit)
+        project_group.setLayout(p);
+        lay.addWidget(project_group)
 
         # Языковые пары
         pairs_group = QGroupBox("Языковые пары")
@@ -105,18 +239,27 @@ class TranslationCostCalculator(QMainWindow):
 
         # Переключатель RU/EN
         mode = QHBoxLayout()
-        mode.addWidget(QLabel("Названия языков:")); mode.addStretch(1)
+        mode.addWidget(QLabel("Названия языков:"));
+        mode.addStretch(1)
         mode.addWidget(QLabel("EN"))
-        self.lang_mode_slider = QSlider(Qt.Horizontal); self.lang_mode_slider.setRange(0, 1); self.lang_mode_slider.setValue(1)
-        self.lang_mode_slider.setFixedWidth(70); self.lang_mode_slider.valueChanged.connect(self.on_lang_mode_changed)
-        mode.addWidget(self.lang_mode_slider); mode.addWidget(QLabel("RU"))
+        self.lang_mode_slider = QSlider(Qt.Horizontal);
+        self.lang_mode_slider.setRange(0, 1);
+        self.lang_mode_slider.setValue(1)
+        self.lang_mode_slider.setFixedWidth(70);
+        self.lang_mode_slider.valueChanged.connect(self.on_lang_mode_changed)
+        mode.addWidget(self.lang_mode_slider);
+        mode.addWidget(QLabel("RU"))
         pg.addLayout(mode)
 
         # Добавление пары
         add_pair = QHBoxLayout()
-        self.source_lang_combo = self._make_lang_combo(); self.source_lang_combo.setEditable(True); add_pair.addWidget(self.source_lang_combo)
+        self.source_lang_combo = self._make_lang_combo();
+        self.source_lang_combo.setEditable(True);
+        add_pair.addWidget(self.source_lang_combo)
         add_pair.addWidget(QLabel("→"))
-        self.target_lang_combo = self._make_lang_combo(); self.target_lang_combo.setEditable(True); add_pair.addWidget(self.target_lang_combo)
+        self.target_lang_combo = self._make_lang_combo();
+        self.target_lang_combo.setEditable(True);
+        add_pair.addWidget(self.target_lang_combo)
         pg.addLayout(add_pair)
 
         self.add_pair_btn = QPushButton("Добавить языковую пару")
@@ -124,29 +267,61 @@ class TranslationCostCalculator(QMainWindow):
         pg.addWidget(self.add_pair_btn)
 
         pg.addWidget(QLabel("Текущие пары:"))
-        self.pairs_list = QTextEdit(); self.pairs_list.setMaximumHeight(110); self.pairs_list.setReadOnly(True)
+        self.pairs_list = QTextEdit();
+        self.pairs_list.setMaximumHeight(110);
+        self.pairs_list.setReadOnly(True)
         pg.addWidget(self.pairs_list)
 
         # Добавление языка в справочник (без кода)
         add_lang_group = QGroupBox("Добавить язык в справочник")
         lg = QVBoxLayout()
-        r1 = QHBoxLayout(); r1.addWidget(QLabel("Название RU:")); self.new_lang_ru = QLineEdit(); self.new_lang_ru.setPlaceholderText("Персидский"); r1.addWidget(self.new_lang_ru); lg.addLayout(r1)
-        r2 = QHBoxLayout(); r2.addWidget(QLabel("Название EN:")); self.new_lang_en = QLineEdit(); self.new_lang_en.setPlaceholderText("Persian");  r2.addWidget(self.new_lang_en); lg.addLayout(r2)
-        self.btn_add_lang = QPushButton("Добавить язык"); self.btn_add_lang.clicked.connect(self.handle_add_language); lg.addWidget(self.btn_add_lang)
-        add_lang_group.setLayout(lg); pg.addWidget(add_lang_group)
+        r1 = QHBoxLayout();
+        r1.addWidget(QLabel("Название RU:"));
+        self.new_lang_ru = QLineEdit();
+        self.new_lang_ru.setPlaceholderText("Персидский");
+        r1.addWidget(self.new_lang_ru);
+        lg.addLayout(r1)
+        r2 = QHBoxLayout();
+        r2.addWidget(QLabel("Название EN:"));
+        self.new_lang_en = QLineEdit();
+        self.new_lang_en.setPlaceholderText("Persian");
+        r2.addWidget(self.new_lang_en);
+        lg.addLayout(r2)
+        self.btn_add_lang = QPushButton("Добавить язык");
+        self.btn_add_lang.clicked.connect(self.handle_add_language);
+        lg.addWidget(self.btn_add_lang)
+        add_lang_group.setLayout(lg);
+        pg.addWidget(add_lang_group)
 
-        pairs_group.setLayout(pg); lay.addWidget(pairs_group)
+        pairs_group.setLayout(pg);
+        lay.addWidget(pairs_group)
 
         # Действия
-        actions = QGroupBox("Действия"); a = QVBoxLayout()
-        t = QHBoxLayout(); self.template_path_edit = QLineEdit(); self.template_path_edit.setPlaceholderText("Путь к шаблону Excel"); t.addWidget(self.template_path_edit)
-        btn = QPushButton("Выбрать"); btn.clicked.connect(self.select_template); t.addWidget(btn); a.addLayout(t)
-        self.save_excel_btn = QPushButton("Сохранить Excel"); self.save_excel_btn.clicked.connect(self.save_excel); a.addWidget(self.save_excel_btn)
-        self.save_pdf_btn = QPushButton("Сохранить PDF");   self.save_pdf_btn.clicked.connect(self.save_pdf);   a.addWidget(self.save_pdf_btn)
+        actions = QGroupBox("Действия");
+        a = QVBoxLayout()
+        t = QHBoxLayout();
+        self.template_path_edit = QLineEdit();
+        self.template_path_edit.setPlaceholderText("Путь к шаблону Excel");
+        t.addWidget(self.template_path_edit)
+        btn = QPushButton("Выбрать");
+        btn.clicked.connect(self.select_template);
+        t.addWidget(btn);
+        a.addLayout(t)
+        self.save_excel_btn = QPushButton("Сохранить Excel");
+        self.save_excel_btn.clicked.connect(self.save_excel);
+        a.addWidget(self.save_excel_btn)
+        self.save_pdf_btn = QPushButton("Сохранить PDF");
+        self.save_pdf_btn.clicked.connect(self.save_pdf);
+        a.addWidget(self.save_pdf_btn)
         a.addWidget(QFrame())
-        self.save_project_btn = QPushButton("Сохранить проект"); self.save_project_btn.clicked.connect(self.save_project); a.addWidget(self.save_project_btn)
-        self.load_project_btn = QPushButton("Загрузить проект"); self.load_project_btn.clicked.connect(self.load_project); a.addWidget(self.load_project_btn)
-        actions.setLayout(a); lay.addWidget(actions)
+        self.save_project_btn = QPushButton("Сохранить проект");
+        self.save_project_btn.clicked.connect(self.save_project);
+        a.addWidget(self.save_project_btn)
+        self.load_project_btn = QPushButton("Загрузить проект");
+        self.load_project_btn.clicked.connect(self.load_project);
+        a.addWidget(self.load_project_btn)
+        actions.setLayout(a);
+        lay.addWidget(actions)
 
         lay.addStretch()
         w.setLayout(lay)
@@ -190,14 +365,44 @@ class TranslationCostCalculator(QMainWindow):
 
     # ---------- RIGHT ----------
     def create_right_panel(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout()
+        w = QWidget();
+        lay = QVBoxLayout()
         self.tabs = QTabWidget()
 
-        self.pairs_scroll = DropArea(self.handle_xml_drop)
-        self.pairs_widget = QWidget()
+        # Создаем основной скроллируемый контейнер для языковых пар
+        # но БЕЗ двойного скроллинга - таблицы будут показаны полностью
+        self.pairs_scroll = QScrollArea()
+        self.pairs_scroll.setWidgetResizable(True)
+        self.pairs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.pairs_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Создаем виджет-контейнер для языковых пар
+        self.pairs_container_widget = QWidget()
         self.pairs_layout = QVBoxLayout()
-        self.pairs_widget.setLayout(self.pairs_layout)
-        self.pairs_scroll.setWidget(self.pairs_widget)
+
+        # Добавляем подсказку для пользователя
+        hint_label = QLabel("Перетащите XML файлы отчетов Trados сюда для автоматического заполнения")
+        hint_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-style: italic;
+                padding: 20px;
+                text-align: center;
+            }
+        """)
+        hint_label.setAlignment(Qt.AlignCenter)
+        self.pairs_layout.addWidget(hint_label)
+
+        # Добавляем растягивающийся элемент в конце
+        self.pairs_layout.addStretch()
+
+        self.pairs_container_widget.setLayout(self.pairs_layout)
+        self.pairs_scroll.setWidget(self.pairs_container_widget)
+
+        # Настраиваем drag & drop для скроллируемой области
+        self.pairs_scroll.setAcceptDrops(True)
+        self.setup_drag_drop()
+
         self.tabs.addTab(self.pairs_scroll, "Языковые пары")
 
         self.additional_services_widget = AdditionalServicesWidget()
@@ -206,8 +411,23 @@ class TranslationCostCalculator(QMainWindow):
         add_scroll.setWidgetResizable(True)
         self.tabs.addTab(add_scroll, "Дополнительные услуги")
 
-        lay.addWidget(self.tabs); w.setLayout(lay)
+        lay.addWidget(self.tabs);
+        w.setLayout(lay)
         return w
+
+    def setup_drag_drop(self):
+        """Настройка drag & drop для области языковых пар"""
+        # Заменяем стандартную область на нашу DropArea
+        # Создаем новую DropArea которая обрабатывает перетаскивание
+        drop_area = DropArea(self.handle_xml_drop)
+
+        # Переносим содержимое в новую область
+        drop_area.setWidget(self.pairs_container_widget)
+
+        # Обновляем вкладку
+        self.tabs.removeTab(0)
+        self.tabs.insertTab(0, drop_area, "Языковые пары")
+        self.pairs_scroll = drop_area
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -227,7 +447,8 @@ class TranslationCostCalculator(QMainWindow):
             self.populate_lang_combo(self.source_lang_combo)
             self.populate_lang_combo(self.target_lang_combo)
             # очистим поля
-            self.new_lang_ru.clear(); self.new_lang_en.clear()
+            self.new_lang_ru.clear();
+            self.new_lang_en.clear()
         else:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить язык в конфиг.")
 
@@ -274,7 +495,9 @@ class TranslationCostCalculator(QMainWindow):
 
         widget = LanguagePairWidget(display_name)  # только Перевод
         self.language_pairs[pair_key] = widget
-        self.pairs_layout.addWidget(widget)
+
+        # Вставляем новый виджет перед растягивающимся элементом
+        self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
 
         self.update_pairs_list()
 
@@ -288,31 +511,111 @@ class TranslationCostCalculator(QMainWindow):
         ))
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
-        data, warnings = parse_reports(paths)
-        if warnings:
-            QMessageBox.warning(self, "Предупреждение", "\n".join(warnings))
-        for pair_key, volumes in data.items():
-            widget = self.language_pairs.get(pair_key)
-            display_name = pair_key.replace(" → ", " - ")
-            if widget is None:
-                widget = LanguagePairWidget(display_name)
-                self.language_pairs[pair_key] = widget
-                self.pairs_layout.addWidget(widget)
-                tgt = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
-                self.pair_headers[pair_key] = tgt
-            group = widget.translation_group
-            table = group.table
-            group.setChecked(True)
-            for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
-                row_name = row_info["name"]
-                add_val = volumes.get(row_name, 0)
-                if replace:
-                    table.item(idx, 1).setText(str(add_val))
+        """Улучшенная обработка XML файлов с детальным логированием."""
+        print(f"\n=== HANDLING XML DROP ===")
+        print(f"Received {len(paths)} XML files")
+        print(f"Replace mode: {replace}")
+
+        # Показываем прогресс пользователю
+        if len(paths) > 1:
+            QMessageBox.information(
+                self, "Обработка файлов",
+                f"Начинается обработка {len(paths)} XML файлов.\nПожалуйста, подождите..."
+            )
+
+        try:
+            data, warnings = parse_reports(paths)
+            print(f"Parse results: {len(data)} language pairs found")
+
+            if warnings:
+                warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(warnings)
+                print(f"Warnings: {warning_msg}")
+                QMessageBox.warning(self, "Предупреждение", warning_msg)
+
+            if not data:
+                QMessageBox.warning(
+                    self, "Результат обработки",
+                    "В XML файлах не найдено данных о языковых парах.\n"
+                    "Возможные причины:\n"
+                    "1. XML файлы имеют нестандартную структуру\n"
+                    "2. Не найдены элементы LanguageDirection\n"
+                    "3. Отсутствуют данные о языках или объемах\n"
+                    "Проверьте консоль для детальной информации."
+                )
+                return
+
+            added_pairs = 0
+            updated_pairs = 0
+
+            for pair_key, volumes in data.items():
+                print(f"\nProcessing pair: {pair_key}")
+                print(f"Volumes: {volumes}")
+
+                widget = self.language_pairs.get(pair_key)
+                display_name = pair_key.replace(" → ", " - ")
+
+                if widget is None:
+                    print(f"Creating new widget for pair: {pair_key}")
+                    widget = LanguagePairWidget(display_name)
+                    self.language_pairs[pair_key] = widget
+                    # Вставляем новый виджет перед растягивающимся элементом
+                    self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
+
+                    # Извлекаем целевой язык для заголовка
+                    tgt = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
+                    self.pair_headers[pair_key] = tgt
+                    added_pairs += 1
                 else:
-                    prev = float((table.item(idx, 1).text() if table.item(idx, 1) else "0") or "0")
-                    table.item(idx, 1).setText(str(prev + add_val))
-            widget.update_rates_and_sums(table, group.rows_config, group.base_rate_row)
-        self.update_pairs_list()
+                    print(f"Updating existing widget for pair: {pair_key}")
+                    updated_pairs += 1
+
+                # Обновляем данные в таблице перевода
+                group = widget.translation_group
+                table = group.table
+                group.setChecked(True)
+
+                total_volume = 0
+                for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
+                    row_name = row_info["name"]
+                    add_val = volumes.get(row_name, 0)
+                    total_volume += add_val
+
+                    if replace:
+                        table.item(idx, 1).setText(str(add_val))
+                        print(f"  Set {row_name}: {add_val}")
+                    else:
+                        try:
+                            prev_text = table.item(idx, 1).text() if table.item(idx, 1) else "0"
+                            prev = float(prev_text or "0")
+                            new_val = prev + add_val
+                            table.item(idx, 1).setText(str(new_val))
+                            print(f"  Updated {row_name}: {prev} + {add_val} = {new_val}")
+                        except (ValueError, TypeError) as e:
+                            print(f"  Error updating {row_name}: {e}")
+                            table.item(idx, 1).setText(str(add_val))
+
+                print(f"  Total volume for {pair_key}: {total_volume}")
+
+                # Пересчитываем ставки и суммы
+                widget.update_rates_and_sums(table, group.rows_config, group.base_rate_row)
+
+            # Обновляем список пар
+            self.update_pairs_list()
+
+            # Показываем результат пользователю
+            result_msg = f"Обработка завершена!\n\n"
+            if added_pairs > 0:
+                result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
+            if updated_pairs > 0:
+                result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
+            result_msg += f"\nВсего обработано языковых пар: {len(data)}"
+
+            QMessageBox.information(self, "Результат обработки", result_msg)
+
+        except Exception as e:
+            error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            QMessageBox.critical(self, "Ошибка", error_msg)
 
     def select_template(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать шаблон Excel", "", "Excel files (*.xlsx *.xls)")
@@ -417,7 +720,8 @@ class TranslationCostCalculator(QMainWindow):
             header_title = pair_data.get("header_title", pair_key)
             widget = LanguagePairWidget(pair_key)
             self.language_pairs[pair_key] = widget
-            self.pairs_layout.addWidget(widget)
+            # Вставляем новый виджет перед растягивающимся элементом
+            self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
             self.pair_headers[pair_key] = header_title
 
             services = pair_data.get("services", {})

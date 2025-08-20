@@ -1,10 +1,14 @@
 from typing import Dict, List, Any
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel, QHeaderView
+    QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
+    QHeaderView, QSizePolicy
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+
 from logic.service_config import ServiceConfig
+
 
 class LanguagePairWidget(QWidget):
     """Виджет для одной языковой пары (только Перевод)"""
@@ -14,6 +18,7 @@ class LanguagePairWidget(QWidget):
         self.pair_name = pair_name
         self.setup_ui()
 
+    # ---------------- UI ----------------
     def setup_ui(self):
         layout = QVBoxLayout()
 
@@ -40,6 +45,12 @@ class LanguagePairWidget(QWidget):
         table = QTableWidget(len(rows), 4)
         table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
 
+        # ВАЖНО: никаких локальных скроллов — всё видно сразу
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        table.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        table.setWordWrap(False)
+
         base_rate_row = None
         for i, row_info in enumerate(rows):
             table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
@@ -57,17 +68,19 @@ class LanguagePairWidget(QWidget):
             sum_item.setFlags(Qt.ItemIsEnabled)
             table.setItem(i, 3, sum_item)
 
-        table.itemChanged.connect(lambda item: self.update_rates_and_sums(table, rows, base_rate_row))
-
+        # Автоподгон ширин
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
+        # Пересчёт ставок/сумм
+        table.itemChanged.connect(lambda item: self.update_rates_and_sums(table, rows, base_rate_row))
+
         vbox.addWidget(table)
 
-        # --- Промежуточная сумма для этой таблицы ---
+        # Промежуточная сумма
         subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
         subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtotal_label.setObjectName("subtotal_label")
@@ -81,10 +94,22 @@ class LanguagePairWidget(QWidget):
         setattr(group, 'base_rate_row', base_rate_row)
         setattr(group, 'subtotal_label', subtotal_label)
 
-        # начальный пересчёт
+        # начальный пересчёт + авто-раскрытие высоты
         self.update_rates_and_sums(table, rows, base_rate_row)
+        self._fit_table_height(table)
 
         return group
+
+    # ---------------- Logic ----------------
+    def _fit_table_height(self, table: QTableWidget):
+        """Делает таблицу фиксированной высоты по всем строкам (без внутреннего скролла)."""
+        header_h = table.horizontalHeader().height()
+        rows_h = sum(table.rowHeight(r) for r in range(table.rowCount()))
+        frame = table.frameWidth() * 2
+        # небольшой запас под сетку/паддинги
+        total = header_h + rows_h + frame + 2
+        table.setMinimumHeight(total)
+        table.setMaximumHeight(total)
 
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
@@ -95,6 +120,7 @@ class LanguagePairWidget(QWidget):
             subtotal = 0.0
             for row in range(table.rowCount()):
                 row_cfg = rows[row]
+
                 # авто-ставки для непервой строки
                 if not row_cfg["is_base"] and base_rate_row is not None:
                     auto_rate = base_rate * row_cfg["multiplier"]
@@ -117,9 +143,19 @@ class LanguagePairWidget(QWidget):
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
                 lbl.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
+
+            # после любых изменений гарантируем отсутствие локального скролла
+            self._fit_table_height(table)
+
         except (ValueError, AttributeError):
             pass
 
+    def refresh_layout(self):
+        """Публичный хук для внешнего кода: раскрыть таблицы по высоте ещё раз."""
+        if hasattr(self.translation_group, "table"):
+            self._fit_table_height(self.translation_group.table)
+
+    # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
         data = {"pair_name": self.pair_name, "services": {}}
         if self.translation_group.isChecked():
