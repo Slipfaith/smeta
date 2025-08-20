@@ -5,7 +5,7 @@ from typing import Dict, List, Any
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter,
-    QComboBox, QSlider
+    QComboBox, QSlider, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -312,6 +312,17 @@ class TranslationCostCalculator(QMainWindow):
         info_layout.addWidget(self.clear_pairs_btn)
         pg.addLayout(info_layout)
 
+        setup_layout = QHBoxLayout()
+        setup_layout.addWidget(QLabel("Запуск и управление проектом:"))
+        self.project_setup_fee_spin = QDoubleSpinBox()
+        self.project_setup_fee_spin.setDecimals(2)
+        self.project_setup_fee_spin.setSingleStep(0.25)
+        self.project_setup_fee_spin.setMinimum(0.5)
+        self.project_setup_fee_spin.setValue(0.5)
+        setup_layout.addWidget(self.project_setup_fee_spin)
+        setup_layout.addStretch()
+        pg.addLayout(setup_layout)
+
         # Добавление языка в справочник (без кода)
         add_lang_group = QGroupBox("Добавить язык в справочник")
         lg = QVBoxLayout()
@@ -568,6 +579,10 @@ class TranslationCostCalculator(QMainWindow):
         self.language_pairs_count_label.setText(
             f"Загружено языковых пар: {pair_count}"
         )
+        auto_fee = max(0.5, round((pair_count + 1) / 4 * 4) / 4)
+        self.project_setup_fee_spin.blockSignals(True)
+        self.project_setup_fee_spin.setValue(auto_fee)
+        self.project_setup_fee_spin.blockSignals(False)
 
     def remove_language_pair(self, pair_key: str):
         widget = self.language_pairs.pop(pair_key, None)
@@ -704,6 +719,7 @@ class TranslationCostCalculator(QMainWindow):
             "additional_services": {},
             "pm_name": self.current_pm.get("name_ru", ""),
             "pm_email": self.current_pm.get("email", ""),
+            "project_setup_fee": self.project_setup_fee_spin.value(),
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -803,6 +819,12 @@ class TranslationCostCalculator(QMainWindow):
                 self.load_table_data(widget.translation_group.table, services["translation"])
 
         self.update_pairs_list()
+
+        fee = project_data.get("project_setup_fee")
+        if isinstance(fee, (int, float)):
+            self.project_setup_fee_spin.blockSignals(True)
+            self.project_setup_fee_spin.setValue(fee)
+            self.project_setup_fee_spin.blockSignals(False)
 
         additional = project_data.get("additional_services", {})
         for name, data in additional.items():
