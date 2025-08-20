@@ -18,13 +18,14 @@ from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 
 
-class DropWidget(QWidget):
-    """Принимает перетаскивание XML-файлов и отдаёт список путей в колбек."""
+class DropArea(QScrollArea):
+    """QScrollArea, принимающая перетаскивание XML-файлов и отдающая пути в колбек."""
 
     def __init__(self, callback, parent=None):
         super().__init__(parent)
         self._callback = callback
         self.setAcceptDrops(True)
+        self.setWidgetResizable(True)
 
     def dragEnterEvent(self, event):  # noqa: D401
         if event.mimeData().hasUrls():
@@ -192,12 +193,11 @@ class TranslationCostCalculator(QMainWindow):
         w = QWidget(); lay = QVBoxLayout()
         self.tabs = QTabWidget()
 
-        self.pairs_scroll = QScrollArea()
-        self.pairs_widget = DropWidget(self.handle_xml_drop)
+        self.pairs_scroll = DropArea(self.handle_xml_drop)
+        self.pairs_widget = QWidget()
         self.pairs_layout = QVBoxLayout()
         self.pairs_widget.setLayout(self.pairs_layout)
         self.pairs_scroll.setWidget(self.pairs_widget)
-        self.pairs_scroll.setWidgetResizable(True)
         self.tabs.addTab(self.pairs_scroll, "Языковые пары")
 
         self.additional_services_widget = AdditionalServicesWidget()
