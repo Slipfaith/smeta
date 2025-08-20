@@ -101,20 +101,22 @@ class ExcelExporter:
         if s.protection:
             d.protection = Protection(locked=s.protection.locked, hidden=s.protection.hidden)
 
-    def _copy_block(self, ws: Worksheet, src_start: int, src_end: int, dst_start: int) -> None:
-        """Копирует строки [src_start..src_end] на позицию dst_start со стилями + переносит слияния внутри блока."""
+    def _copy_block(self, dst_ws: Worksheet, src_ws: Worksheet, src_start: int, src_end: int, dst_start: int) -> None:
+        """Копирует строки [src_start..src_end] со страницы src_ws на позицию dst_start в dst_ws
+        со стилями и слияниями. Используется, чтобы копировать неизменённый шаблонный
+        блок даже после того, как первый блок уже заполнен данными."""
         height = src_end - src_start + 1
         for i in range(height):
             sr = src_start + i
             dr = dst_start + i
             try:
-                ws.row_dimensions[dr].height = ws.row_dimensions[sr].height
+                dst_ws.row_dimensions[dr].height = src_ws.row_dimensions[sr].height
             except Exception:
                 pass
-            for c in range(1, ws.max_column + 1):
-                self._copy_style(ws.cell(sr, c), ws.cell(dr, c))
+            for c in range(1, src_ws.max_column + 1):
+                self._copy_style(src_ws.cell(sr, c), dst_ws.cell(dr, c))
         merges = []
-        for m in ws.merged_cells.ranges:
+        for m in src_ws.merged_cells.ranges:
             sr, sc, er, ec = m.min_row, m.min_col, m.max_row, m.max_col
             if src_start <= sr and er <= src_end:
                 delta = dst_start - src_start
@@ -122,7 +124,7 @@ class ExcelExporter:
         for sr, sc, er, ec in merges:
             ref = f"{get_column_letter(sc)}{sr}:{get_column_letter(ec)}{er}"
             try:
-                ws.merge_cells(ref)
+                dst_ws.merge_cells(ref)
             except Exception:
                 pass
 
@@ -166,6 +168,12 @@ class ExcelExporter:
         header_row_idx = start_row + headers_rel
         hmap = self._header_map(ws, header_row_idx)
 
+        # Загрузим отдельную копию шаблона для копирования блоков, чтобы
+        # плейсхолдеры {{translation_table}} и {{subtotal_translation_table}}
+        # сохранялись для каждой новой языковой пары.
+        template_wb = load_workbook(self.template_path)
+        template_ws = template_wb.active
+
         subtot_cells: List[str] = []
         last_block_end = end_row  # фактический конец последнего заполненного блока (первый — исходный)
 
@@ -177,7 +185,7 @@ class ExcelExporter:
             else:
                 insert_at = last_block_end + 1             # одна пустая строка-разделитель
                 ws.insert_rows(insert_at, tpl_height)      # вставляем место под новый блок
-                self._copy_block(ws, start_row, end_row, insert_at)
+                self._copy_block(ws, template_ws, start_row, end_row, insert_at)
                 block_top = insert_at
                 last_block_end = insert_at + tpl_height - 1  # временно, до подгонки строк
 
