@@ -272,6 +272,15 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_list.setReadOnly(True)
         pg.addWidget(self.pairs_list)
 
+        info_layout = QHBoxLayout()
+        self.languages_count_label = QLabel("Загружено языков: 0")
+        info_layout.addWidget(self.languages_count_label)
+        info_layout.addStretch()
+        self.clear_pairs_btn = QPushButton("Очистить")
+        self.clear_pairs_btn.clicked.connect(self.clear_language_pairs)
+        info_layout.addWidget(self.clear_pairs_btn)
+        pg.addLayout(info_layout)
+
         # Добавление языка в справочник (без кода)
         add_lang_group = QGroupBox("Добавить язык в справочник")
         lg = QVBoxLayout()
@@ -494,6 +503,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pair_headers[pair_key] = header_title
 
         widget = LanguagePairWidget(display_name)  # только Перевод
+        widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
         self.language_pairs[pair_key] = widget
 
         # Вставляем новый виджет перед растягивающимся элементом
@@ -509,6 +519,25 @@ class TranslationCostCalculator(QMainWindow):
             f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
             for key, w in self.language_pairs.items()
         ))
+        langs = set()
+        for key in self.language_pairs.keys():
+            parts = key.split(" → ")
+            langs.update(parts)
+        self.languages_count_label.setText(f"Загружено языков: {len(langs)}")
+
+    def remove_language_pair(self, pair_key: str):
+        widget = self.language_pairs.pop(pair_key, None)
+        if widget:
+            widget.setParent(None)
+            self.pair_headers.pop(pair_key, None)
+        self.update_pairs_list()
+
+    def clear_language_pairs(self):
+        for w in self.language_pairs.values():
+            w.setParent(None)
+        self.language_pairs.clear()
+        self.pair_headers.clear()
+        self.update_pairs_list()
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         """Улучшенная обработка XML файлов с детальным логированием."""
@@ -557,6 +586,7 @@ class TranslationCostCalculator(QMainWindow):
                 if widget is None:
                     print(f"Creating new widget for pair: {pair_key}")
                     widget = LanguagePairWidget(display_name)
+                    widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
                     self.language_pairs[pair_key] = widget
                     # Вставляем новый виджет перед растягивающимся элементом
                     self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
@@ -719,6 +749,7 @@ class TranslationCostCalculator(QMainWindow):
             pair_key = pair_data["pair_name"]  # в твоём текущем формате это строка, оставляем как есть
             header_title = pair_data.get("header_title", pair_key)
             widget = LanguagePairWidget(pair_key)
+            widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
             self.language_pairs[pair_key] = widget
             # Вставляем новый виджет перед растягивающимся элементом
             self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
