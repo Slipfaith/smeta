@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QHBoxLayout, QPushButton
+    QLabel, QHeaderView, QSizePolicy, QMenu
 )
 from PySide6.QtCore import Qt
 
@@ -47,17 +47,22 @@ class ProjectSetupWidget(QWidget):
 
         vbox.addWidget(self.table)
 
-        # Row controls
-        controls = QHBoxLayout()
-        self.add_row_btn = QPushButton("Добавить строку")
-        self.del_row_btn = QPushButton("Удалить строку")
-        controls.addWidget(self.add_row_btn)
-        controls.addWidget(self.del_row_btn)
-        controls.addStretch()
-        vbox.addLayout(controls)
+        # context menu for adding/removing rows
+        def show_menu(pos):
+            row = self.table.rowAt(pos.y())
+            if row < 0:
+                row = self.table.rowCount() - 1
+            menu = QMenu(self.table)
+            add_act = menu.addAction("Добавить строку")
+            del_act = menu.addAction("Удалить строку")
+            action = menu.exec(self.table.mapToGlobal(pos))
+            if action == add_act:
+                self.add_row_after(row)
+            elif action == del_act:
+                self.remove_row_at(row)
 
-        self.add_row_btn.clicked.connect(self.add_row)
-        self.del_row_btn.clicked.connect(self.remove_row)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(show_menu)
 
         self.subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -81,19 +86,24 @@ class ProjectSetupWidget(QWidget):
 
     # ---------- data operations ----------
     def add_row(self):
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem("Новая строка"))
-        self.table.setItem(row, 1, QTableWidgetItem("0"))
-        self.table.setItem(row, 2, QTableWidgetItem("0.00"))
+        self.add_row_after(self.table.rowCount() - 1)
+
+    def add_row_after(self, row: int):
+        insert_at = row + 1
+        self.table.insertRow(insert_at)
+        self.table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
+        self.table.setItem(insert_at, 1, QTableWidgetItem("0"))
+        self.table.setItem(insert_at, 2, QTableWidgetItem("0.00"))
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
-        self.table.setItem(row, 3, total_item)
+        self.table.setItem(insert_at, 3, total_item)
         self._fit_table_height(self.table)
         self.update_sums()
 
     def remove_row(self):
-        row = self.table.currentRow()
+        self.remove_row_at(self.table.currentRow())
+
+    def remove_row_at(self, row: int):
         if row >= 0:
             self.table.removeRow(row)
             self._fit_table_height(self.table)
