@@ -1,4 +1,6 @@
-from PySide6.QtCore import Qt
+from typing import List, Dict
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -8,6 +10,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QHeaderView,
     QMenu,
+    QHBoxLayout,
+    QPushButton,
+    QStyle,
 )
 
 
@@ -19,19 +24,32 @@ def _to_float(value: str) -> float:
         return 0.0
 
 
-class AdditionalServicesWidget(QWidget):
-    """Single table for user defined additional services."""
+class AdditionalServiceTable(QWidget):
+    """One editable table of additional services."""
 
-    def __init__(self) -> None:
+    remove_requested = Signal()
+
+    def __init__(self, title: str = "Дополнительные услуги") -> None:
         super().__init__()
-        self._setup_ui()
+        self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
-    def _setup_ui(self) -> None:
+    def _setup_ui(self, title: str) -> None:
         layout = QVBoxLayout()
 
-        self.header_edit = QLineEdit("Дополнительные услуги")
-        layout.addWidget(self.header_edit)
+        header = QHBoxLayout()
+        self.header_edit = QLineEdit(title)
+        header.addWidget(self.header_edit)
+        remove_btn = QPushButton()
+        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        remove_btn.setFlat(True)
+        remove_btn.setMaximumWidth(24)
+        remove_btn.setToolTip("Удалить таблицу")
+        remove_btn.setStyleSheet("background-color: transparent; border: none;")
+        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
+        remove_btn.clicked.connect(self.remove_requested.emit)
+        header.addWidget(remove_btn)
+        layout.addLayout(header)
 
         self.table = QTableWidget(1, 5)
         self.table.setHorizontalHeaderLabels([
@@ -42,15 +60,14 @@ class AdditionalServicesWidget(QWidget):
             "Сумма (руб)",
         ])
 
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header_view = self.table.horizontalHeader()
+        header_view.setSectionResizeMode(0, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        # initial row
-        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -88,7 +105,7 @@ class AdditionalServicesWidget(QWidget):
     def add_row_after(self, row: int) -> None:
         insert_at = row + 1
         self.table.insertRow(insert_at)
-        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -122,8 +139,7 @@ class AdditionalServicesWidget(QWidget):
         return item.text() if item else "0"
 
     # --------------------------------------------------------------- data i/o
-    def get_data(self) -> dict:
-        """Return data for export."""
+    def get_data(self) -> Dict:
         rows = []
         for r in range(self.table.rowCount()):
             rows.append({
@@ -141,8 +157,7 @@ class AdditionalServicesWidget(QWidget):
             "rows": rows,
         }
 
-    def load_data(self, data: dict) -> None:
-        """Load previously saved data."""
+    def load_data(self, data: Dict) -> None:
         self.header_edit.setText(data.get("header_title", ""))
         rows = data.get("rows", [])
         if not rows:
@@ -153,10 +168,63 @@ class AdditionalServicesWidget(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    item.setText(f"{_to_float(val):.3f}")
+                    item.setText(f"{_to_float(val):.2f}")
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(r, 4, total_item)
         self.update_sums()
+
+
+class AdditionalServicesWidget(QWidget):
+    """Container managing multiple additional service tables."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tables: List[AdditionalServiceTable] = []
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout()
+        self.tables_layout = QVBoxLayout()
+        layout.addLayout(self.tables_layout)
+
+        add_btn = QPushButton("Добавить таблицу")
+        add_btn.clicked.connect(self.add_table)
+        layout.addWidget(add_btn)
+
+        self.setLayout(layout)
+        self.add_table()
+
+    def add_table(self, data: Dict = None) -> None:
+        table = AdditionalServiceTable()
+        table.remove_requested.connect(lambda t=table: self.remove_table(t))
+        self.tables.append(table)
+        self.tables_layout.addWidget(table)
+        if data:
+            table.load_data(data)
+
+    def remove_table(self, table: AdditionalServiceTable) -> None:
+        if table in self.tables and len(self.tables) > 1:
+            self.tables.remove(table)
+            table.setParent(None)
+
+    # --------------------------------------------------------------- data i/o
+    def get_data(self) -> List[Dict]:
+        data = []
+        for tbl in self.tables:
+            block = tbl.get_data()
+            if block:
+                data.append(block)
+        return data
+
+    def load_data(self, blocks: List[Dict]) -> None:
+        for tbl in self.tables:
+            tbl.setParent(None)
+        self.tables.clear()
+        if not blocks:
+            self.add_table()
+            return
+        for block in blocks:
+            self.add_table(block)
 

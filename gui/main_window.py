@@ -790,7 +790,7 @@ class TranslationCostCalculator(QMainWindow):
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
             "language_pairs": [],
-            "additional_services": {},
+            "additional_services": [],
             "pm_name": self.current_pm.get("name_ru", ""),
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
@@ -801,6 +801,7 @@ class TranslationCostCalculator(QMainWindow):
             if p["services"]:
                 p["header_title"] = self.pair_headers.get(pair_key, pair_widget.pair_name)
                 data["language_pairs"].append(p)
+        data["language_pairs"].sort(key=lambda x: x.get("pair_name", "").split(" - ")[1] if " - " in x.get("pair_name", "") else x.get("pair_name", ""))
         additional = self.additional_services_widget.get_data()
         if additional:
             data["additional_services"] = additional
@@ -917,5 +918,5 @@ class TranslationCostCalculator(QMainWindow):
                     self.project_setup_widget.set_volume(fee)
 
         additional = project_data.get("additional_services")
-        if additional:
+        if additional is not None:
             self.additional_services_widget.load_data(additional)
