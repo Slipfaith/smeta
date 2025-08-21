@@ -19,6 +19,9 @@ class LanguagePairWidget(QWidget):
         super().__init__()
         self.pair_name = pair_name
         self.only_new_repeats_mode = False
+        # резерв для восстановления исходных значений объёмов/ставок
+        self._backup_volumes = []
+        self._backup_rates = []
         self.setup_ui()
 
     # ---------------- UI ----------------
@@ -205,37 +208,60 @@ class LanguagePairWidget(QWidget):
         self.update_rates_and_sums(table, rows, base_rate_row)
 
     # ---------------- Logic ----------------
-    def apply_only_new_and_repeats(self):
-        """Сводит таблицу к двум строкам: новые слова и повторы."""
-        if self.only_new_repeats_mode:
-            return
+    def set_only_new_and_repeats_mode(self, enabled: bool):
+        """Переключает режим отображения: 4 строки либо только новые/повторы."""
         group = self.translation_group
         table: QTableWidget = group.table
         rows = group.rows_config
-        if table.rowCount() <= 2:
+        base_rate_row = getattr(group, 'base_rate_row', 0)
+
+        if enabled and not self.only_new_repeats_mode:
+            # сохраняем текущие значения для восстановления
+            self._backup_volumes = [
+                table.item(i, 1).text() if table.item(i, 1) else "0"
+                for i in range(table.rowCount())
+            ]
+            self._backup_rates = [
+                table.item(i, 2).text() if table.item(i, 2) else "0"
+                for i in range(table.rowCount())
+            ]
+
+            total_new = 0.0
+            for idx in range(min(3, table.rowCount())):
+                try:
+                    total_new += float(self._backup_volumes[idx] or "0")
+                except ValueError:
+                    pass
+            if table.item(0, 1):
+                table.item(0, 1).setText(str(total_new))
+
+            if table.rowCount() > 1:
+                table.setRowHidden(1, True)
+                rows[1]['deleted'] = True
+            if table.rowCount() > 2:
+                table.setRowHidden(2, True)
+                rows[2]['deleted'] = True
             self.only_new_repeats_mode = True
-            return
 
-        total_new = 0.0
-        for idx in range(min(3, table.rowCount())):
-            item = table.item(idx, 1)
-            try:
-                total_new += float(item.text() if item else "0")
-            except ValueError:
-                pass
-        if table.item(0, 1):
-            table.item(0, 1).setText(str(total_new))
+        elif not enabled and self.only_new_repeats_mode:
+            for idx in range(min(len(self._backup_volumes), table.rowCount())):
+                if table.item(idx, 1):
+                    table.item(idx, 1).setText(self._backup_volumes[idx])
+                if table.item(idx, 2):
+                    table.item(idx, 2).setText(self._backup_rates[idx])
+            if table.rowCount() > 1:
+                table.setRowHidden(1, False)
+                rows[1]['deleted'] = False
+            if table.rowCount() > 2:
+                table.setRowHidden(2, False)
+                rows[2]['deleted'] = False
+            self.only_new_repeats_mode = False
 
-        for idx in [2, 1]:
-            if table.rowCount() > idx:
-                table.removeRow(idx)
-            if len(rows) > idx:
-                rows.pop(idx)
-
-        setattr(group, 'base_rate_row', 0)
-        self.only_new_repeats_mode = True
-        self.update_rates_and_sums(table, rows, 0)
+        self.update_rates_and_sums(table, rows, base_rate_row)
         self._fit_table_height(table)
+
+    def toggle_only_new_and_repeats(self):
+        self.set_only_new_and_repeats_mode(not self.only_new_repeats_mode)
 
     def _fit_table_height(self, table: QTableWidget):
         """Делает таблицу фиксированной высоты по всем строкам (без внутреннего скролла)."""
