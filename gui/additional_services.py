@@ -6,6 +6,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from logic.service_config import ServiceConfig
 
+
+def _to_float(value: str) -> float:
+    try:
+        return float((value or "0").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
 class AdditionalServicesWidget(QWidget):
     """Виджет для дополнительных услуг"""
 
@@ -46,7 +54,7 @@ class AdditionalServicesWidget(QWidget):
             table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
             table.setItem(i, 1, QTableWidgetItem("0"))
 
-            rate_item = QTableWidgetItem("0.00")
+            rate_item = QTableWidgetItem("0.000")
             if not row_info["is_base"]:
                 rate_item.setFlags(Qt.ItemIsEnabled)
             else:
@@ -82,7 +90,10 @@ class AdditionalServicesWidget(QWidget):
             # Получаем базовую ставку
             base_rate = 0.0
             if base_rate_row is not None:
-                base_rate = float(table.item(base_rate_row, 2).text() or "0")
+                base_rate = _to_float(table.item(base_rate_row, 2).text())
+                table.blockSignals(True)
+                table.item(base_rate_row, 2).setText(f"{base_rate:.3f}")
+                table.blockSignals(False)
 
             # Обновляем все строки
             for row in range(table.rowCount()):
@@ -91,11 +102,17 @@ class AdditionalServicesWidget(QWidget):
                 # Обновляем ставку для неосновных строк
                 if not row_config["is_base"] and base_rate_row is not None:
                     auto_rate = base_rate * row_config["multiplier"]
-                    table.item(row, 2).setText(f"{auto_rate:.2f}")
+                    table.blockSignals(True)
+                    table.item(row, 2).setText(f"{auto_rate:.3f}")
+                    table.blockSignals(False)
 
                 # Обновляем сумму
-                volume = float(table.item(row, 1).text() or "0")
-                rate = float(table.item(row, 2).text() or "0")
+                volume = _to_float(table.item(row, 1).text())
+                rate_item = table.item(row, 2)
+                rate = _to_float(rate_item.text() if rate_item else "0")
+                table.blockSignals(True)
+                rate_item.setText(f"{rate:.3f}")
+                table.blockSignals(False)
                 total = volume * rate
                 table.item(row, 3).setText(f"{total:.2f}")
 
@@ -116,9 +133,9 @@ class AdditionalServicesWidget(QWidget):
         for row in range(table.rowCount()):
             row_data = {
                 "parameter": table.item(row, 0).text(),
-                "volume": float(table.item(row, 1).text() or "0"),
-                "rate": float(table.item(row, 2).text() or "0"),
-                "total": float(table.item(row, 3).text() or "0")
+                "volume": _to_float(table.item(row, 1).text()),
+                "rate": _to_float(table.item(row, 2).text()),
+                "total": _to_float(table.item(row, 3).text())
             }
             data.append(row_data)
         return data

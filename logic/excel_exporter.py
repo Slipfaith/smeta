@@ -297,12 +297,14 @@ class ExcelExporter:
             for idx, it in enumerate(items):
                 rr = row_numbers[idx]
                 if it.get("is_base"):
-                    ws.cell(rr, col_rate, it["rate"])
+                    cell = ws.cell(rr, col_rate, it["rate"])
                 elif base_rate_cell and it.get("multiplier") is not None:
-                    ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
+                    cell = ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
                 else:
-                    ws.cell(rr, col_rate, it["rate"])
-                ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
+                    cell = ws.cell(rr, col_rate, it["rate"])
+                cell.number_format = "0.000"
+                total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
+                total_cell.number_format = "0.00"
 
             # Субтотал (заменяем плейсхолдер и ставим формулу)
             for c in range(1, ws.max_column + 1):
@@ -312,9 +314,10 @@ class ExcelExporter:
 
             totalL = get_column_letter(col_total)
             if r == t_first_data:
-                ws.cell(t_subtotal_row, col_total, 0)
+                subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
             else:
-                ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+                subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+            subtotal_cell.number_format = "0.00"
 
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
 
@@ -394,10 +397,12 @@ class ExcelExporter:
             ws.cell(r, col_param, it.get("parameter", ""))
             ws.cell(r, col_unit, "час")
             ws.cell(r, col_qty, it.get("volume", 0))
-            ws.cell(r, col_rate, it.get("rate", 0))
+            rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
+            rate_cell.number_format = "0.000"
             qtyL = get_column_letter(col_qty)
             rateL = get_column_letter(col_rate)
-            ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
+            total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
+            total_cell.number_format = "0.00"
             r += 1
 
         for c in range(1, ws.max_column + 1):
@@ -407,9 +412,10 @@ class ExcelExporter:
 
         totalL = get_column_letter(col_total)
         if r == t_first_data:
-            ws.cell(t_subtotal_row, col_total, 0)
+            subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
         else:
-            ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+            subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+        subtotal_cell.number_format = "0.00"
 
         return f"{totalL}{t_subtotal_row}"
 

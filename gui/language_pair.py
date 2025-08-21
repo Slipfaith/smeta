@@ -10,6 +10,14 @@ from PySide6.QtGui import QFont
 from logic.service_config import ServiceConfig
 
 
+def _to_float(value: str) -> float:
+    """Convert string with comma or dot to float."""
+    try:
+        return float((value or "0").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
 class LanguagePairWidget(QWidget):
     """Виджет для одной языковой пары (только Перевод)"""
 
@@ -76,7 +84,7 @@ class LanguagePairWidget(QWidget):
             table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
             table.setItem(i, 1, QTableWidgetItem("0"))
 
-            rate_item = QTableWidgetItem("0.00")
+            rate_item = QTableWidgetItem("0.000")
             if not row_info["is_base"]:
                 rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             else:
@@ -155,7 +163,7 @@ class LanguagePairWidget(QWidget):
         table.insertRow(insert_at)
         table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
         table.setItem(insert_at, 1, QTableWidgetItem("0"))
-        rate_item = QTableWidgetItem("0.00")
+        rate_item = QTableWidgetItem("0.000")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         table.setItem(insert_at, 2, rate_item)
         sum_item = QTableWidgetItem("0.00")
@@ -229,7 +237,7 @@ class LanguagePairWidget(QWidget):
             total_new = 0.0
             for idx in range(min(3, table.rowCount())):
                 try:
-                    total_new += float(self._backup_volumes[idx] or "0")
+                    total_new += _to_float(self._backup_volumes[idx])
                 except ValueError:
                     pass
             if table.item(0, 1):
@@ -279,7 +287,10 @@ class LanguagePairWidget(QWidget):
             if base_rate_row is not None and rows[base_rate_row].get('deleted'):
                 base_rate_row = None
             if base_rate_row is not None and table.item(base_rate_row, 2):
-                base_rate = float(table.item(base_rate_row, 2).text() or "0")
+                base_rate = _to_float(table.item(base_rate_row, 2).text())
+                table.blockSignals(True)
+                table.item(base_rate_row, 2).setText(f"{base_rate:.3f}")
+                table.blockSignals(False)
 
             subtotal = 0.0
             for row in range(table.rowCount()):
@@ -296,11 +307,15 @@ class LanguagePairWidget(QWidget):
                     auto_rate = base_rate * row_cfg["multiplier"]
                     if table.item(row, 2):
                         table.blockSignals(True)
-                        table.item(row, 2).setText(f"{auto_rate:.2f}")
+                        table.item(row, 2).setText(f"{auto_rate:.3f}")
                         table.blockSignals(False)
 
-                volume = float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0")
-                rate = float((table.item(row, 2).text() if table.item(row, 2) else "0") or "0")
+                volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
+                rate_item = table.item(row, 2)
+                rate = _to_float(rate_item.text() if rate_item else "0")
+                table.blockSignals(True)
+                rate_item.setText(f"{rate:.3f}")
+                table.blockSignals(False)
                 total = volume * rate
                 if table.item(row, 3):
                     table.blockSignals(True)
@@ -340,9 +355,9 @@ class LanguagePairWidget(QWidget):
                 continue
             out.append({
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
-                "volume": float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0"),
-                "rate":   float((table.item(row, 2).text() if table.item(row, 2) else "0") or "0"),
-                "total":  float((table.item(row, 3).text() if table.item(row, 3) else "0") or "0"),
+                "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
+                "rate":   _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
+                "total":  _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
                 "is_base": rows_cfg[row].get("is_base", False),
                 "multiplier": rows_cfg[row].get("multiplier"),
             })
@@ -360,7 +375,7 @@ class LanguagePairWidget(QWidget):
                 table.insertRow(r)
                 table.setItem(r, 0, QTableWidgetItem("Новая строка"))
                 table.setItem(r, 1, QTableWidgetItem("0"))
-                rate_item = QTableWidgetItem("0.00")
+                rate_item = QTableWidgetItem("0.000")
                 rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 table.setItem(r, 2, rate_item)
                 sum_item = QTableWidgetItem("0.00")
@@ -372,8 +387,8 @@ class LanguagePairWidget(QWidget):
             if row < table.rowCount():
                 table.item(row, 0).setText(row_data.get("parameter", ""))
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                table.item(row, 2).setText(str(row_data.get("rate", 0)))
-                table.item(row, 3).setText(str(row_data.get("total", 0)))
+                table.item(row, 2).setText(f"{row_data.get('rate', 0):.3f}")
+                table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
                 rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
                 rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
                 if rows[row].get("is_base"):
