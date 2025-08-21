@@ -199,6 +199,7 @@ class TranslationCostCalculator(QMainWindow):
             self.current_pm = self.pm_managers[self.pm_last_index]
         else:
             self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
+        self.only_new_repeats_mode = False
         self.setup_ui()
         self.setup_style()
 
@@ -417,6 +418,10 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_container_widget = QWidget()
         self.pairs_layout = QVBoxLayout()
 
+        self.only_new_repeats_btn = QPushButton("Только новые слова и повторы")
+        self.only_new_repeats_btn.clicked.connect(self.apply_only_new_repeats_mode)
+        self.pairs_layout.addWidget(self.only_new_repeats_btn)
+
         # Таблица запуска и управления проектом
         self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
         self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
@@ -479,6 +484,14 @@ class TranslationCostCalculator(QMainWindow):
             self.drop_hint_label = None
         if isinstance(self.pairs_scroll, DropArea):
             self.pairs_scroll.disable_hint_style()
+
+    def apply_only_new_repeats_mode(self):
+        if self.only_new_repeats_mode:
+            return
+        self.only_new_repeats_mode = True
+        for w in self.language_pairs.values():
+            w.apply_only_new_and_repeats()
+        self.only_new_repeats_btn.setEnabled(False)
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -585,6 +598,8 @@ class TranslationCostCalculator(QMainWindow):
         widget = LanguagePairWidget(display_name)  # только Перевод
         widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
         self.language_pairs[pair_key] = widget
+        if self.only_new_repeats_mode:
+            widget.apply_only_new_and_repeats()
 
         # Вставляем новый виджет перед растягивающимся элементом
         self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
@@ -685,30 +700,62 @@ class TranslationCostCalculator(QMainWindow):
                     print(f"Updating existing widget for pair: {pair_key}")
                     updated_pairs += 1
 
+                if self.only_new_repeats_mode:
+                    widget.apply_only_new_and_repeats()
+
                 # Обновляем данные в таблице перевода
                 group = widget.translation_group
                 table = group.table
                 group.setChecked(True)
 
-                total_volume = 0
-                for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
-                    row_name = row_info["name"]
-                    add_val = volumes.get(row_name, 0)
-                    total_volume += add_val
-
+                if self.only_new_repeats_mode:
+                    new_total = 0
+                    repeat_total = 0
+                    repeat_name = "Перевод, повторы и 100% совпадения (30%)"
+                    for row_name, add_val in volumes.items():
+                        if row_name == repeat_name:
+                            repeat_total += add_val
+                        else:
+                            new_total += add_val
+                    total_volume = new_total + repeat_total
                     if replace:
-                        table.item(idx, 1).setText(str(add_val))
-                        print(f"  Set {row_name}: {add_val}")
+                        table.item(0, 1).setText(str(new_total))
+                        table.item(1, 1).setText(str(repeat_total))
+                        print(f"  Set new words: {new_total}")
+                        print(f"  Set repeats: {repeat_total}")
                     else:
                         try:
-                            prev_text = table.item(idx, 1).text() if table.item(idx, 1) else "0"
-                            prev = float(prev_text or "0")
-                            new_val = prev + add_val
-                            table.item(idx, 1).setText(str(new_val))
-                            print(f"  Updated {row_name}: {prev} + {add_val} = {new_val}")
-                        except (ValueError, TypeError) as e:
-                            print(f"  Error updating {row_name}: {e}")
+                            prev_new = float(table.item(0, 1).text() if table.item(0, 1) else "0")
+                        except ValueError:
+                            prev_new = 0
+                        try:
+                            prev_rep = float(table.item(1, 1).text() if table.item(1, 1) else "0")
+                        except ValueError:
+                            prev_rep = 0
+                        table.item(0, 1).setText(str(prev_new + new_total))
+                        table.item(1, 1).setText(str(prev_rep + repeat_total))
+                        print(f"  Updated new words: {prev_new} + {new_total} = {prev_new + new_total}")
+                        print(f"  Updated repeats: {prev_rep} + {repeat_total} = {prev_rep + repeat_total}")
+                else:
+                    total_volume = 0
+                    for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
+                        row_name = row_info["name"]
+                        add_val = volumes.get(row_name, 0)
+                        total_volume += add_val
+
+                        if replace:
                             table.item(idx, 1).setText(str(add_val))
+                            print(f"  Set {row_name}: {add_val}")
+                        else:
+                            try:
+                                prev_text = table.item(idx, 1).text() if table.item(idx, 1) else "0"
+                                prev = float(prev_text or "0")
+                                new_val = prev + add_val
+                                table.item(idx, 1).setText(str(new_val))
+                                print(f"  Updated {row_name}: {prev} + {add_val} = {new_val}")
+                            except (ValueError, TypeError) as e:
+                                print(f"  Error updating {row_name}: {e}")
+                                table.item(idx, 1).setText(str(add_val))
 
                 print(f"  Total volume for {pair_key}: {total_volume}")
 

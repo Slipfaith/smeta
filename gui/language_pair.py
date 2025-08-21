@@ -18,6 +18,7 @@ class LanguagePairWidget(QWidget):
     def __init__(self, pair_name: str):
         super().__init__()
         self.pair_name = pair_name
+        self.only_new_repeats_mode = False
         self.setup_ui()
 
     # ---------------- UI ----------------
@@ -35,6 +36,7 @@ class LanguagePairWidget(QWidget):
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить")
         remove_btn.setStyleSheet("background-color: transparent; border: none;")
+        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
         remove_btn.clicked.connect(self.remove_requested.emit)
         header.addWidget(remove_btn)
         layout.addLayout(header)
@@ -203,6 +205,38 @@ class LanguagePairWidget(QWidget):
         self.update_rates_and_sums(table, rows, base_rate_row)
 
     # ---------------- Logic ----------------
+    def apply_only_new_and_repeats(self):
+        """Сводит таблицу к двум строкам: новые слова и повторы."""
+        if self.only_new_repeats_mode:
+            return
+        group = self.translation_group
+        table: QTableWidget = group.table
+        rows = group.rows_config
+        if table.rowCount() <= 2:
+            self.only_new_repeats_mode = True
+            return
+
+        total_new = 0.0
+        for idx in range(min(3, table.rowCount())):
+            item = table.item(idx, 1)
+            try:
+                total_new += float(item.text() if item else "0")
+            except ValueError:
+                pass
+        if table.item(0, 1):
+            table.item(0, 1).setText(str(total_new))
+
+        for idx in [2, 1]:
+            if table.rowCount() > idx:
+                table.removeRow(idx)
+            if len(rows) > idx:
+                rows.pop(idx)
+
+        setattr(group, 'base_rate_row', 0)
+        self.only_new_repeats_mode = True
+        self.update_rates_and_sums(table, rows, 0)
+        self._fit_table_height(table)
+
     def _fit_table_height(self, table: QTableWidget):
         """Делает таблицу фиксированной высоты по всем строкам (без внутреннего скролла)."""
         header_h = table.horizontalHeader().height()

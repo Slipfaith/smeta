@@ -29,6 +29,7 @@ class ProjectSetupWidget(QWidget):
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить")
         remove_btn.setStyleSheet("background-color: transparent; border: none;")
+        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
         remove_btn.clicked.connect(self.remove_requested.emit)
         header.addWidget(remove_btn)
         layout.addLayout(header)

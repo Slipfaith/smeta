@@ -38,4 +38,10 @@ QTableWidget {
     border: 1px solid #ddd;
     border-radius: 4px;
 }
+QToolTip {
+    color: #ffffff;
+    background-color: #333333;
+    border: 1px solid #555555;
+    padding: 3px;
+}
 """
