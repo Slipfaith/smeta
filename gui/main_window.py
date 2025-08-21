@@ -217,6 +217,14 @@ class TranslationCostCalculator(QMainWindow):
         load_action.triggered.connect(self.load_project)
         project_menu.addAction(load_action)
 
+        export_menu = self.menuBar().addMenu("Экспорт")
+        save_excel_action = QAction("Сохранить Excel", self)
+        save_excel_action.triggered.connect(self.save_excel)
+        export_menu.addAction(save_excel_action)
+        save_pdf_action = QAction("Сохранить PDF", self)
+        save_pdf_action.triggered.connect(self.save_pdf)
+        export_menu.addAction(save_pdf_action)
+
         pm_action = QAction("Проджект менеджер", self)
         pm_action.triggered.connect(self.show_pm_dialog)
         self.menuBar().addAction(pm_action)
@@ -347,18 +355,6 @@ class TranslationCostCalculator(QMainWindow):
 
         pairs_group.setLayout(pg);
         lay.addWidget(pairs_group)
-
-        # Действия
-        actions = QGroupBox("Действия");
-        a = QVBoxLayout()
-        self.save_excel_btn = QPushButton("Сохранить Excel");
-        self.save_excel_btn.clicked.connect(self.save_excel);
-        a.addWidget(self.save_excel_btn)
-        self.save_pdf_btn = QPushButton("Сохранить PDF");
-        self.save_pdf_btn.clicked.connect(self.save_pdf);
-        a.addWidget(self.save_pdf_btn)
-        actions.setLayout(a);
-        lay.addWidget(actions)
 
         lay.addStretch()
         container.setLayout(lay)
