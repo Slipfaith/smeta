@@ -226,6 +226,8 @@ class ExcelExporter:
                         "parameter": r.get("parameter", ""),
                         "volume": float(r.get("volume") or 0),
                         "rate": float(r.get("rate") or 0),
+                        "multiplier": r.get("multiplier"),
+                        "is_base": bool(r.get("is_base")),
                     })
 
             # Подгонка количества строк данных
@@ -265,16 +267,31 @@ class ExcelExporter:
             col_total = hmap.get("total", 6)
 
             r = t_first_data
+            row_numbers: List[int] = []
             for it in items:
+                row_numbers.append(r)
                 ws.cell(r, col_param, it["parameter"])
                 ws.cell(r, col_type, "")
                 ws.cell(r, col_unit, "Слово")
                 ws.cell(r, col_qty, it["volume"])
-                ws.cell(r, col_rate, it["rate"])
-                qtyL = get_column_letter(col_qty)
-                rateL = get_column_letter(col_rate)
-                ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
                 r += 1
+
+            base_idx = next((idx for idx, it in enumerate(items) if it.get("is_base")), None)
+            base_rate_cell = None
+            if base_idx is not None and base_idx < len(row_numbers):
+                base_rate_cell = f"{get_column_letter(col_rate)}{row_numbers[base_idx]}"
+
+            qtyL = get_column_letter(col_qty)
+            rateL = get_column_letter(col_rate)
+            for idx, it in enumerate(items):
+                rr = row_numbers[idx]
+                if it.get("is_base"):
+                    ws.cell(rr, col_rate, it["rate"])
+                elif base_rate_cell and it.get("multiplier") is not None:
+                    ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
+                else:
+                    ws.cell(rr, col_rate, it["rate"])
+                ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
 
             # Субтотал (заменяем плейсхолдер и ставим формулу)
             for c in range(1, ws.max_column + 1):

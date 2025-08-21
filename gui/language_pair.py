@@ -274,6 +274,8 @@ class LanguagePairWidget(QWidget):
                 "volume": float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0"),
                 "rate":   float((table.item(row, 2).text() if table.item(row, 2) else "0") or "0"),
                 "total":  float((table.item(row, 3).text() if table.item(row, 3) else "0") or "0"),
+                "is_base": rows_cfg[row].get("is_base", False),
+                "multiplier": rows_cfg[row].get("multiplier"),
             })
         return out
 
@@ -281,7 +283,7 @@ class LanguagePairWidget(QWidget):
         group = self.translation_group
         table = group.table
         rows = group.rows_config
-        base_rate_row = group.base_rate_row
+        base_rate_row = None
 
         if len(data) > table.rowCount():
             for _ in range(len(data) - table.rowCount()):
@@ -303,6 +305,11 @@ class LanguagePairWidget(QWidget):
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
                 table.item(row, 2).setText(str(row_data.get("rate", 0)))
                 table.item(row, 3).setText(str(row_data.get("total", 0)))
+                rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
+                rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
+                if rows[row].get("is_base"):
+                    base_rate_row = row
 
+        setattr(group, 'base_rate_row', base_rate_row)
         self.update_rates_and_sums(table, rows, base_rate_row)
         self._fit_table_height(table)
