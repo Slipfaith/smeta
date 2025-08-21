@@ -51,6 +51,24 @@ PS_HDR_TITLES = {
     PS_HDR["total"]: "Итого",
 }
 
+# блок дополнительных услуг
+ADD_START_PH = "{{add.service_table}}"
+ADD_END_PH = "{{subtotal.add.service}}"
+ADD_HDR = {
+    "param": "{{add.service.taskname}}",
+    "unit": "{{add.service.unit}}",
+    "qty": "{{add.service.quantity}}",
+    "rate": "{{add.service.rate}}",
+    "total": "{{add.service.table}}",
+}
+ADD_HDR_TITLES = {
+    ADD_HDR["param"]: "Параметр",
+    ADD_HDR["unit"]: "Ед-ца",
+    ADD_HDR["qty"]: "Кол-во",
+    ADD_HDR["rate"]: "Ставка",
+    ADD_HDR["total"]: "Итого",
+}
+
 
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
@@ -73,6 +91,9 @@ class ExcelExporter:
             if ps_cell:
                 subtot_cells.append(ps_cell)
             subtot_cells += self._render_translation_blocks(ws, project_data)
+            add_cell = self._render_additional_services_table(ws, project_data)
+            if add_cell:
+                subtot_cells.append(add_cell)
             self._fill_text_placeholders(ws, project_data, subtot_cells)
 
             wb.save(output_path)
@@ -407,6 +428,101 @@ class ExcelExporter:
 
         for c in range(1, ws.max_column + 1):
             if ws.cell(t_subtotal_row, c).value == PS_END_PH:
+                ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
+                break
+
+        totalL = get_column_letter(col_total)
+        if r == t_first_data:
+            subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
+        else:
+            subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+        subtotal_cell.number_format = "0.00"
+
+        return f"{totalL}{t_subtotal_row}"
+
+    def _render_additional_services_table(self, ws: Worksheet, project_data: Dict[str, Any]) -> Optional[str]:
+        block = project_data.get("additional_services") or {}
+        items: List[Dict[str, Any]] = block.get("rows", [])
+        if not items:
+            return None
+
+        start = self._find_first(ws, ADD_START_PH)
+        if not start:
+            return None
+        start_row, _ = start
+        end = self._find_below(ws, start_row, ADD_END_PH)
+        if not end:
+            raise RuntimeError("В шаблоне не найден {{subtotal.add.service}} ниже {{add.service_table}}")
+        end_row, _ = end
+
+        template_height = end_row - start_row + 1
+        headers_rel = 1
+        first_data_rel = 2
+        subtotal_rel = template_height - 1
+
+        block_top = start_row
+        t_headers_row = block_top + headers_rel
+        t_first_data = block_top + first_data_rel
+        t_subtotal_row = block_top + subtotal_rel
+
+        # Заголовок блока
+        header_title = block.get("header_title", "Дополнительные услуги")
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(block_top, c).value == ADD_START_PH:
+                ws.cell(block_top, c, header_title)
+                break
+
+        # Заголовки колонок
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(t_headers_row, c).value
+            if isinstance(v, str) and v.strip() in ADD_HDR_TITLES:
+                ws.cell(t_headers_row, c, ADD_HDR_TITLES[v.strip()])
+
+        hmap = self._header_map(ws, t_headers_row, ADD_HDR)
+
+        need = len(items)
+        cur_cap = max(0, t_subtotal_row - t_first_data)
+        if need > cur_cap:
+            add = need - cur_cap
+            ws.insert_rows(t_subtotal_row, add)
+            tpl_row = t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
+            for k in range(add):
+                dst = t_subtotal_row + k
+                for c in range(1, ws.max_column + 1):
+                    self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
+            t_subtotal_row += add
+        elif need < cur_cap:
+            delete_count = cur_cap - need
+            if delete_count > 0:
+                ws.delete_rows(t_first_data + need, delete_count)
+                t_subtotal_row -= delete_count
+
+        # очистка строк
+        for rr in range(t_first_data, t_subtotal_row):
+            for c in range(1, ws.max_column + 1):
+                ws.cell(rr, c).value = None
+
+        col_param = hmap.get("param", 1)
+        col_unit = hmap.get("unit", 2)
+        col_qty = hmap.get("qty", 3)
+        col_rate = hmap.get("rate", 4)
+        col_total = hmap.get("total", 5)
+
+        r = t_first_data
+        for it in items:
+            ws.cell(r, col_param, it.get("parameter", ""))
+            ws.cell(r, col_unit, it.get("unit", ""))
+            ws.cell(r, col_qty, it.get("volume", 0))
+            rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
+            rate_cell.number_format = "0.000"
+            qtyL = get_column_letter(col_qty)
+            rateL = get_column_letter(col_rate)
+            total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
+            total_cell.number_format = "0.00"
+            r += 1
+
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(t_subtotal_row, c).value == ADD_END_PH:
                 ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
                 break
 
