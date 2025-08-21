@@ -2,13 +2,15 @@ from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QMenu
+    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 
 class ProjectSetupWidget(QWidget):
     """Table for project setup and management costs."""
+
+    remove_requested = Signal()
 
     def __init__(self, initial_volume: float = 0.0):
         super().__init__()
@@ -17,7 +19,20 @@ class ProjectSetupWidget(QWidget):
     def _setup_ui(self, initial_volume: float):
         layout = QVBoxLayout()
 
-        group = QGroupBox("Запуск и управление проектом")
+        header = QHBoxLayout()
+        title = QLabel("Запуск и управление проектом")
+        header.addWidget(title)
+        header.addStretch()
+        remove_btn = QPushButton()
+        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        remove_btn.setFlat(True)
+        remove_btn.setMaximumWidth(24)
+        remove_btn.setToolTip("Удалить")
+        remove_btn.clicked.connect(self.remove_requested.emit)
+        header.addWidget(remove_btn)
+        layout.addLayout(header)
+
+        group = QGroupBox()
         group.setCheckable(False)
         vbox = QVBoxLayout()
 
