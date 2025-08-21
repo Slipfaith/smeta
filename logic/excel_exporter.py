@@ -33,6 +33,24 @@ HDR_TITLES = {
 }
 SUBTOTAL_TITLE = "Промежуточная сумма (Руб):"
 
+# блок запуска и управления проектом
+PS_START_PH = "{{project_setup}}"
+PS_END_PH = "{{subtotal_project_setup}}"
+PS_HDR = {
+    "param": "{{taskname.project_setup}}",
+    "unit": "{{unit.project_setup}}",
+    "qty": "{{quantity.project_setup}}",
+    "rate": "{{rate.project_setup}}",
+    "total": "{{total_{project_setup_table}}}",
+}
+PS_HDR_TITLES = {
+    PS_HDR["param"]: "Названия работ",
+    PS_HDR["unit"]: "час",
+    PS_HDR["qty"]: "Кол-во",
+    PS_HDR["rate"]: "Ставка",
+    PS_HDR["total"]: "Итого",
+}
+
 
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
@@ -50,7 +68,11 @@ class ExcelExporter:
             wb = load_workbook(self.template_path)
             ws = wb.active
 
-            subtot_cells = self._render_translation_blocks(ws, project_data)
+            subtot_cells: List[str] = []
+            ps_cell = self._render_project_setup_table(ws, project_data)
+            if ps_cell:
+                subtot_cells.append(ps_cell)
+            subtot_cells += self._render_translation_blocks(ws, project_data)
             self._fill_text_placeholders(ws, project_data, subtot_cells)
 
             wb.save(output_path)
@@ -130,13 +152,13 @@ class ExcelExporter:
 
     # ----------------------------- МАП КОЛОНОК -----------------------------
 
-    def _header_map(self, ws: Worksheet, headers_row: int) -> Dict[str, int]:
+    def _header_map(self, ws: Worksheet, headers_row: int, hdr_tokens: Dict[str, str] = HDR) -> Dict[str, int]:
         mapping: Dict[str, int] = {}
         for c in range(1, ws.max_column + 1):
             v = ws.cell(headers_row, c).value
             if isinstance(v, str):
                 t = v.strip()
-                for key, tok in HDR.items():
+                for key, tok in hdr_tokens.items():
                     if t == tok:
                         mapping[key] = c
         if not mapping:
@@ -272,6 +294,96 @@ class ExcelExporter:
             current_row = t_subtotal_row + 1
 
         return subtot_cells
+
+    def _render_project_setup_table(self, ws: Worksheet, project_data: Dict[str, Any]) -> Optional[str]:
+        items: List[Dict[str, Any]] = project_data.get("project_setup", [])
+        if not items:
+            return None
+
+        start = self._find_first(ws, PS_START_PH)
+        if not start:
+            return None
+        start_row, _ = start
+        end = self._find_below(ws, start_row, PS_END_PH)
+        if not end:
+            raise RuntimeError("В шаблоне не найден {{subtotal_project_setup}} ниже {{project_setup}}")
+        end_row, _ = end
+
+        template_height = end_row - start_row + 1
+        headers_rel = 1
+        first_data_rel = 2
+        subtotal_rel = template_height - 1
+
+        block_top = start_row
+        t_headers_row = block_top + headers_rel
+        t_first_data = block_top + first_data_rel
+        t_subtotal_row = block_top + subtotal_rel
+
+        # Заголовок блока
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(block_top, c).value == PS_START_PH:
+                ws.cell(block_top, c, "Запуск и управление проектом")
+                break
+
+        # Заголовки колонок
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(t_headers_row, c).value
+            if isinstance(v, str) and v.strip() in PS_HDR_TITLES:
+                ws.cell(t_headers_row, c, PS_HDR_TITLES[v.strip()])
+
+        hmap = self._header_map(ws, t_headers_row, PS_HDR)
+
+        need = len(items)
+        cur_cap = max(0, t_subtotal_row - t_first_data)
+        if need > cur_cap:
+            add = need - cur_cap
+            ws.insert_rows(t_subtotal_row, add)
+            tpl_row = t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
+            for k in range(add):
+                dst = t_subtotal_row + k
+                for c in range(1, ws.max_column + 1):
+                    self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
+            t_subtotal_row += add
+        elif need < cur_cap:
+            delete_count = cur_cap - need
+            if delete_count > 0:
+                ws.delete_rows(t_first_data + need, delete_count)
+                t_subtotal_row -= delete_count
+
+        # очистка строк
+        for rr in range(t_first_data, t_subtotal_row):
+            for c in range(1, ws.max_column + 1):
+                ws.cell(rr, c).value = None
+
+        col_param = hmap.get("param", 1)
+        col_unit = hmap.get("unit", 3)
+        col_qty = hmap.get("qty", 4)
+        col_rate = hmap.get("rate", 5)
+        col_total = hmap.get("total", 6)
+
+        r = t_first_data
+        for it in items:
+            ws.cell(r, col_param, it.get("parameter", ""))
+            ws.cell(r, col_unit, "час")
+            ws.cell(r, col_qty, it.get("volume", 0))
+            ws.cell(r, col_rate, it.get("rate", 0))
+            qtyL = get_column_letter(col_qty)
+            rateL = get_column_letter(col_rate)
+            ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
+            r += 1
+
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(t_subtotal_row, c).value == PS_END_PH:
+                ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
+                break
+
+        totalL = get_column_letter(col_total)
+        if r == t_first_data:
+            ws.cell(t_subtotal_row, col_total, 0)
+        else:
+            ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+
+        return f"{totalL}{t_subtotal_row}"
 
     # ----------------------------- ТЕКСТОВЫЕ ПЛЕЙСХОЛДЕРЫ -----------------------------
 

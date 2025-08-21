@@ -12,8 +12,9 @@ from PySide6.QtGui import QAction
 
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
-from gui.styles import APP_STYLE
 from gui.project_manager_dialog import ProjectManagerDialog
+from gui.project_setup_widget import ProjectSetupWidget
+from gui.styles import APP_STYLE
 from logic.excel_exporter import ExcelExporter
 from logic.user_config import load_languages, add_language
 from logic.trados_xml_parser import parse_reports
@@ -420,6 +421,12 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_container_widget = QWidget()
         self.pairs_layout = QVBoxLayout()
 
+        # Таблица запуска и управления проектом
+        self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
+        self.pairs_layout.addWidget(self.project_setup_widget)
+        self.project_setup_fee_spin.valueChanged.connect(self.update_project_setup_volume_from_spin)
+        self.project_setup_widget.table.itemChanged.connect(self.on_project_setup_item_changed)
+
         # Добавляем подсказку для пользователя
         self.drop_hint_label = QLabel(
             "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения"
@@ -496,6 +503,21 @@ class TranslationCostCalculator(QMainWindow):
             else:
                 self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
             self.update_title()
+
+    # ---------- PROJECT SETUP ----------
+    def update_project_setup_volume_from_spin(self, value: float):
+        if hasattr(self, "project_setup_widget"):
+            self.project_setup_widget.set_volume(value)
+
+    def on_project_setup_item_changed(self, item):
+        if item.row() == 0 and item.column() == 1:
+            try:
+                val = float(item.text() or "0")
+            except ValueError:
+                val = 0
+            self.project_setup_fee_spin.blockSignals(True)
+            self.project_setup_fee_spin.setValue(val)
+            self.project_setup_fee_spin.blockSignals(False)
 
     # ---------- LANG ADD ----------
     def handle_add_language(self):
@@ -583,6 +605,7 @@ class TranslationCostCalculator(QMainWindow):
         self.project_setup_fee_spin.blockSignals(True)
         self.project_setup_fee_spin.setValue(auto_fee)
         self.project_setup_fee_spin.blockSignals(False)
+        self.update_project_setup_volume_from_spin(auto_fee)
 
     def remove_language_pair(self, pair_key: str):
         widget = self.language_pairs.pop(pair_key, None)
@@ -720,6 +743,7 @@ class TranslationCostCalculator(QMainWindow):
             "pm_name": self.current_pm.get("name_ru", ""),
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
+            "project_setup": self.project_setup_widget.get_data(),
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -816,15 +840,24 @@ class TranslationCostCalculator(QMainWindow):
             services = pair_data.get("services", {})
             if "translation" in services:
                 widget.translation_group.setChecked(True)
-                self.load_table_data(widget.translation_group.table, services["translation"])
+                widget.load_table_data(services["translation"])
 
         self.update_pairs_list()
 
-        fee = project_data.get("project_setup_fee")
-        if isinstance(fee, (int, float)):
+        ps_rows = project_data.get("project_setup")
+        if ps_rows:
+            self.project_setup_widget.load_data(ps_rows)
+            first_vol = ps_rows[0].get("volume", 0)
             self.project_setup_fee_spin.blockSignals(True)
-            self.project_setup_fee_spin.setValue(fee)
+            self.project_setup_fee_spin.setValue(first_vol)
             self.project_setup_fee_spin.blockSignals(False)
+        else:
+            fee = project_data.get("project_setup_fee")
+            if isinstance(fee, (int, float)):
+                self.project_setup_fee_spin.blockSignals(True)
+                self.project_setup_fee_spin.setValue(fee)
+                self.project_setup_fee_spin.blockSignals(False)
+                self.project_setup_widget.set_volume(fee)
 
         additional = project_data.get("additional_services", {})
         for name, data in additional.items():

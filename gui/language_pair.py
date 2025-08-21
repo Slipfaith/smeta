@@ -88,6 +88,47 @@ class LanguagePairWidget(QWidget):
 
         vbox.addWidget(table)
 
+        # кнопки добавления/удаления строк
+        controls = QHBoxLayout()
+        add_btn = QPushButton("Добавить строку")
+        del_btn = QPushButton("Удалить строку")
+        controls.addWidget(add_btn)
+        controls.addWidget(del_btn)
+        controls.addStretch()
+        vbox.addLayout(controls)
+
+        def add_row():
+            r = table.rowCount()
+            table.insertRow(r)
+            table.setItem(r, 0, QTableWidgetItem("Новая строка"))
+            table.setItem(r, 1, QTableWidgetItem("0"))
+            table.setItem(r, 2, QTableWidgetItem("0.00"))
+            sum_item = QTableWidgetItem("0.00")
+            sum_item.setFlags(Qt.ItemIsEnabled)
+            table.setItem(r, 3, sum_item)
+            rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0})
+            self.update_rates_and_sums(table, rows, base_rate_row)
+            self._fit_table_height(table)
+
+        def del_row():
+            nonlocal base_rate_row
+            row = table.currentRow()
+            if row >= 0:
+                table.removeRow(row)
+                if 0 <= row < len(rows):
+                    rows.pop(row)
+                if base_rate_row is not None:
+                    if row == base_rate_row:
+                        base_rate_row = None
+                    elif row < base_rate_row:
+                        base_rate_row -= 1
+                setattr(group, 'base_rate_row', base_rate_row)
+                self.update_rates_and_sums(table, rows, base_rate_row)
+                self._fit_table_height(table)
+
+        add_btn.clicked.connect(add_row)
+        del_btn.clicked.connect(del_row)
+
         # Промежуточная сумма
         subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
         subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -180,3 +221,31 @@ class LanguagePairWidget(QWidget):
                 "total":  float((table.item(row, 3).text() if table.item(row, 3) else "0") or "0"),
             })
         return out
+
+    def load_table_data(self, data: List[Dict[str, Any]]):
+        group = self.translation_group
+        table = group.table
+        rows = group.rows_config
+        base_rate_row = group.base_rate_row
+
+        if len(data) > table.rowCount():
+            for _ in range(len(data) - table.rowCount()):
+                r = table.rowCount()
+                table.insertRow(r)
+                table.setItem(r, 0, QTableWidgetItem("Новая строка"))
+                table.setItem(r, 1, QTableWidgetItem("0"))
+                table.setItem(r, 2, QTableWidgetItem("0.00"))
+                sum_item = QTableWidgetItem("0.00")
+                sum_item.setFlags(Qt.ItemIsEnabled)
+                table.setItem(r, 3, sum_item)
+                rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0})
+
+        for row, row_data in enumerate(data):
+            if row < table.rowCount():
+                table.item(row, 0).setText(row_data.get("parameter", ""))
+                table.item(row, 1).setText(str(row_data.get("volume", 0)))
+                table.item(row, 2).setText(str(row_data.get("rate", 0)))
+                table.item(row, 3).setText(str(row_data.get("total", 0)))
+
+        self.update_rates_and_sums(table, rows, base_rate_row)
+        self._fit_table_height(table)
