@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton
+    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton, QMenu
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -50,6 +50,8 @@ class LanguagePairWidget(QWidget):
 
         vbox = QVBoxLayout()
 
+        rows = [dict(r, deleted=False) for r in rows]
+
         table = QTableWidget(len(rows), 4)
         table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
 
@@ -66,14 +68,14 @@ class LanguagePairWidget(QWidget):
 
             rate_item = QTableWidgetItem("0.00")
             if not row_info["is_base"]:
-                rate_item.setFlags(Qt.ItemIsEnabled)
+                rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             else:
                 if base_rate_row is None:
                     base_rate_row = i
             table.setItem(i, 2, rate_item)
 
             sum_item = QTableWidgetItem("0.00")
-            sum_item.setFlags(Qt.ItemIsEnabled)
+            sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             table.setItem(i, 3, sum_item)
 
         # Автоподгон ширин
@@ -84,50 +86,36 @@ class LanguagePairWidget(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
         # Пересчёт ставок/сумм
-        table.itemChanged.connect(lambda item: self.update_rates_and_sums(table, rows, base_rate_row))
+        table.itemChanged.connect(
+            lambda item, t=table, r=rows, g=group: self.update_rates_and_sums(t, r, getattr(g, 'base_rate_row'))
+        )
 
         vbox.addWidget(table)
 
-        # кнопки добавления/удаления строк
-        controls = QHBoxLayout()
-        add_btn = QPushButton("Добавить строку")
-        del_btn = QPushButton("Удалить строку")
-        controls.addWidget(add_btn)
-        controls.addWidget(del_btn)
-        controls.addStretch()
-        vbox.addLayout(controls)
+        # контекстное меню для добавления/удаления/восстановления строк
+        def show_menu(pos):
+            row = table.rowAt(pos.y())
+            if row < 0:
+                return
+            menu = QMenu(table)
+            add_act = menu.addAction("Добавить строку")
+            del_act = menu.addAction("Удалить строку")
+            restore_act = menu.addAction("Восстановить строку")
+            row_cfg = rows[row]
+            if row_cfg.get("deleted"):
+                del_act.setEnabled(False)
+            else:
+                restore_act.setEnabled(False)
+            action = menu.exec(table.mapToGlobal(pos))
+            if action == add_act:
+                self._add_row_after(table, rows, group, row)
+            elif action == del_act:
+                self._delete_row(table, rows, group, row)
+            elif action == restore_act:
+                self._restore_row(table, rows, group, row)
 
-        def add_row():
-            r = table.rowCount()
-            table.insertRow(r)
-            table.setItem(r, 0, QTableWidgetItem("Новая строка"))
-            table.setItem(r, 1, QTableWidgetItem("0"))
-            table.setItem(r, 2, QTableWidgetItem("0.00"))
-            sum_item = QTableWidgetItem("0.00")
-            sum_item.setFlags(Qt.ItemIsEnabled)
-            table.setItem(r, 3, sum_item)
-            rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0})
-            self.update_rates_and_sums(table, rows, base_rate_row)
-            self._fit_table_height(table)
-
-        def del_row():
-            nonlocal base_rate_row
-            row = table.currentRow()
-            if row >= 0:
-                table.removeRow(row)
-                if 0 <= row < len(rows):
-                    rows.pop(row)
-                if base_rate_row is not None:
-                    if row == base_rate_row:
-                        base_rate_row = None
-                    elif row < base_rate_row:
-                        base_rate_row -= 1
-                setattr(group, 'base_rate_row', base_rate_row)
-                self.update_rates_and_sums(table, rows, base_rate_row)
-                self._fit_table_height(table)
-
-        add_btn.clicked.connect(add_row)
-        del_btn.clicked.connect(del_row)
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(show_menu)
 
         # Промежуточная сумма
         subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
@@ -149,6 +137,62 @@ class LanguagePairWidget(QWidget):
 
         return group
 
+    def _add_row_after(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+        base_rate_row = getattr(group, 'base_rate_row', None)
+        insert_at = row + 1
+        table.insertRow(insert_at)
+        table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
+        table.setItem(insert_at, 1, QTableWidgetItem("0"))
+        rate_item = QTableWidgetItem("0.00")
+        rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        table.setItem(insert_at, 2, rate_item)
+        sum_item = QTableWidgetItem("0.00")
+        sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        table.setItem(insert_at, 3, sum_item)
+        rows.insert(insert_at, {"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
+        if base_rate_row is not None and insert_at <= base_rate_row:
+            base_rate_row += 1
+            setattr(group, 'base_rate_row', base_rate_row)
+        self.update_rates_and_sums(table, rows, base_rate_row)
+        self._fit_table_height(table)
+
+    def _set_row_deleted(self, table: QTableWidget, rows: List[Dict], row: int, deleted: bool):
+        rows[row]['deleted'] = deleted
+        for col in range(table.columnCount()):
+            item = table.item(row, col)
+            if not item:
+                continue
+            if deleted:
+                item.setForeground(Qt.gray)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            else:
+                item.setForeground(Qt.black)
+                if col == 2:
+                    if rows[row]['is_base']:
+                        item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                    else:
+                        item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                elif col == 3:
+                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                else:
+                    item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+
+    def _delete_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+        base_rate_row = getattr(group, 'base_rate_row', None)
+        self._set_row_deleted(table, rows, row, True)
+        if base_rate_row == row:
+            base_rate_row = None
+            setattr(group, 'base_rate_row', base_rate_row)
+        self.update_rates_and_sums(table, rows, base_rate_row)
+
+    def _restore_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+        base_rate_row = getattr(group, 'base_rate_row', None)
+        self._set_row_deleted(table, rows, row, False)
+        if rows[row]['is_base'] and base_rate_row is None:
+            base_rate_row = row
+            setattr(group, 'base_rate_row', base_rate_row)
+        self.update_rates_and_sums(table, rows, base_rate_row)
+
     # ---------------- Logic ----------------
     def _fit_table_height(self, table: QTableWidget):
         """Делает таблицу фиксированной высоты по всем строкам (без внутреннего скролла)."""
@@ -163,12 +207,20 @@ class LanguagePairWidget(QWidget):
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
             base_rate = 0.0
+            if base_rate_row is not None and rows[base_rate_row].get('deleted'):
+                base_rate_row = None
             if base_rate_row is not None and table.item(base_rate_row, 2):
                 base_rate = float(table.item(base_rate_row, 2).text() or "0")
 
             subtotal = 0.0
             for row in range(table.rowCount()):
                 row_cfg = rows[row]
+                if row_cfg.get('deleted'):
+                    if table.item(row, 3):
+                        table.blockSignals(True)
+                        table.item(row, 3).setText("0.00")
+                        table.blockSignals(False)
+                    continue
 
                 # авто-ставки для непервой строки
                 if not row_cfg["is_base"] and base_rate_row is not None:
@@ -213,7 +265,10 @@ class LanguagePairWidget(QWidget):
 
     def _get_table_data(self, table: QTableWidget) -> List[Dict[str, Any]]:
         out = []
+        rows_cfg = self.translation_group.rows_config
         for row in range(table.rowCount()):
+            if rows_cfg[row].get('deleted'):
+                continue
             out.append({
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
                 "volume": float((table.item(row, 1).text() if table.item(row, 1) else "0") or "0"),
@@ -234,11 +289,13 @@ class LanguagePairWidget(QWidget):
                 table.insertRow(r)
                 table.setItem(r, 0, QTableWidgetItem("Новая строка"))
                 table.setItem(r, 1, QTableWidgetItem("0"))
-                table.setItem(r, 2, QTableWidgetItem("0.00"))
+                rate_item = QTableWidgetItem("0.00")
+                rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(r, 2, rate_item)
                 sum_item = QTableWidgetItem("0.00")
-                sum_item.setFlags(Qt.ItemIsEnabled)
+                sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 table.setItem(r, 3, sum_item)
-                rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0})
+                rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
 
         for row, row_data in enumerate(data):
             if row < table.rowCount():
