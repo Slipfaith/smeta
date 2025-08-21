@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton, QMenu
+    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton, QMenu, QStyle
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -29,7 +29,11 @@ class LanguagePairWidget(QWidget):
         title.setFont(QFont("Arial", 10, QFont.Bold))
         header.addWidget(title)
         header.addStretch()
-        remove_btn = QPushButton("Удалить")
+        remove_btn = QPushButton()
+        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        remove_btn.setFlat(True)
+        remove_btn.setMaximumWidth(24)
+        remove_btn.setToolTip("Удалить")
         remove_btn.clicked.connect(self.remove_requested.emit)
         header.addWidget(remove_btn)
         layout.addLayout(header)

@@ -419,6 +419,7 @@ class TranslationCostCalculator(QMainWindow):
 
         # Таблица запуска и управления проектом
         self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
+        self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
         self.pairs_layout.addWidget(self.project_setup_widget)
         self.project_setup_fee_spin.valueChanged.connect(self.update_project_setup_volume_from_spin)
         self.project_setup_widget.table.itemChanged.connect(self.on_project_setup_item_changed)
@@ -502,7 +503,7 @@ class TranslationCostCalculator(QMainWindow):
 
     # ---------- PROJECT SETUP ----------
     def update_project_setup_volume_from_spin(self, value: float):
-        if hasattr(self, "project_setup_widget"):
+        if getattr(self, "project_setup_widget", None):
             self.project_setup_widget.set_volume(value)
 
     def on_project_setup_item_changed(self, item):
@@ -514,6 +515,11 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_fee_spin.blockSignals(True)
             self.project_setup_fee_spin.setValue(val)
             self.project_setup_fee_spin.blockSignals(False)
+
+    def remove_project_setup_widget(self):
+        if getattr(self, "project_setup_widget", None):
+            self.project_setup_widget.setParent(None)
+            self.project_setup_widget = None
 
     # ---------- LANG ADD ----------
     def handle_add_language(self):
@@ -739,7 +745,7 @@ class TranslationCostCalculator(QMainWindow):
             "pm_name": self.current_pm.get("name_ru", ""),
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
-            "project_setup": self.project_setup_widget.get_data(),
+            "project_setup": self.project_setup_widget.get_data() if self.project_setup_widget else [],
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -842,6 +848,11 @@ class TranslationCostCalculator(QMainWindow):
 
         ps_rows = project_data.get("project_setup")
         if ps_rows:
+            if not self.project_setup_widget:
+                self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
+                self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
+                self.project_setup_widget.table.itemChanged.connect(self.on_project_setup_item_changed)
+                self.pairs_layout.insertWidget(0, self.project_setup_widget)
             self.project_setup_widget.load_data(ps_rows)
             first_vol = ps_rows[0].get("volume", 0)
             self.project_setup_fee_spin.blockSignals(True)
@@ -853,7 +864,8 @@ class TranslationCostCalculator(QMainWindow):
                 self.project_setup_fee_spin.blockSignals(True)
                 self.project_setup_fee_spin.setValue(fee)
                 self.project_setup_fee_spin.blockSignals(False)
-                self.project_setup_widget.set_volume(fee)
+                if self.project_setup_widget:
+                    self.project_setup_widget.set_volume(fee)
 
         additional = project_data.get("additional_services", {})
         for name, data in additional.items():
