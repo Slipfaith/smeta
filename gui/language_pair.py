@@ -34,6 +34,7 @@ class LanguagePairWidget(QWidget):
         remove_btn.setFlat(True)
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить")
+        remove_btn.setStyleSheet("background-color: transparent; border: none;")
         remove_btn.clicked.connect(self.remove_requested.emit)
         header.addWidget(remove_btn)
         layout.addLayout(header)
@@ -110,6 +111,8 @@ class LanguagePairWidget(QWidget):
                 del_act.setEnabled(False)
             else:
                 restore_act.setEnabled(False)
+            if sum(1 for r in rows if not r.get("deleted")) <= 1:
+                del_act.setEnabled(False)
             action = menu.exec(table.mapToGlobal(pos))
             if action == add_act:
                 self._add_row_after(table, rows, group, row)
@@ -182,6 +185,8 @@ class LanguagePairWidget(QWidget):
                     item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
 
     def _delete_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+        if sum(1 for r in rows if not r.get('deleted')) <= 1:
+            return
         base_rate_row = getattr(group, 'base_rate_row', None)
         self._set_row_deleted(table, rows, row, True)
         if base_rate_row == row:

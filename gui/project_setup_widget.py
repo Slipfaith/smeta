@@ -28,6 +28,7 @@ class ProjectSetupWidget(QWidget):
         remove_btn.setFlat(True)
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить")
+        remove_btn.setStyleSheet("background-color: transparent; border: none;")
         remove_btn.clicked.connect(self.remove_requested.emit)
         header.addWidget(remove_btn)
         layout.addLayout(header)
@@ -51,6 +52,7 @@ class ProjectSetupWidget(QWidget):
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(0, 3, total_item)
+        self.rows_deleted = [False]
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -70,11 +72,20 @@ class ProjectSetupWidget(QWidget):
             menu = QMenu(self.table)
             add_act = menu.addAction("Добавить строку")
             del_act = menu.addAction("Удалить строку")
+            restore_act = menu.addAction("Восстановить строку")
+            if self.rows_deleted[row]:
+                del_act.setEnabled(False)
+            else:
+                restore_act.setEnabled(False)
+            if sum(1 for d in self.rows_deleted if not d) <= 1:
+                del_act.setEnabled(False)
             action = menu.exec(self.table.mapToGlobal(pos))
             if action == add_act:
                 self.add_row_after(row)
             elif action == del_act:
                 self.remove_row_at(row)
+            elif action == restore_act:
+                self.restore_row_at(row)
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
@@ -112,6 +123,8 @@ class ProjectSetupWidget(QWidget):
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(insert_at, 3, total_item)
+        self.rows_deleted.insert(insert_at, False)
+        self._set_row_deleted(insert_at, False)
         self._fit_table_height(self.table)
         self.update_sums()
 
@@ -119,10 +132,34 @@ class ProjectSetupWidget(QWidget):
         self.remove_row_at(self.table.currentRow())
 
     def remove_row_at(self, row: int):
-        if row >= 0:
-            self.table.removeRow(row)
-            self._fit_table_height(self.table)
+        if row >= 0 and not self.rows_deleted[row]:
+            if sum(1 for d in self.rows_deleted if not d) <= 1:
+                return
+            self._set_row_deleted(row, True)
             self.update_sums()
+
+    def restore_row_at(self, row: int):
+        if row >= 0 and self.rows_deleted[row]:
+            self._set_row_deleted(row, False)
+            self.update_sums()
+
+    def _set_row_deleted(self, row: int, deleted: bool):
+        self.rows_deleted[row] = deleted
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row, col)
+            if not item:
+                continue
+            if deleted:
+                item.setForeground(Qt.gray)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if col == 3:
+                    item.setText("0.00")
+            else:
+                item.setForeground(Qt.black)
+                flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                if col != 3:
+                    flags |= Qt.ItemIsEditable
+                item.setFlags(flags)
 
     def set_volume(self, value: float):
         if self.table.rowCount() == 0:
@@ -138,6 +175,8 @@ class ProjectSetupWidget(QWidget):
         try:
             subtotal = 0.0
             for row in range(self.table.rowCount()):
+                if self.rows_deleted[row]:
+                    continue
                 volume = float((self.table.item(row, 1).text() if self.table.item(row, 1) else "0") or "0")
                 rate = float((self.table.item(row, 2).text() if self.table.item(row, 2) else "0") or "0")
                 total = volume * rate
@@ -159,6 +198,8 @@ class ProjectSetupWidget(QWidget):
     def get_data(self) -> List[Dict[str, Any]]:
         data: List[Dict[str, Any]] = []
         for row in range(self.table.rowCount()):
+            if self.rows_deleted[row]:
+                continue
             data.append({
                 "parameter": self.table.item(row, 0).text() if self.table.item(row, 0) else "",
                 "volume": float((self.table.item(row, 1).text() if self.table.item(row, 1) else "0") or "0"),
@@ -170,6 +211,7 @@ class ProjectSetupWidget(QWidget):
     def load_data(self, rows: List[Dict[str, Any]]):
         self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
+        self.rows_deleted = [False] * len(rows)
         for i, row_data in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(row_data.get("parameter", "")))
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
@@ -177,6 +219,7 @@ class ProjectSetupWidget(QWidget):
             total_item = QTableWidgetItem(str(row_data.get("total", 0)))
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
+            self._set_row_deleted(i, False)
         self.table.blockSignals(False)
         self._fit_table_height(self.table)
         self.update_sums()
