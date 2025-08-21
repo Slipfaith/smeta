@@ -419,7 +419,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout = QVBoxLayout()
 
         self.only_new_repeats_btn = QPushButton("Только новые слова и повторы")
-        self.only_new_repeats_btn.clicked.connect(self.apply_only_new_repeats_mode)
+        self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
 
         # Таблица запуска и управления проектом
@@ -485,13 +485,14 @@ class TranslationCostCalculator(QMainWindow):
         if isinstance(self.pairs_scroll, DropArea):
             self.pairs_scroll.disable_hint_style()
 
-    def apply_only_new_repeats_mode(self):
-        if self.only_new_repeats_mode:
-            return
-        self.only_new_repeats_mode = True
+    def toggle_only_new_repeats_mode(self):
+        self.only_new_repeats_mode = not self.only_new_repeats_mode
         for w in self.language_pairs.values():
-            w.apply_only_new_and_repeats()
-        self.only_new_repeats_btn.setEnabled(False)
+            w.set_only_new_and_repeats_mode(self.only_new_repeats_mode)
+        if self.only_new_repeats_mode:
+            self.only_new_repeats_btn.setText("Показать 4 строки")
+        else:
+            self.only_new_repeats_btn.setText("Только новые слова и повторы")
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -599,7 +600,7 @@ class TranslationCostCalculator(QMainWindow):
         widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
         self.language_pairs[pair_key] = widget
         if self.only_new_repeats_mode:
-            widget.apply_only_new_and_repeats()
+            widget.set_only_new_and_repeats_mode(True)
 
         # Вставляем новый виджет перед растягивающимся элементом
         self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
@@ -701,7 +702,7 @@ class TranslationCostCalculator(QMainWindow):
                     updated_pairs += 1
 
                 if self.only_new_repeats_mode:
-                    widget.apply_only_new_and_repeats()
+                    widget.set_only_new_and_repeats_mode(True)
 
                 # Обновляем данные в таблице перевода
                 group = widget.translation_group
@@ -718,9 +719,10 @@ class TranslationCostCalculator(QMainWindow):
                         else:
                             new_total += add_val
                     total_volume = new_total + repeat_total
+                    repeat_row = table.rowCount() - 1
                     if replace:
                         table.item(0, 1).setText(str(new_total))
-                        table.item(1, 1).setText(str(repeat_total))
+                        table.item(repeat_row, 1).setText(str(repeat_total))
                         print(f"  Set new words: {new_total}")
                         print(f"  Set repeats: {repeat_total}")
                     else:
@@ -729,11 +731,11 @@ class TranslationCostCalculator(QMainWindow):
                         except ValueError:
                             prev_new = 0
                         try:
-                            prev_rep = float(table.item(1, 1).text() if table.item(1, 1) else "0")
+                            prev_rep = float(table.item(repeat_row, 1).text() if table.item(repeat_row, 1) else "0")
                         except ValueError:
                             prev_rep = 0
                         table.item(0, 1).setText(str(prev_new + new_total))
-                        table.item(1, 1).setText(str(prev_rep + repeat_total))
+                        table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
                         print(f"  Updated new words: {prev_new} + {new_total} = {prev_new + new_total}")
                         print(f"  Updated repeats: {prev_rep} + {repeat_total} = {prev_rep + repeat_total}")
                 else:

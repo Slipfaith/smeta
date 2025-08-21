@@ -145,6 +145,17 @@ class ExcelExporter:
                 merges.append((sr + delta, sc, er + delta, ec))
         for sr, sc, er, ec in merges:
             ref = f"{get_column_letter(sc)}{sr}:{get_column_letter(ec)}{er}"
+            # Убираем перекрывающиеся с уже существующими слияния, чтобы Excel
+            # не ругался на повреждённые записи при открытии файла.
+            overlap = []
+            for m in dst_ws.merged_cells.ranges:
+                if not (m.max_row < sr or m.min_row > er or m.max_col < sc or m.min_col > ec):
+                    overlap.append(str(m))
+            for mref in overlap:
+                try:
+                    dst_ws.unmerge_cells(mref)
+                except Exception:
+                    pass
             try:
                 dst_ws.merge_cells(ref)
             except Exception:
