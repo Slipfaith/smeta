@@ -1,13 +1,18 @@
-from typing import Dict, List, Any
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel, QHeaderView
-)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
-from logic.service_config import ServiceConfig
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QLineEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QLabel,
+    QHeaderView,
+    QMenu,
+)
 
 
 def _to_float(value: str) -> float:
+    """Safely convert string to float."""
     try:
         return float((value or "0").replace(",", "."))
     except ValueError:
@@ -15,127 +20,143 @@ def _to_float(value: str) -> float:
 
 
 class AdditionalServicesWidget(QWidget):
-    """Виджет для дополнительных услуг"""
+    """Single table for user defined additional services."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.service_groups = {}
-        self.setup_ui()
+        self._setup_ui()
 
-    def setup_ui(self):
+    # ------------------------------------------------------------------ UI
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout()
 
-        title = QLabel("Дополнительные услуги")
-        title.setFont(QFont("Arial", 12, QFont.Bold))
-        layout.addWidget(title)
+        self.header_edit = QLineEdit("Дополнительные услуги")
+        layout.addWidget(self.header_edit)
 
-        # Создаем группы для каждой дополнительной услуги
-        for service_name, rows in ServiceConfig.ADDITIONAL_SERVICES.items():
-            group = self.create_service_group(service_name, rows)
-            self.service_groups[service_name] = group
-            layout.addWidget(group)
+        self.table = QTableWidget(1, 5)
+        self.table.setHorizontalHeaderLabels([
+            "Параметр",
+            "Ед-ца",
+            "Объем",
+            "Ставка (руб)",
+            "Сумма (руб)",
+        ])
 
-        self.setLayout(layout)
-
-    def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
-        """Создает группу для дополнительной услуги"""
-        group = QGroupBox(service_name)
-        group.setCheckable(True)
-        group.setChecked(False)
-
-        layout = QVBoxLayout()
-
-        table = QTableWidget(len(rows), 4)
-        table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
-
-        base_rate_row = None
-
-        for i, row_info in enumerate(rows):
-            table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
-            table.setItem(i, 1, QTableWidgetItem("0"))
-
-            rate_item = QTableWidgetItem("0.000")
-            if not row_info["is_base"]:
-                rate_item.setFlags(Qt.ItemIsEnabled)
-            else:
-                if base_rate_row is None:
-                    base_rate_row = i
-            table.setItem(i, 2, rate_item)
-
-            sum_item = QTableWidgetItem("0.00")
-            sum_item.setFlags(Qt.ItemIsEnabled)
-            table.setItem(i, 3, sum_item)
-
-        table.itemChanged.connect(lambda item: self.update_rates_and_sums(table, rows, base_rate_row))
-
-        # Настройка ширины колонок
-        header = table.horizontalHeader()
+        header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        layout.addWidget(table)
-        group.setLayout(layout)
+        # initial row
+        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+            item = QTableWidgetItem(text)
+            if col == 4:
+                item.setFlags(Qt.ItemIsEnabled)
+            self.table.setItem(0, col, item)
 
-        setattr(group, 'table', table)
-        setattr(group, 'rows_config', rows)
-        setattr(group, 'base_rate_row', base_rate_row)
+        self.table.itemChanged.connect(self.update_sums)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_menu)
 
-        return group
+        layout.addWidget(self.table)
 
-    def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
-        """Обновляет ставки и суммы в таблице"""
-        try:
-            # Получаем базовую ставку
-            base_rate = 0.0
-            if base_rate_row is not None:
-                base_rate = _to_float(table.item(base_rate_row, 2).text())
-                table.blockSignals(True)
-                table.item(base_rate_row, 2).setText(f"{base_rate:.3f}")
-                table.blockSignals(False)
+        self.subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
+        self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self.subtotal_label)
 
-            # Обновляем все строки
-            for row in range(table.rowCount()):
-                row_config = rows[row]
+        self.setLayout(layout)
+        self.update_sums()
 
-                # Обновляем ставку для неосновных строк
-                if not row_config["is_base"] and base_rate_row is not None:
-                    auto_rate = base_rate * row_config["multiplier"]
-                    table.blockSignals(True)
-                    table.item(row, 2).setText(f"{auto_rate:.3f}")
-                    table.blockSignals(False)
+    # ----------------------------------------------------------------- menu
+    def _show_menu(self, pos) -> None:
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            row = self.table.rowCount() - 1
+        menu = QMenu(self.table)
+        add_act = menu.addAction("Добавить строку")
+        del_act = menu.addAction("Удалить строку")
+        if self.table.rowCount() <= 1:
+            del_act.setEnabled(False)
+        action = menu.exec(self.table.mapToGlobal(pos))
+        if action == add_act:
+            self.add_row_after(row)
+        elif action == del_act:
+            self.remove_row(row)
 
-                # Обновляем сумму
-                volume = _to_float(table.item(row, 1).text())
-                rate_item = table.item(row, 2)
-                rate = _to_float(rate_item.text() if rate_item else "0")
-                table.blockSignals(True)
-                rate_item.setText(f"{rate:.3f}")
-                table.blockSignals(False)
-                total = volume * rate
-                table.item(row, 3).setText(f"{total:.2f}")
+    def add_row_after(self, row: int) -> None:
+        insert_at = row + 1
+        self.table.insertRow(insert_at)
+        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+            item = QTableWidgetItem(text)
+            if col == 4:
+                item.setFlags(Qt.ItemIsEnabled)
+            self.table.setItem(insert_at, col, item)
+        self.update_sums()
 
-        except (ValueError, AttributeError):
-            pass
+    def remove_row(self, row: int) -> None:
+        if self.table.rowCount() > 1 and row >= 0:
+            self.table.removeRow(row)
+            self.update_sums()
 
-    def get_data(self) -> Dict[str, Any]:
-        """Получает данные дополнительных услуг"""
-        data = {}
-        for service_name, group in self.service_groups.items():
-            if group.isChecked():
-                data[service_name] = self.get_table_data(group.table)
-        return data
+    # ------------------------------------------------------------ calculations
+    def update_sums(self) -> None:
+        subtotal = 0.0
+        for r in range(self.table.rowCount()):
+            volume = _to_float(self._text(r, 2))
+            rate = _to_float(self._text(r, 3))
+            total = volume * rate
+            subtotal += total
+            item = self.table.item(r, 4)
+            if item is None:
+                item = QTableWidgetItem()
+                item.setFlags(Qt.ItemIsEnabled)
+                self.table.setItem(r, 4, item)
+            item.setText(f"{total:.2f}")
 
-    def get_table_data(self, table: QTableWidget) -> List[Dict[str, Any]]:
-        """Получает данные из таблицы"""
-        data = []
-        for row in range(table.rowCount()):
-            row_data = {
-                "parameter": table.item(row, 0).text(),
-                "volume": _to_float(table.item(row, 1).text()),
-                "rate": _to_float(table.item(row, 2).text()),
-                "total": _to_float(table.item(row, 3).text())
-            }
-            data.append(row_data)
-        return data
+        self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
+
+    def _text(self, row: int, col: int) -> str:
+        item = self.table.item(row, col)
+        return item.text() if item else "0"
+
+    # --------------------------------------------------------------- data i/o
+    def get_data(self) -> dict:
+        """Return data for export."""
+        rows = []
+        for r in range(self.table.rowCount()):
+            rows.append({
+                "parameter": self._text(r, 0),
+                "unit": self._text(r, 1),
+                "volume": _to_float(self._text(r, 2)),
+                "rate": _to_float(self._text(r, 3)),
+            })
+
+        if not any(row["parameter"] or row["volume"] or row["rate"] for row in rows):
+            return {}
+
+        return {
+            "header_title": self.header_edit.text(),
+            "rows": rows,
+        }
+
+    def load_data(self, data: dict) -> None:
+        """Load previously saved data."""
+        self.header_edit.setText(data.get("header_title", ""))
+        rows = data.get("rows", [])
+        if not rows:
+            return
+        self.table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for col, key in enumerate(["parameter", "unit", "volume", "rate"]):
+                val = row.get(key, "0" if col >= 2 else "")
+                item = QTableWidgetItem(str(val))
+                if col == 3:
+                    item.setText(f"{_to_float(val):.3f}")
+                self.table.setItem(r, col, item)
+            total_item = QTableWidgetItem("0.00")
+            total_item.setFlags(Qt.ItemIsEnabled)
+            self.table.setItem(r, 4, total_item)
+        self.update_sums()
+

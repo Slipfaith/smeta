@@ -916,16 +916,6 @@ class TranslationCostCalculator(QMainWindow):
                 if self.project_setup_widget:
                     self.project_setup_widget.set_volume(fee)
 
-        additional = project_data.get("additional_services", {})
-        for name, data in additional.items():
-            group = self.additional_services_widget.service_groups.get(name)
-            if group:
-                group.setChecked(True)
-                self.load_table_data(group.table, data)
-
-    def load_table_data(self, table, data: List[Dict[str, Any]]):
-        for row, row_data in enumerate(data):
-            if row < table.rowCount():
-                table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                table.item(row, 2).setText(str(row_data.get("rate", 0)))
-                table.item(row, 3).setText(str(row_data.get("total", 0)))
+        additional = project_data.get("additional_services")
+        if additional:
+            self.additional_services_widget.load_data(additional)
