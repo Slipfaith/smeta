@@ -325,7 +325,7 @@ class ExcelExporter:
                     cell = ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
                 else:
                     cell = ws.cell(rr, col_rate, it["rate"])
-                cell.number_format = "0.000"
+                cell.number_format = "0.###"
                 total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
                 total_cell.number_format = "0.00"
 
@@ -506,6 +506,14 @@ class ExcelExporter:
             # merge header
             first_col = min(hmap.values())
             last_col = max(hmap.values())
+
+            # ensure column widths from template are preserved
+            for c in range(first_col, last_col + 1):
+                letter = get_column_letter(c)
+                tpl_width = template_ws.column_dimensions[letter].width
+                if tpl_width is not None:
+                    ws.column_dimensions[letter].width = tpl_width
+
             ref = f"{get_column_letter(first_col)}{block_top}:{get_column_letter(last_col)}{block_top}"
             try:
                 ws.unmerge_cells(ref)

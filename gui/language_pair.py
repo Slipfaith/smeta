@@ -61,6 +61,13 @@ class LanguagePairWidget(QWidget):
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
 
+    @staticmethod
+    def _format_rate(value: float) -> str:
+        text = f"{value:.3f}"
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(service_name)
         group.setCheckable(True)
@@ -84,7 +91,7 @@ class LanguagePairWidget(QWidget):
             table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
             table.setItem(i, 1, QTableWidgetItem("0"))
 
-            rate_item = QTableWidgetItem("0.000")
+            rate_item = QTableWidgetItem("0")
             if not row_info["is_base"]:
                 rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             else:
@@ -163,7 +170,7 @@ class LanguagePairWidget(QWidget):
         table.insertRow(insert_at)
         table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
         table.setItem(insert_at, 1, QTableWidgetItem("0"))
-        rate_item = QTableWidgetItem("0.000")
+        rate_item = QTableWidgetItem("0")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         table.setItem(insert_at, 2, rate_item)
         sum_item = QTableWidgetItem("0.00")
@@ -289,7 +296,7 @@ class LanguagePairWidget(QWidget):
             if base_rate_row is not None and table.item(base_rate_row, 2):
                 base_rate = _to_float(table.item(base_rate_row, 2).text())
                 table.blockSignals(True)
-                table.item(base_rate_row, 2).setText(f"{base_rate:.3f}")
+                table.item(base_rate_row, 2).setText(self._format_rate(base_rate))
                 table.blockSignals(False)
 
             subtotal = 0.0
@@ -307,14 +314,14 @@ class LanguagePairWidget(QWidget):
                     auto_rate = base_rate * row_cfg["multiplier"]
                     if table.item(row, 2):
                         table.blockSignals(True)
-                        table.item(row, 2).setText(f"{auto_rate:.3f}")
+                        table.item(row, 2).setText(self._format_rate(auto_rate))
                         table.blockSignals(False)
 
                 volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
                 rate_item = table.item(row, 2)
                 rate = _to_float(rate_item.text() if rate_item else "0")
                 table.blockSignals(True)
-                rate_item.setText(f"{rate:.3f}")
+                rate_item.setText(self._format_rate(rate))
                 table.blockSignals(False)
                 total = volume * rate
                 if table.item(row, 3):
@@ -375,7 +382,7 @@ class LanguagePairWidget(QWidget):
                 table.insertRow(r)
                 table.setItem(r, 0, QTableWidgetItem("Новая строка"))
                 table.setItem(r, 1, QTableWidgetItem("0"))
-                rate_item = QTableWidgetItem("0.000")
+                rate_item = QTableWidgetItem("0")
                 rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 table.setItem(r, 2, rate_item)
                 sum_item = QTableWidgetItem("0.00")
@@ -387,7 +394,7 @@ class LanguagePairWidget(QWidget):
             if row < table.rowCount():
                 table.item(row, 0).setText(row_data.get("parameter", ""))
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                table.item(row, 2).setText(f"{row_data.get('rate', 0):.3f}")
+                table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0)))
                 table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
                 rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
                 rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
