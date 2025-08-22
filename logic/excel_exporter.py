@@ -7,6 +7,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 
+from .service_config import ServiceConfig
+
 # Шаблон теперь ищем относительно корня проекта, чтобы код работал на любой машине
 DEFAULT_TEMPLATE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "templates", "шаблон.modern.xlsx"
@@ -252,17 +254,22 @@ class ExcelExporter:
 
             hmap = self._header_map(ws, t_headers_row)
 
-            # Подготовка данных
+            # Подготовка данных: фиксированные 4 строки статистики
+            translation_rows = (pair.get("services") or {}).get("translation", [])
+            data_map = {r.get("parameter"): r for r in translation_rows}
+            cfg_map = {r["name"]: r for r in ServiceConfig.TRANSLATION_ROWS}
+
             items: List[Dict[str, Any]] = []
-            for _svc, rows in (pair.get("services") or {}).items():
-                for r in rows:
-                    items.append({
-                        "parameter": r.get("parameter", ""),
-                        "volume": float(r.get("volume") or 0),
-                        "rate": float(r.get("rate") or 0),
-                        "multiplier": r.get("multiplier"),
-                        "is_base": bool(r.get("is_base")),
-                    })
+            for name in ServiceConfig.ROW_NAMES:
+                src_row = data_map.get(name, {})
+                cfg = cfg_map.get(name, {})
+                items.append({
+                    "parameter": name,
+                    "volume": float(src_row.get("volume") or 0),
+                    "rate": float(src_row.get("rate") or 0),
+                    "multiplier": cfg.get("multiplier"),
+                    "is_base": bool(cfg.get("is_base")),
+                })
 
             # Подгонка количества строк данных
             cur_cap = max(0, t_subtotal_row - t_first_data)

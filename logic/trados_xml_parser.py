@@ -5,7 +5,8 @@ import re
 
 from .service_config import ServiceConfig
 
-ROW_NAMES = [row["name"] for row in ServiceConfig.TRANSLATION_ROWS]
+# Фиксированный порядок строк статистики
+ROW_NAMES = ServiceConfig.ROW_NAMES
 
 
 def _norm_lang(code: str) -> str:
