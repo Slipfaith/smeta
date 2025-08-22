@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
+import copy
+
 from logic.service_config import ServiceConfig
 
 
@@ -75,7 +77,9 @@ class LanguagePairWidget(QWidget):
 
         vbox = QVBoxLayout()
 
-        rows = [dict(r, deleted=False) for r in rows]
+        rows = copy.deepcopy(rows)
+        for r in rows:
+            r['deleted'] = False
 
         table = QTableWidget(len(rows), 4)
         table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
@@ -375,6 +379,10 @@ class LanguagePairWidget(QWidget):
         table = group.table
         rows = group.rows_config
         base_rate_row = None
+
+        for idx in range(table.rowCount()):
+            rows[idx]['deleted'] = False
+            table.setRowHidden(idx, False)
 
         if len(data) > table.rowCount():
             for _ in range(len(data) - table.rowCount()):
