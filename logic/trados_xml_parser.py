@@ -282,6 +282,20 @@ def _parse_analyse_element(analyse: ET.Element, unit: str = "words") -> Dict[str
         values[ROW_NAMES[3]] += in_context_words  # "Перевод, повторы и 100% совпадения (30%)"
         print(f"    In-context exact: {in_context_words}")
 
+    # Perfect matches
+    perfect_elem = analyse.find('perfect')
+    if perfect_elem is not None:
+        perfect_words = float(perfect_elem.get(unit_attr, 0))
+        values[ROW_NAMES[3]] += perfect_words  # "Перевод, повторы и 100% совпадения (30%)"
+        print(f"    Perfect matches: {perfect_words}")
+
+    # Locked segments
+    locked_elem = analyse.find('locked')
+    if locked_elem is not None:
+        locked_words = float(locked_elem.get(unit_attr, 0))
+        values[ROW_NAMES[3]] += locked_words  # "Перевод, повторы и 100% совпадения (30%)"
+        print(f"    Locked: {locked_words}")
+
     total_words = sum(values.values())
     print(f"    Total words processed: {total_words}")
 
