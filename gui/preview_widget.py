@@ -80,12 +80,13 @@ class PreviewWidget(QWidget):
 
             entity_name = data.get("legal_entity")
             template_path = self.legal_entities.get(entity_name)
-            ok = ExcelExporter(template_path, currency=data.get("currency", "RUB")).export_to_excel(data, xlsx)
+            exporter = ExcelExporter(template_path, currency=data.get("currency", "RUB"))
+            ok = exporter.export_to_excel(data, xlsx, fit_to_page=True)
             if not ok:
                 self.status.setText("Ошибка экспорта XLSX (см. консоль).")
                 return
 
-            if not self._xlsx_to_pdf(xlsx, pdf):
+            if not exporter.xlsx_to_pdf(xlsx, pdf):
                 self.status.setText("Не удалось конвертировать в PDF (нужен Excel или LibreOffice).")
                 self.doc.load("")
                 return
@@ -97,30 +98,3 @@ class PreviewWidget(QWidget):
             self.status.setText("Предпросмотр обновлён.")
         except Exception as e:
             self.status.setText(f"Ошибка превью: {e}")
-
-    def _xlsx_to_pdf(self, xlsx_path: str, pdf_path: str) -> bool:
-        # 1) Пытаемся через установленный Excel (COM)
-        try:
-            import win32com.client  # type: ignore
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            wb = excel.Workbooks.Open(xlsx_path)
-            # 0 = xlTypePDF
-            wb.ExportAsFixedFormat(0, pdf_path)
-            wb.Close(False)
-            excel.Quit()
-            return os.path.exists(pdf_path)
-        except Exception:
-            pass
-
-        # 2) Пытаемся через LibreOffice
-        try:
-            outdir = os.path.dirname(pdf_path)
-            subprocess.run(
-                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", outdir, xlsx_path],
-                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            return os.path.exists(pdf_path)
-        except Exception:
-            return False

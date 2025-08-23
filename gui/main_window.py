@@ -1,11 +1,14 @@
 import json
+import os
+import shutil
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Any
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter,
-    QComboBox, QSlider, QDoubleSpinBox
+    QComboBox, QSlider, QDoubleSpinBox, QDialog
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -15,6 +18,7 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
+from gui.pdf_preview_dialog import PdfPreviewDialog
 from logic.excel_exporter import ExcelExporter
 from logic.user_config import load_languages, add_language
 from logic.trados_xml_parser import parse_reports
@@ -872,11 +876,34 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
 
     def save_pdf(self):
-        QMessageBox.information(
-            self, "Функция PDF",
-            "Функция сохранения в PDF будет реализована в следующей версии.\n"
-            "Пока вы можете сохранить Excel файл и конвертировать его в PDF вручную."
-        )
+        if not self.project_name_edit.text().strip():
+            QMessageBox.warning(self, "Ошибка", "Введите название проекта")
+            return
+        project_data = self.collect_project_data()
+        entity_name = self.legal_entity_combo.currentText()
+        template_path = self.legal_entities.get(entity_name)
+        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
+                pdf_path = os.path.join(tmpdir, "quotation.pdf")
+                if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):
+                    QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
+                    return
+                if not exporter.xlsx_to_pdf(xlsx_path, pdf_path):
+                    QMessageBox.critical(self, "Ошибка", "Не удалось конвертировать в PDF")
+                    return
+                preview = PdfPreviewDialog(pdf_path, self)
+                if preview.exec() == QDialog.Accepted:
+                    project_name = project_data["project_name"].replace(" ", "_")
+                    filename = f"КП_{project_name}.pdf"
+                    file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить PDF", filename, "PDF files (*.pdf)")
+                    if not file_path:
+                        return
+                    shutil.copyfile(pdf_path, file_path)
+                    QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
 
     def save_project(self):
         if not self.project_name_edit.text().strip():
