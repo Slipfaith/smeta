@@ -253,6 +253,8 @@ class ExcelExporter:
                     ws.cell(t_headers_row, c, HDR_TITLES[v.strip()])
 
             hmap = self._header_map(ws, t_headers_row)
+            first_col = min(hmap.values())
+            last_col = max(hmap.values())
 
             # Подготовка данных: фиксированные 4 строки статистики
             translation_rows = (pair.get("services") or {}).get("translation", [])
@@ -289,13 +291,13 @@ class ExcelExporter:
                 t_subtotal_row += add
             elif need < cur_cap:
                 delete_count = cur_cap - need
-                if delete_count > 0:
-                    ws.delete_rows(t_first_data + need, delete_count)
-                    t_subtotal_row -= delete_count
+                for _ in range(delete_count):
+                    ws.delete_rows(t_subtotal_row - 1)
+                    t_subtotal_row -= 1
 
             # Очистка всех строк данных
             for rr in range(t_first_data, t_subtotal_row):
-                for c in range(1, ws.max_column + 1):
+                for c in range(first_col, last_col + 1):
                     ws.cell(rr, c).value = None
 
             # Заполнение данными
