@@ -101,6 +101,17 @@ class ExcelExporter:
             return f'"{sym}"#,##0.{"0"*decimals}'
         return f'#,##0.{"0"*decimals} "{sym}"'
 
+    def _apply_rate_format(self, cell: Cell) -> None:
+        """Apply correct number format for rate cells.
+
+        If the rate has no fractional part, use two decimals instead of three.
+        """
+        val = cell.value
+        if isinstance(val, (int, float)) and float(val).is_integer():
+            cell.number_format = self.total_fmt
+        else:
+            cell.number_format = self.rate_fmt
+
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
     def export_to_excel(self, project_data: Dict[str, Any], output_path: str) -> bool:
@@ -454,7 +465,7 @@ class ExcelExporter:
                 else:
                     cell = ws.cell(rr, col_rate, it["rate"])
                     self.logger.debug("  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
-                cell.number_format = self.rate_fmt
+                self._apply_rate_format(cell)
                 total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
                 total_cell.number_format = self.total_fmt
                 self.logger.debug(
@@ -607,7 +618,7 @@ class ExcelExporter:
             ws.cell(r, col_unit, "час")
             ws.cell(r, col_qty, it.get("volume", 0))
             rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
-            rate_cell.number_format = self.rate_fmt
+            self._apply_rate_format(rate_cell)
             qtyL = get_column_letter(col_qty)
             rateL = get_column_letter(col_rate)
             total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
@@ -744,7 +755,7 @@ class ExcelExporter:
                 ws.cell(r, col_unit, it.get("unit", ""))
                 ws.cell(r, col_qty, it.get("volume", 0))
                 rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
-                rate_cell.number_format = self.rate_fmt
+                self._apply_rate_format(rate_cell)
                 qtyL = get_column_letter(col_qty)
                 rateL = get_column_letter(col_rate)
                 total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
