@@ -98,38 +98,22 @@ class ExcelExporter:
 
             wb = load_workbook(self.template_path)
 
-            report_ws = wb["Report"] if "Report" in wb.sheetnames else wb.active
-            quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else None
+            quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
 
             subtot_cells: List[str] = []
             current_row = 13
 
-            last_row, ps_cell = self._render_project_setup_table(report_ws, project_data, current_row)
+            last_row, ps_cell = self._render_project_setup_table(quotation_ws, project_data, current_row)
             if ps_cell:
                 subtot_cells.append(ps_cell)
             current_row = last_row + 1
 
-            last_row, tr_cells = self._render_translation_blocks(report_ws, project_data, current_row)
+            last_row, tr_cells = self._render_translation_blocks(quotation_ws, project_data, current_row)
             subtot_cells += tr_cells
             current_row = last_row + 1
 
-            last_row, add_cells = self._render_additional_services_tables(report_ws, project_data, current_row)
+            last_row, add_cells = self._render_additional_services_tables(quotation_ws, project_data, current_row)
             subtot_cells += add_cells
-
-            q_subtot_cells: List[str] = []
-            if quotation_ws is not None:
-                q_row = 13
-                last_row, q_ps_cell = self._render_project_setup_table(quotation_ws, project_data, q_row)
-                if q_ps_cell:
-                    q_subtot_cells.append(q_ps_cell)
-                q_row = last_row + 1
-
-                last_row, q_tr_cells = self._render_translation_blocks(quotation_ws, project_data, q_row)
-                q_subtot_cells += q_tr_cells
-                q_row = last_row + 1
-
-                last_row, q_add_cells = self._render_additional_services_tables(quotation_ws, project_data, q_row)
-                q_subtot_cells += q_add_cells
 
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
@@ -138,9 +122,7 @@ class ExcelExporter:
                 if name in wb.sheetnames:
                     del wb[name]
 
-            self._fill_text_placeholders(report_ws, project_data, subtot_cells)
-            if quotation_ws is not None:
-                self._fill_text_placeholders(quotation_ws, project_data, q_subtot_cells, start_row=13)
+            self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=13)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
