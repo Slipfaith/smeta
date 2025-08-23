@@ -129,12 +129,15 @@ class ExcelExporter:
                 return
         cell.number_format = self.rate_fmt
 
+    def _set_print_area(self, ws: Worksheet) -> None:
+        last_col = get_column_letter(ws.max_column)
+        ws.print_area = f"A1:{last_col}{ws.max_row}"
+
     def _fit_sheet_to_page(self, ws: Worksheet) -> None:
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToHeight = 1
         ws.page_setup.fitToWidth = 1
-        last_col = get_column_letter(ws.max_column)
-        ws.print_area = f"A1:{last_col}{ws.max_row}"
+        self._set_print_area(ws)
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
@@ -147,8 +150,6 @@ class ExcelExporter:
             wb = load_workbook(self.template_path)
 
             quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
-            if fit_to_page:
-                self._fit_sheet_to_page(quotation_ws)
 
             subtot_cells: List[str] = []
             current_row = 13
@@ -184,6 +185,11 @@ class ExcelExporter:
 
             if "Vat" in wb.sheetnames:
                 del wb["Vat"]
+
+            if fit_to_page:
+                self._fit_sheet_to_page(quotation_ws)
+            else:
+                self._set_print_area(quotation_ws)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
