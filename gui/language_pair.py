@@ -365,6 +365,7 @@ class LanguagePairWidget(QWidget):
             if rows_cfg[row].get('deleted'):
                 continue
             out.append({
+                "key": rows_cfg[row].get("key"),
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
                 "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
                 "rate":   _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
