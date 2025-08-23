@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
 )
 from PySide6.QtCore import Qt, Signal
+from .utils import format_rate
 
 
 def _to_float(value: str) -> float:
@@ -61,7 +62,7 @@ class ProjectSetupWidget(QWidget):
 
         self.table.setItem(0, 0, QTableWidgetItem("Запуск и управление проектом"))
         self.table.setItem(0, 1, QTableWidgetItem(str(initial_volume)))
-        self.table.setItem(0, 2, QTableWidgetItem("0.000"))
+        self.table.setItem(0, 2, QTableWidgetItem("0.00"))
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(0, 3, total_item)
@@ -132,7 +133,7 @@ class ProjectSetupWidget(QWidget):
         self.table.insertRow(insert_at)
         self.table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
         self.table.setItem(insert_at, 1, QTableWidgetItem("0"))
-        self.table.setItem(insert_at, 2, QTableWidgetItem("0.000"))
+        self.table.setItem(insert_at, 2, QTableWidgetItem("0.00"))
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(insert_at, 3, total_item)
@@ -195,7 +196,7 @@ class ProjectSetupWidget(QWidget):
                 volume = _to_float(volume_item.text() if volume_item else "0")
                 rate = _to_float(rate_item.text() if rate_item else "0")
                 self.table.blockSignals(True)
-                rate_item.setText(f"{rate:.3f}")
+                rate_item.setText(format_rate(rate))
                 self.table.blockSignals(False)
                 total = volume * rate
                 total_item = self.table.item(row, 3)
@@ -233,7 +234,7 @@ class ProjectSetupWidget(QWidget):
         for i, row_data in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(row_data.get("parameter", "")))
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(f"{row_data.get('rate', 0):.3f}"))
+            self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0))))
             total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)

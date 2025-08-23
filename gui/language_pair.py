@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont
 import copy
 
 from logic.service_config import ServiceConfig
+from .utils import format_rate
 
 
 def _to_float(value: str) -> float:
@@ -67,7 +68,7 @@ class LanguagePairWidget(QWidget):
 
     @staticmethod
     def _format_rate(value: float) -> str:
-        return f"{value:.3f}"
+        return format_rate(value)
 
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(service_name)
