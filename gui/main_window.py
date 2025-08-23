@@ -898,14 +898,20 @@ class TranslationCostCalculator(QMainWindow):
                     QMessageBox.critical(self, "Ошибка", "Не удалось конвертировать в PDF")
                     return
                 preview = PdfPreviewDialog(pdf_path, self)
-                if preview.exec() == QDialog.Accepted:
+                result = preview.exec()
+                preview.deleteLater()
+                if result == QDialog.Accepted:
                     project_name = project_data["project_name"].replace(" ", "_")
                     filename = f"КП_{project_name}.pdf"
-                    file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить PDF", filename, "PDF files (*.pdf)")
+                    file_path, _ = QFileDialog.getSaveFileName(
+                        self, "Сохранить PDF", filename, "PDF files (*.pdf)"
+                    )
                     if not file_path:
                         return
                     shutil.copyfile(pdf_path, file_path)
-                    QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+                    QMessageBox.information(
+                        self, "Успех", f"Файл сохранен: {file_path}"
+                    )
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
 
