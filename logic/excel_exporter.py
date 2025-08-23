@@ -76,14 +76,14 @@ ADD_HDR_TITLES = {
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
-    def __init__(self, template_path: Optional[str] = None, log_path: str = "excel_export.log"):
+    def __init__(self, template_path: Optional[str] = None, log_path: str = "excel_export.md"):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
         if not self.logger.handlers:
             handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-            formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+            formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
         self.logger.debug("Initialized ExcelExporter with template %s", self.template_path)
@@ -166,6 +166,13 @@ class ExcelExporter:
         со стилями и слияниями. Используется, чтобы копировать неизменённый шаблонный
         блок даже после того, как первый блок уже заполнен данными."""
         height = src_end - src_start + 1
+        self.logger.debug(
+            "- Copying rows %d-%d from template to position %d-%d",
+            src_start,
+            src_end,
+            dst_start,
+            dst_start + height - 1,
+        )
         for i in range(height):
             sr = src_start + i
             dr = dst_start + i
@@ -282,14 +289,15 @@ class ExcelExporter:
                     continue
                 data_map[key] = row
                 lname = str(key).lower()
-                if "100" in lname:
-                    data_map.setdefault("reps_100_30", row)
+                if "new" in lname or "нов" in lname:
+                    data_map.setdefault("new", row)
                 elif "95" in lname:
                     data_map.setdefault("fuzzy_95_99", row)
                 elif "75" in lname:
                     data_map.setdefault("fuzzy_75_94", row)
-                elif "new" in lname or "нов" in lname:
-                    data_map.setdefault("new", row)
+                elif "100" in lname:
+                    data_map.setdefault("reps_100_30", row)
+                self.logger.debug("  mapped '%s' -> %s", key, {k: v for k, v in row.items() if k in ("volume", "rate")})
 
             items: List[Dict[str, Any]] = []
             for cfg in ServiceConfig.TRANSLATION_ROWS:
@@ -321,11 +329,14 @@ class ExcelExporter:
                     for c in range(1, ws.max_column + 1):
                         self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
                 t_subtotal_row += add
+                self.logger.debug("  inserted %d row(s) at %d", add, t_subtotal_row - add)
             elif need < cur_cap:
                 delete_count = cur_cap - need
                 for _ in range(delete_count):
                     ws.delete_rows(t_subtotal_row - 1)
                     t_subtotal_row -= 1
+                if delete_count:
+                    self.logger.debug("  deleted %d extra row(s) before %d", delete_count, t_subtotal_row)
 
             # Очистка всех строк данных
             for rr in range(t_first_data, t_subtotal_row):
@@ -355,6 +366,18 @@ class ExcelExporter:
                 ws.cell(r, col_type, "")
                 ws.cell(r, col_unit, "Слово")
                 ws.cell(r, col_qty, it["volume"])
+                self.logger.debug(
+                    "  cells: %s%d='%s', %s%d='%s', %s%d=%s",
+                    get_column_letter(col_param),
+                    r,
+                    it["parameter"],
+                    get_column_letter(col_unit),
+                    r,
+                    "Слово",
+                    get_column_letter(col_qty),
+                    r,
+                    it["volume"],
+                )
                 r += 1
 
             base_idx = next((idx for idx, it in enumerate(items) if it.get("is_base")), None)
@@ -368,13 +391,31 @@ class ExcelExporter:
                 rr = row_numbers[idx]
                 if it.get("is_base"):
                     cell = ws.cell(rr, col_rate, it["rate"])
+                    self.logger.debug("  rate base %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
                 elif base_rate_cell and it.get("multiplier") is not None:
                     cell = ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
+                    self.logger.debug(
+                        "  rate formula %s%d=%s*%s",
+                        get_column_letter(col_rate),
+                        rr,
+                        base_rate_cell,
+                        it["multiplier"],
+                    )
                 else:
                     cell = ws.cell(rr, col_rate, it["rate"])
+                    self.logger.debug("  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
                 cell.number_format = "0.###"
                 total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
                 total_cell.number_format = "0.00"
+                self.logger.debug(
+                    "  total formula %s%d=%s%d*%s%d",
+                    get_column_letter(col_total),
+                    rr,
+                    qtyL,
+                    rr,
+                    rateL,
+                    rr,
+                )
 
             # Субтотал (заменяем плейсхолдер и ставим формулу)
             for c in range(1, ws.max_column + 1):
