@@ -799,15 +799,15 @@ class ExcelExporter:
         strict_map = {
             "{{project_name}}": project_data.get("project_name", ""),
             "{{client}}": project_data.get("client_name", ""),
+            "{{client_name}}": project_data.get("contact_person", ""),
+            "{{PM_name}}": project_data.get("pm_name", ""),
+            "{{PM_email}}": project_data.get("pm_email", ""),
             "{{Entity}}": project_data.get(
                 "entity_name", project_data.get("company_name", "")
             ),
             "{{Entity_address}}": project_data.get(
                 "entity_address", project_data.get("email", "")
             ),
-            "{{client_name}}": project_data.get("contact_person", ""),
-            "{{PM_name}}": project_data.get("pm_name", "PM"),
-            "{{PM_email}}": project_data.get("pm_email", "pm@company.com"),
             "{{target_langs}}": target_langs_str,
         }
         self.logger.debug("Filling text placeholders with map: %s", strict_map)
