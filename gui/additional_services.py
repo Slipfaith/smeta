@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
 )
+from .utils import format_rate
 
 
 def _to_float(value: str) -> float:
@@ -69,7 +70,7 @@ class AdditionalServiceTable(QWidget):
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -107,7 +108,7 @@ class AdditionalServiceTable(QWidget):
     def add_row_after(self, row: int) -> None:
         insert_at = row + 1
         self.table.insertRow(insert_at)
-        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -128,7 +129,7 @@ class AdditionalServiceTable(QWidget):
             rate = _to_float(rate_item.text() if rate_item else "0")
             self.table.blockSignals(True)
             if rate_item:
-                rate_item.setText(f"{rate:.3f}")
+                rate_item.setText(format_rate(rate))
             self.table.blockSignals(False)
             total = volume * rate
             subtotal += total
@@ -175,7 +176,7 @@ class AdditionalServiceTable(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    item.setText(f"{_to_float(val):.3f}")
+                    item.setText(format_rate(_to_float(val)))
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)

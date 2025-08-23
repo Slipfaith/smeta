@@ -121,6 +121,10 @@ class ExcelExporter:
             if num.is_integer():
                 cell.number_format = self.total_fmt
                 return
+            scaled = round(num * 1000)
+            if scaled % 10 == 0:
+                cell.number_format = self.total_fmt
+                return
         cell.number_format = self.rate_fmt
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
