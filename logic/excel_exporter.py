@@ -838,7 +838,8 @@ class ExcelExporter:
                 if isinstance(v, str):
                     t = v.strip()
                     if t == "{{total}}":
-                        ws.cell(r, c, total_formula)
+                        total_cell = ws.cell(r, c, total_formula)
+                        total_cell.number_format = self.total_fmt
                     else:
                         new_v = v
                         for ph, val in strict_map.items():
