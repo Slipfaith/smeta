@@ -2,7 +2,7 @@
 import os
 import logging
 from typing import Dict, Any, List, Optional, Tuple
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
@@ -107,10 +107,21 @@ class ExcelExporter:
         If the rate has no fractional part, use two decimals instead of three.
         """
         val = cell.value
-        if isinstance(val, (int, float)) and float(val).is_integer():
-            cell.number_format = self.total_fmt
-        else:
-            cell.number_format = self.rate_fmt
+        num: Optional[float] = None
+        if isinstance(val, str):
+            try:
+                num = float(val)
+            except ValueError:
+                num = None
+        elif isinstance(val, (int, float)):
+            num = float(val)
+
+        if num is not None:
+            cell.value = num
+            if num.is_integer():
+                cell.number_format = self.total_fmt
+                return
+        cell.number_format = self.rate_fmt
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
@@ -152,7 +163,12 @@ class ExcelExporter:
             # include client and project information entered by the user.
             # Start from the first row so that values above row 13 are
             # properly substituted.
-            self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=1)
+            self._fill_text_placeholders(
+                quotation_ws, project_data, subtot_cells, start_row=1, wb=wb
+            )
+
+            if "VAT" in wb.sheetnames:
+                del wb["VAT"]
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
@@ -799,6 +815,7 @@ class ExcelExporter:
         project_data: Dict[str, Any],
         subtot_cells: List[str],
         start_row: int = 1,
+        wb: Optional[Workbook] = None,
     ) -> None:
         # общий итог — именно как формула SUM по найденным субтоталам (чтобы Excel считал сам)
         total_formula = f"=SUM({','.join(subtot_cells)})" if subtot_cells else "0"
@@ -843,6 +860,8 @@ class ExcelExporter:
         }
         self.logger.debug("Filling text placeholders with map: %s", strict_map)
 
+        total_cell_ref: Optional[str] = None
+
         for r in range(start_row, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(r, c).value
@@ -851,6 +870,7 @@ class ExcelExporter:
                     if t == "{{total}}":
                         total_cell = ws.cell(r, c, total_formula)
                         total_cell.number_format = self.total_fmt
+                        total_cell_ref = total_cell.coordinate
                     else:
                         new_v = v
                         for ph, val in strict_map.items():
@@ -858,3 +878,50 @@ class ExcelExporter:
                                 new_v = new_v.replace(ph, str(val))
                         if new_v != v:
                             ws.cell(r, c, new_v)
+
+        if wb is not None and total_cell_ref:
+            self._insert_vat_section(wb, ws, total_cell_ref, project_data)
+
+    # ----------------------------- НДС -----------------------------
+
+    def _insert_vat_section(
+        self,
+        wb,
+        ws: Worksheet,
+        total_cell_ref: str,
+        project_data: Dict[str, Any],
+    ) -> None:
+        """Copy VAT table from 'VAT' sheet and insert after total row."""
+        vat_rate = float(project_data.get("vat_rate", 0) or 0)
+        if vat_rate <= 0 or "VAT" not in wb.sheetnames:
+            return
+
+        vat_ws = wb["VAT"]
+        rows = vat_ws.max_row
+        cols = vat_ws.max_column
+        total_row = ws[total_cell_ref].row
+
+        ws.insert_rows(total_row + 1, rows)
+
+        for r in range(rows):
+            for c in range(1, cols + 1):
+                src = vat_ws.cell(r + 1, c)
+                dst = ws.cell(total_row + 1 + r, c)
+                self._copy_style(src, dst)
+
+        for r in range(total_row + 1, total_row + 1 + rows):
+            for c in range(1, cols + 1):
+                cell = ws.cell(r, c)
+                if isinstance(cell.value, str):
+                    val = cell.value.strip()
+                    if val == "{{%vat}}":
+                        cell.value = f"{vat_rate}%"
+                    elif val == "{{total_vat}}":
+                        cell.value = f"={total_cell_ref}*{vat_rate}/100"
+                        cell.number_format = self.total_fmt
+                    elif val == "{{total.with_vat}}":
+                        cell.value = f"={total_cell_ref}*{100+vat_rate}/100"
+                        cell.number_format = self.total_fmt
+                    elif val == "{{$}}":
+                        cell.value = self.currency
+

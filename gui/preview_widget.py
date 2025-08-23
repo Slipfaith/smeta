@@ -80,7 +80,7 @@ class PreviewWidget(QWidget):
 
             entity_name = data.get("legal_entity")
             template_path = self.legal_entities.get(entity_name)
-            ok = ExcelExporter(template_path).export_to_excel(data, xlsx)
+            ok = ExcelExporter(template_path, currency=data.get("currency", "RUB")).export_to_excel(data, xlsx)
             if not ok:
                 self.status.setText("Ошибка экспорта XLSX (см. консоль).")
                 return

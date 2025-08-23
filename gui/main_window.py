@@ -276,14 +276,22 @@ class TranslationCostCalculator(QMainWindow):
         p.addWidget(QLabel("Юрлицо:"))
         self.legal_entity_combo = QComboBox()
         self.legal_entity_combo.addItems(self.legal_entities.keys())
+        self.legal_entity_combo.currentTextChanged.connect(self.on_legal_entity_changed)
         p.addWidget(self.legal_entity_combo)
         p.addWidget(QLabel("Валюта:"))
         self.currency_combo = QComboBox()
         self.currency_combo.addItems(["RUB", "EUR", "USD"])
         self.currency_combo.currentTextChanged.connect(self.on_currency_changed)
         p.addWidget(self.currency_combo)
+        p.addWidget(QLabel("НДС, %:"))
+        self.vat_spin = QDoubleSpinBox()
+        self.vat_spin.setDecimals(2)
+        self.vat_spin.setRange(0, 100)
+        self.vat_spin.setValue(20.0)
+        p.addWidget(self.vat_spin)
         project_group.setLayout(p);
         lay.addWidget(project_group)
+        self.on_legal_entity_changed(self.legal_entity_combo.currentText())
 
         # Языковые пары
         pairs_group = QGroupBox("Языковые пары")
@@ -421,6 +429,14 @@ class TranslationCostCalculator(QMainWindow):
             w.set_currency(self.currency_symbol, code)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_currency(self.currency_symbol, code)
+
+    def on_legal_entity_changed(self, entity: str):
+        is_art = entity == "Арт"
+        self.vat_spin.setEnabled(is_art)
+        if is_art and self.vat_spin.value() == 0:
+            self.vat_spin.setValue(20.0)
+        if not is_art:
+            self.vat_spin.setValue(0.0)
 
     # ---------- RIGHT ----------
     def create_right_panel(self) -> QWidget:
@@ -825,6 +841,7 @@ class TranslationCostCalculator(QMainWindow):
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
             "project_setup": self.project_setup_widget.get_data() if self.project_setup_widget else [],
+            "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -908,6 +925,9 @@ class TranslationCostCalculator(QMainWindow):
             self.legal_entity_combo.setCurrentText(project_data.get("legal_entity", ""))
         if hasattr(self, "currency_combo"):
             self.currency_combo.setCurrentText(project_data.get("currency", "RUB"))
+        if hasattr(self, "vat_spin"):
+            self.vat_spin.setValue(project_data.get("vat_rate", 20.0))
+            self.on_legal_entity_changed(self.legal_entity_combo.currentText())
 
         for w in self.language_pairs.values():
             w.setParent(None)
