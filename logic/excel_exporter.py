@@ -488,10 +488,13 @@ class ExcelExporter:
 
             # Переходим к следующему блоку
             current_row = t_subtotal_row + 1
-        # Если шаблонный блок находился на той же странице, удаляем его хвост,
-        # чтобы не оставлять повторно скопированный фрагмент после данных.
-        if template_ws == ws:
-            ws.delete_rows(current_row, template_height)
+        # Если на листе остался оригинальный шаблонный блок с плейсхолдерами,
+        # удаляем его, чтобы в результате не было дублей таблиц.
+        extra_start = self._find_first(ws, START_PH, start_row)
+        if extra_start:
+            extra_end = self._find_below(ws, extra_start[0], END_PH)
+            if extra_end:
+                ws.delete_rows(extra_start[0], extra_end[0] - extra_start[0] + 1)
 
         return current_row - 1, subtot_cells
 
@@ -523,10 +526,13 @@ class ExcelExporter:
 
         ws.insert_rows(start_row, template_height)
         self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
-        # При использовании текущего листа как источника шаблона необходимо
-        # удалить исходный шаблонный блок, который был сдвинут вниз вставкой.
-        if template_ws == ws:
-            ws.delete_rows(start_row + template_height, template_height)
+        # После вставки проверяем, не остался ли на листе исходный шаблонный
+        # блок с плейсхолдерами, и при обнаружении удаляем его.
+        ps_tail = self._find_first(ws, PS_START_PH, start_row + template_height)
+        if ps_tail:
+            ps_tail_end = self._find_below(ws, ps_tail[0], PS_END_PH)
+            if ps_tail_end:
+                ws.delete_rows(ps_tail[0], ps_tail_end[0] - ps_tail[0] + 1)
 
         block_top = start_row
         t_headers_row = block_top + headers_rel
@@ -763,10 +769,13 @@ class ExcelExporter:
             )
 
             current_row = subtotal_row + 1
-        # Если шаблон брался с текущего листа, убираем оставшийся оригинальный
-        # блок, чтобы предотвратить его дублирование в конце документа.
-        if template_ws == ws:
-            ws.delete_rows(current_row, template_height)
+        # Если на листе остался невостребованный блок шаблона с плейсхолдерами,
+        # удаляем его, чтобы таблица не дублировалась в конце.
+        add_tail = self._find_first(ws, ADD_START_PH, start_row)
+        if add_tail:
+            add_tail_end = self._find_below(ws, add_tail[0], ADD_END_PH)
+            if add_tail_end:
+                ws.delete_rows(add_tail[0], add_tail_end[0] - add_tail[0] + 1)
 
         return current_row - 1, subtot_cells
 
