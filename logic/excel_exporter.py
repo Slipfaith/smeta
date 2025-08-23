@@ -122,7 +122,13 @@ class ExcelExporter:
                 if name in wb.sheetnames:
                     del wb[name]
 
-            self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=13)
+            # Fill all textual placeholders across the sheet.
+            # Previously we started from row 13, which left placeholders
+            # in the header (rows 1-12) untouched. These placeholders
+            # include client and project information entered by the user.
+            # Start from the first row so that values above row 13 are
+            # properly substituted.
+            self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=1)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
