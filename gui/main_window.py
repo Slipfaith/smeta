@@ -650,10 +650,14 @@ class TranslationCostCalculator(QMainWindow):
         self.source_lang_combo.setCurrentIndex(0)
         self.target_lang_combo.setCurrentIndex(0)
 
+    def _pair_sort_key(self, pair_key: str) -> str:
+        parts = pair_key.split(" → ")
+        return parts[1] if len(parts) > 1 else parts[0]
+
     def update_pairs_list(self):
         self.pairs_list.setText("\n".join(
             f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
-            for key, w in sorted(self.language_pairs.items(), key=lambda kv: kv[0].split(" → ")[1])
+            for key, w in sorted(self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0]))
         ))
         pair_count = len(self.language_pairs)
         self.language_pairs_count_label.setText(
@@ -711,7 +715,7 @@ class TranslationCostCalculator(QMainWindow):
             added_pairs = 0
             updated_pairs = 0
 
-            for pair_key, volumes in sorted(data.items(), key=lambda kv: kv[0].split(" → ")[1]):
+            for pair_key, volumes in sorted(data.items(), key=lambda kv: self._pair_sort_key(kv[0])):
                 print(f"\nProcessing pair: {pair_key}")
                 print(f"Volumes: {volumes}")
 
@@ -799,7 +803,7 @@ class TranslationCostCalculator(QMainWindow):
 
             # Обновляем список пар
             # ensure widgets are ordered alphabetically by target language
-            sorted_items = sorted(self.language_pairs.items(), key=lambda kv: kv[0].split(" → ")[1])
+            sorted_items = sorted(self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0]))
             # remove existing widgets and re-insert in sorted order
             for w in self.language_pairs.values():
                 self.pairs_layout.removeWidget(w)
