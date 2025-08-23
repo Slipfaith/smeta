@@ -261,9 +261,6 @@ class TranslationCostCalculator(QMainWindow):
         p.addWidget(QLabel("Название проекта:"))
         self.project_name_edit = QLineEdit();
         p.addWidget(self.project_name_edit)
-        p.addWidget(QLabel("Номер/код проекта:"))
-        self.project_code_edit = QLineEdit();
-        p.addWidget(self.project_code_edit)
         p.addWidget(QLabel("Название клиента:"))
         self.client_name_edit = QLineEdit();
         p.addWidget(self.client_name_edit)
@@ -800,7 +797,6 @@ class TranslationCostCalculator(QMainWindow):
     def collect_project_data(self) -> Dict[str, Any]:
         data = {
             "project_name": self.project_name_edit.text(),
-            "project_code": self.project_code_edit.text(),
             "client_name": self.client_name_edit.text(),
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
@@ -887,7 +883,6 @@ class TranslationCostCalculator(QMainWindow):
 
     def load_project_data(self, project_data: Dict[str, Any]):
         self.project_name_edit.setText(project_data.get("project_name", ""))
-        self.project_code_edit.setText(project_data.get("project_code", ""))
         self.client_name_edit.setText(project_data.get("client_name", ""))
         self.contact_person_edit.setText(project_data.get("contact_person", ""))
         self.email_edit.setText(project_data.get("email", ""))
