@@ -20,6 +20,7 @@ from logic.user_config import load_languages, add_language
 from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
+from logic.legal_entities import load_legal_entities
 
 
 class DropArea(QScrollArea):
@@ -200,6 +201,7 @@ class TranslationCostCalculator(QMainWindow):
         else:
             self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
         self.only_new_repeats_mode = False
+        self.legal_entities = load_legal_entities()
         self.setup_ui()
         self.setup_style()
 
@@ -271,6 +273,10 @@ class TranslationCostCalculator(QMainWindow):
         p.addWidget(QLabel("E-mail:"))
         self.email_edit = QLineEdit();
         p.addWidget(self.email_edit)
+        p.addWidget(QLabel("Юрлицо:"))
+        self.legal_entity_combo = QComboBox()
+        self.legal_entity_combo.addItems(self.legal_entities.keys())
+        p.addWidget(self.legal_entity_combo)
         project_group.setLayout(p);
         lay.addWidget(project_group)
 
@@ -798,6 +804,7 @@ class TranslationCostCalculator(QMainWindow):
             "client_name": self.client_name_edit.text(),
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
+            "legal_entity": self.legal_entity_combo.currentText(),
             "language_pairs": [],
             "additional_services": [],
             "pm_name": self.current_pm.get("name_ru", ""),
@@ -833,7 +840,9 @@ class TranslationCostCalculator(QMainWindow):
         if not file_path:
             return
 
-        exporter = ExcelExporter()
+        entity_name = self.legal_entity_combo.currentText()
+        template_path = self.legal_entities.get(entity_name)
+        exporter = ExcelExporter(template_path)
 
         if exporter.export_to_excel(project_data, file_path):
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
@@ -882,6 +891,8 @@ class TranslationCostCalculator(QMainWindow):
         self.client_name_edit.setText(project_data.get("client_name", ""))
         self.contact_person_edit.setText(project_data.get("contact_person", ""))
         self.email_edit.setText(project_data.get("email", ""))
+        if hasattr(self, "legal_entity_combo"):
+            self.legal_entity_combo.setCurrentText(project_data.get("legal_entity", ""))
 
         for w in self.language_pairs.values():
             w.setParent(None)
