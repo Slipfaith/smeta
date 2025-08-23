@@ -258,7 +258,21 @@ class ExcelExporter:
 
             # Подготовка данных: фиксированные 4 строки статистики
             translation_rows = (pair.get("services") or {}).get("translation", [])
-            data_map = {r.get("key"): r for r in translation_rows}
+            data_map: Dict[str, Dict[str, Any]] = {}
+            for row in translation_rows:
+                key = row.get("key") or row.get("name")
+                if not key:
+                    continue
+                data_map[key] = row
+                lname = str(key).lower()
+                if "100" in lname:
+                    data_map.setdefault("reps_100_30", row)
+                elif "95" in lname:
+                    data_map.setdefault("fuzzy_95_99", row)
+                elif "75" in lname:
+                    data_map.setdefault("fuzzy_75_94", row)
+                elif "new" in lname or "нов" in lname:
+                    data_map.setdefault("new", row)
 
             items: List[Dict[str, Any]] = []
             for cfg in ServiceConfig.TRANSLATION_ROWS:
@@ -464,6 +478,13 @@ class ExcelExporter:
     def _render_additional_services_tables(self, ws: Worksheet, project_data: Dict[str, Any]) -> List[str]:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
+            start = self._find_first(ws, ADD_START_PH)
+            if start:
+                start_row, _ = start
+                end = self._find_below(ws, start_row, ADD_END_PH)
+                if end:
+                    end_row, _ = end
+                    ws.delete_rows(start_row, end_row - start_row + 1)
             return []
 
         # исходный шаблон — чтобы копировать новые блоки
