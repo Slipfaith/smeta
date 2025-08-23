@@ -913,19 +913,32 @@ class ExcelExporter:
                 dst = ws.cell(total_row + 1 + r, c)
                 self._copy_style(src, dst)
 
+        repl_map = {
+            "{{%vat}}": f"{vat_rate}%",
+            "{{total_vat}}": f"={total_cell_ref}*{vat_rate}/100",
+            "{{total.with_vat}}": f"={total_cell_ref}*{100+vat_rate}/100",
+            "{{$}}": self.currency,
+        }
+
         for r in range(total_row + 1, total_row + 1 + rows):
             for c in range(1, cols + 1):
                 cell = ws.cell(r, c)
-                if isinstance(cell.value, str):
-                    val = cell.value.strip()
-                    if val == "{{%vat}}":
-                        cell.value = f"{vat_rate}%"
-                    elif val == "{{total_vat}}":
-                        cell.value = f"={total_cell_ref}*{vat_rate}/100"
-                        cell.number_format = self.total_fmt
-                    elif val == "{{total.with_vat}}":
-                        cell.value = f"={total_cell_ref}*{100+vat_rate}/100"
-                        cell.number_format = self.total_fmt
-                    elif val == "{{$}}":
-                        cell.value = self.currency
+                if not isinstance(cell.value, str):
+                    continue
+                new_val = cell.value
+                had_total = False
+                for ph, val in repl_map.items():
+                    if ph in new_val:
+                        if ph in ("{{total_vat}}", "{{total.with_vat}}"):
+                            had_total = True
+                            rep = val
+                            if new_val.strip() != ph and rep.startswith("="):
+                                rep = rep.lstrip("=")
+                        else:
+                            rep = val
+                        new_val = new_val.replace(ph, rep)
+                if new_val != cell.value:
+                    cell.value = new_val
+                if had_total:
+                    cell.number_format = self.total_fmt
 
