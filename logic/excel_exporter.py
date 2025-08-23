@@ -847,6 +847,8 @@ class ExcelExporter:
                 uniq_targets.append(lang)
         target_langs_str = ", ".join(filter(None, [source_lang] + uniq_targets))
 
+        lang_code = project_data.get("language_code", self.currency)
+
         strict_map = {
             "{{project_name}}": project_data.get("project_name", ""),
             "{{client}}": project_data.get("client_name", ""),
@@ -875,6 +877,12 @@ class ExcelExporter:
                         total_cell = ws.cell(r, c, total_formula)
                         total_cell.number_format = self.total_fmt
                         total_cell_ref = total_cell.coordinate
+                        # Replace language code placeholder in the total row
+                        for c2 in range(1, ws.max_column + 1):
+                            cell2 = ws.cell(r, c2)
+                            val2 = cell2.value
+                            if isinstance(val2, str) and "{{$}}" in val2:
+                                cell2.value = val2.replace("{{$}}", lang_code)
                     else:
                         new_v = v
                         for ph, val in strict_map.items():
