@@ -681,13 +681,6 @@ class TranslationCostCalculator(QMainWindow):
         print(f"Received {len(paths)} XML files")
         print(f"Replace mode: {replace}")
 
-        # Показываем прогресс пользователю
-        if len(paths) > 1:
-            QMessageBox.information(
-                self, "Обработка файлов",
-                f"Начинается обработка {len(paths)} XML файлов.\nПожалуйста, подождите..."
-            )
-
         try:
             data, warnings = parse_reports(paths)
             print(f"Parse results: {len(data)} language pairs found")
@@ -819,8 +812,6 @@ class TranslationCostCalculator(QMainWindow):
             if updated_pairs > 0:
                 result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
             result_msg += f"\nВсего обработано языковых пар: {len(data)}"
-
-            QMessageBox.information(self, "Результат обработки", result_msg)
 
         except Exception as e:
             error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
