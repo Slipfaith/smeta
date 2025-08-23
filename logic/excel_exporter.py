@@ -1,5 +1,6 @@
 # logic/excel_exporter.py
 import os
+import logging
 from typing import Dict, Any, List, Optional, Tuple
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -75,13 +76,23 @@ ADD_HDR_TITLES = {
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
-    def __init__(self, template_path: Optional[str] = None):
+    def __init__(self, template_path: Optional[str] = None, log_path: str = "excel_export.log"):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
+        self.logger = logging.getLogger("ExcelExporter")
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.propagate = False
+        if not self.logger.handlers:
+            handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+            formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+        self.logger.debug("Initialized ExcelExporter with template %s", self.template_path)
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
     def export_to_excel(self, project_data: Dict[str, Any], output_path: str) -> bool:
         try:
+            self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
                 raise FileNotFoundError(f"Шаблон не найден: {self.template_path}")
 
@@ -96,11 +107,15 @@ class ExcelExporter:
             add_cells = self._render_additional_services_tables(ws, project_data)
             if add_cells:
                 subtot_cells += add_cells
+            self.logger.debug("Subtotal cells collected: %s", subtot_cells)
             self._fill_text_placeholders(ws, project_data, subtot_cells)
 
+            self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
+            self.logger.info("Export completed successfully")
             return True
         except Exception as e:
+            self.logger.exception("Export failed")
             print(f"[ExcelExporter] Ошибка экспорта: {e}")
             return False
 
@@ -205,6 +220,7 @@ class ExcelExporter:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
             return []
+        self.logger.debug("Rendering %d translation pair(s)", len(pairs))
 
         pairs = sorted(pairs, key=lambda p: p.get("pair_name", "").split(" - ")[1] if " - " in p.get("pair_name", "") else p.get("pair_name", ""))
 
@@ -230,6 +246,7 @@ class ExcelExporter:
         current_row = start_row
 
         for i, pair in enumerate(pairs):
+            self.logger.debug("Rendering translation block '%s'", pair.get("pair_name"))
             # Если не первый блок - добавляем новый
             if i > 0:
                 ws.insert_rows(current_row, template_height)
@@ -285,6 +302,7 @@ class ExcelExporter:
                     "multiplier": cfg.get("multiplier"),
                     "is_base": bool(cfg.get("is_base")),
                 })
+            self.logger.debug("Items prepared for '%s': %s", pair.get("pair_name"), items)
 
             # Подгонка количества строк данных
             cur_cap = max(0, t_subtotal_row - t_first_data)
@@ -326,6 +344,13 @@ class ExcelExporter:
             row_numbers: List[int] = []
             for it in items:
                 row_numbers.append(r)
+                self.logger.debug(
+                    "Writing translation row %d: parameter=%s volume=%s rate=%s",
+                    r,
+                    it.get("parameter"),
+                    it.get("volume"),
+                    it.get("rate"),
+                )
                 ws.cell(r, col_param, it["parameter"])
                 ws.cell(r, col_type, "")
                 ws.cell(r, col_unit, "Слово")
@@ -365,6 +390,11 @@ class ExcelExporter:
             subtotal_cell.number_format = "0.00"
 
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
+            self.logger.debug(
+                "Subtotal for '%s' stored in %s",
+                pair.get("pair_name"),
+                f"{totalL}{t_subtotal_row}",
+            )
 
             # Переходим к следующему блоку
             current_row = t_subtotal_row + 1
@@ -448,8 +478,16 @@ class ExcelExporter:
         ws.merge_cells(ref)
         ws.cell(block_top, first_col, "Запуск и управление проектом")
 
+        self.logger.debug("Rendering project setup table with %d items", len(items))
         r = t_first_data
         for it in items:
+            self.logger.debug(
+                "Project setup row %d: parameter=%s volume=%s rate=%s",
+                r,
+                it.get("parameter"),
+                it.get("volume"),
+                it.get("rate"),
+            )
             ws.cell(r, col_param, it.get("parameter", ""))
             ws.cell(r, col_unit, "час")
             ws.cell(r, col_qty, it.get("volume", 0))
@@ -472,6 +510,7 @@ class ExcelExporter:
         else:
             subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
         subtotal_cell.number_format = "0.00"
+        self.logger.debug("Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}")
 
         return f"{totalL}{t_subtotal_row}"
 
@@ -486,6 +525,7 @@ class ExcelExporter:
                     end_row, _ = end
                     ws.delete_rows(start_row, end_row - start_row + 1)
             return []
+        self.logger.debug("Rendering %d additional services block(s)", len(blocks))
 
         # исходный шаблон — чтобы копировать новые блоки
         template_wb = load_workbook(self.template_path)
@@ -533,6 +573,11 @@ class ExcelExporter:
                     ws.column_dimensions[letter].width = tpl_width
 
             header_title = block.get("header_title", "Дополнительные услуги")
+            self.logger.debug(
+                "Rendering additional services block '%s' with %d rows",
+                header_title,
+                len(block.get("rows", [])),
+            )
             header_ref = f"{get_column_letter(first_col)}{start_row}:{get_column_letter(last_col)}{start_row}"
             try:
                 ws.unmerge_cells(header_ref)
@@ -588,6 +633,14 @@ class ExcelExporter:
 
             r = first_data_row
             for it in items:
+                self.logger.debug(
+                    "Additional service row %d: parameter=%s unit=%s volume=%s rate=%s",
+                    r,
+                    it.get("parameter"),
+                    it.get("unit"),
+                    it.get("volume"),
+                    it.get("rate"),
+                )
                 ws.cell(r, col_param, it.get("parameter", ""))
                 ws.cell(r, col_unit, it.get("unit", ""))
                 ws.cell(r, col_qty, it.get("volume", 0))
@@ -611,6 +664,11 @@ class ExcelExporter:
                 subtotal_cell = ws.cell(subtotal_row, col_total, f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})")
             subtotal_cell.number_format = "0.00"
             subtot_cells.append(f"{totalL}{subtotal_row}")
+            self.logger.debug(
+                "Subtotal for '%s' stored in %s",
+                header_title,
+                f"{totalL}{subtotal_row}",
+            )
 
             search_row = subtotal_row + 1
 
@@ -621,6 +679,7 @@ class ExcelExporter:
     def _fill_text_placeholders(self, ws: Worksheet, project_data: Dict[str, Any], subtot_cells: List[str]) -> None:
         # общий итог — именно как формула SUM по найденным субтоталам (чтобы Excel считал сам)
         total_formula = f"=SUM({','.join(subtot_cells)})" if subtot_cells else "0"
+        self.logger.debug("Total formula calculated: %s", total_formula)
 
         strict_map = {
             "{{project_name}}": project_data.get("project_name", ""),
@@ -632,6 +691,7 @@ class ExcelExporter:
             "{{PM_email}}": project_data.get("pm_email", "pm@company.com"),
             "{{target_langs}}": ", ".join([p.get("pair_name", "") for p in project_data.get("language_pairs", [])]),
         }
+        self.logger.debug("Filling text placeholders with map: %s", strict_map)
 
         for r in range(1, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
