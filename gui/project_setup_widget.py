@@ -19,8 +19,10 @@ class ProjectSetupWidget(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, initial_volume: float = 0.0):
+    def __init__(self, initial_volume: float = 0.0, currency_symbol: str = "₽", currency_code: str = "RUB"):
         super().__init__()
+        self.currency_symbol = currency_symbol
+        self.currency_code = currency_code
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
@@ -47,7 +49,10 @@ class ProjectSetupWidget(QWidget):
 
         self.table = QTableWidget(1, 4)
         self.table.setHorizontalHeaderLabels([
-            "Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"
+            "Параметр",
+            "Объем",
+            f"Ставка ({self.currency_symbol})",
+            f"Сумма ({self.currency_symbol})",
         ])
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -56,7 +61,7 @@ class ProjectSetupWidget(QWidget):
 
         self.table.setItem(0, 0, QTableWidgetItem("Запуск и управление проектом"))
         self.table.setItem(0, 1, QTableWidgetItem(str(initial_volume)))
-        self.table.setItem(0, 2, QTableWidgetItem("0.00"))
+        self.table.setItem(0, 2, QTableWidgetItem("0.000"))
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(0, 3, total_item)
@@ -98,7 +103,7 @@ class ProjectSetupWidget(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
 
-        self.subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
+        self.subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         vbox.addWidget(self.subtotal_label)
 
@@ -127,7 +132,7 @@ class ProjectSetupWidget(QWidget):
         self.table.insertRow(insert_at)
         self.table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
         self.table.setItem(insert_at, 1, QTableWidgetItem("0"))
-        self.table.setItem(insert_at, 2, QTableWidgetItem("0.00"))
+        self.table.setItem(insert_at, 2, QTableWidgetItem("0.000"))
         total_item = QTableWidgetItem("0.00")
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(insert_at, 3, total_item)
@@ -190,7 +195,7 @@ class ProjectSetupWidget(QWidget):
                 volume = _to_float(volume_item.text() if volume_item else "0")
                 rate = _to_float(rate_item.text() if rate_item else "0")
                 self.table.blockSignals(True)
-                rate_item.setText(f"{rate:.2f}")
+                rate_item.setText(f"{rate:.3f}")
                 self.table.blockSignals(False)
                 total = volume * rate
                 total_item = self.table.item(row, 3)
@@ -202,7 +207,7 @@ class ProjectSetupWidget(QWidget):
                 total_item.setText(f"{total:.2f}")
                 self.table.blockSignals(False)
                 subtotal += total
-            self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
+            self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
             self._fit_table_height(self.table)
         except Exception:
             pass
@@ -228,11 +233,22 @@ class ProjectSetupWidget(QWidget):
         for i, row_data in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(row_data.get("parameter", "")))
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(f"{row_data.get('rate', 0):.2f}"))
+            self.table.setItem(i, 2, QTableWidgetItem(f"{row_data.get('rate', 0):.3f}"))
             total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
             self._set_row_deleted(i, False)
         self.table.blockSignals(False)
         self._fit_table_height(self.table)
+        self.update_sums()
+
+    def set_currency(self, symbol: str, code: str):
+        self.currency_symbol = symbol
+        self.currency_code = code
+        self.table.setHorizontalHeaderLabels([
+            "Параметр",
+            "Объем",
+            f"Ставка ({symbol})",
+            f"Сумма ({symbol})",
+        ])
         self.update_sums()

@@ -29,8 +29,10 @@ class AdditionalServiceTable(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, title: str = "Дополнительные услуги") -> None:
+    def __init__(self, title: str = "Дополнительные услуги", currency_symbol: str = "₽", currency_code: str = "RUB") -> None:
         super().__init__()
+        self.currency_symbol = currency_symbol
+        self.currency_code = currency_code
         self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
@@ -56,8 +58,8 @@ class AdditionalServiceTable(QWidget):
             "Параметр",
             "Ед-ца",
             "Объем",
-            "Ставка (руб)",
-            "Сумма (руб)",
+            f"Ставка ({self.currency_symbol})",
+            f"Сумма ({self.currency_symbol})",
         ])
 
         header_view = self.table.horizontalHeader()
@@ -67,7 +69,7 @@ class AdditionalServiceTable(QWidget):
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -79,7 +81,7 @@ class AdditionalServiceTable(QWidget):
 
         layout.addWidget(self.table)
 
-        self.subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
+        self.subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.subtotal_label)
 
@@ -105,7 +107,7 @@ class AdditionalServiceTable(QWidget):
     def add_row_after(self, row: int) -> None:
         insert_at = row + 1
         self.table.insertRow(insert_at)
-        for col, text in enumerate(["", "", "0", "0.00", "0.00"]):
+        for col, text in enumerate(["", "", "0", "0.000", "0.00"]):
             item = QTableWidgetItem(text)
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
@@ -122,7 +124,12 @@ class AdditionalServiceTable(QWidget):
         subtotal = 0.0
         for r in range(self.table.rowCount()):
             volume = _to_float(self._text(r, 2))
-            rate = _to_float(self._text(r, 3))
+            rate_item = self.table.item(r, 3)
+            rate = _to_float(rate_item.text() if rate_item else "0")
+            self.table.blockSignals(True)
+            if rate_item:
+                rate_item.setText(f"{rate:.3f}")
+            self.table.blockSignals(False)
             total = volume * rate
             subtotal += total
             item = self.table.item(r, 4)
@@ -132,7 +139,7 @@ class AdditionalServiceTable(QWidget):
                 self.table.setItem(r, 4, item)
             item.setText(f"{total:.2f}")
 
-        self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
+        self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
 
     def _text(self, row: int, col: int) -> str:
         item = self.table.item(row, col)
@@ -168,19 +175,33 @@ class AdditionalServiceTable(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    item.setText(f"{_to_float(val):.2f}")
+                    item.setText(f"{_to_float(val):.3f}")
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(r, 4, total_item)
         self.update_sums()
 
+    def set_currency(self, symbol: str, code: str) -> None:
+        self.currency_symbol = symbol
+        self.currency_code = code
+        self.table.setHorizontalHeaderLabels([
+            "Параметр",
+            "Ед-ца",
+            "Объем",
+            f"Ставка ({symbol})",
+            f"Сумма ({symbol})",
+        ])
+        self.update_sums()
+
 
 class AdditionalServicesWidget(QWidget):
     """Container managing multiple additional service tables."""
 
-    def __init__(self) -> None:
+    def __init__(self, currency_symbol: str = "₽", currency_code: str = "RUB") -> None:
         super().__init__()
+        self.currency_symbol = currency_symbol
+        self.currency_code = currency_code
         self.tables: List[AdditionalServiceTable] = []
         self._setup_ui()
 
@@ -197,7 +218,7 @@ class AdditionalServicesWidget(QWidget):
         self.add_table()
 
     def add_table(self, data: Dict = None) -> None:
-        table = AdditionalServiceTable()
+        table = AdditionalServiceTable(currency_symbol=self.currency_symbol, currency_code=self.currency_code)
         table.remove_requested.connect(lambda t=table: self.remove_table(t))
         self.tables.append(table)
         self.tables_layout.addWidget(table)
@@ -227,4 +248,10 @@ class AdditionalServicesWidget(QWidget):
             return
         for block in blocks:
             self.add_table(block)
+
+    def set_currency(self, symbol: str, code: str) -> None:
+        self.currency_symbol = symbol
+        self.currency_code = code
+        for tbl in self.tables:
+            tbl.set_currency(symbol, code)
 

@@ -22,6 +22,8 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 
+CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
+
 
 class DropArea(QScrollArea):
     """QScrollArea, принимающая перетаскивание XML-файлов и отдающая пути в колбек."""
@@ -202,6 +204,7 @@ class TranslationCostCalculator(QMainWindow):
             self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
         self.only_new_repeats_mode = False
         self.legal_entities = load_legal_entities()
+        self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
         self.setup_ui()
         self.setup_style()
 
@@ -274,6 +277,11 @@ class TranslationCostCalculator(QMainWindow):
         self.legal_entity_combo = QComboBox()
         self.legal_entity_combo.addItems(self.legal_entities.keys())
         p.addWidget(self.legal_entity_combo)
+        p.addWidget(QLabel("Валюта:"))
+        self.currency_combo = QComboBox()
+        self.currency_combo.addItems(["RUB", "EUR", "USD"])
+        self.currency_combo.currentTextChanged.connect(self.on_currency_changed)
+        p.addWidget(self.currency_combo)
         project_group.setLayout(p);
         lay.addWidget(project_group)
 
@@ -405,6 +413,15 @@ class TranslationCostCalculator(QMainWindow):
         self.populate_lang_combo(self.source_lang_combo)
         self.populate_lang_combo(self.target_lang_combo)
 
+    def on_currency_changed(self, code: str):
+        self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
+        if getattr(self, "project_setup_widget", None):
+            self.project_setup_widget.set_currency(self.currency_symbol, code)
+        for w in self.language_pairs.values():
+            w.set_currency(self.currency_symbol, code)
+        if getattr(self, "additional_services_widget", None):
+            self.additional_services_widget.set_currency(self.currency_symbol, code)
+
     # ---------- RIGHT ----------
     def create_right_panel(self) -> QWidget:
         w = QWidget();
@@ -426,7 +443,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
 
         # Таблица запуска и управления проектом
-        self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
+        self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value(), self.currency_symbol, self.currency_combo.currentText())
         self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
         self.pairs_layout.addWidget(self.project_setup_widget)
         self.project_setup_fee_spin.valueChanged.connect(self.update_project_setup_volume_from_spin)
@@ -459,7 +476,7 @@ class TranslationCostCalculator(QMainWindow):
 
         self.tabs.addTab(self.pairs_scroll, "Языковые пары")
 
-        self.additional_services_widget = AdditionalServicesWidget()
+        self.additional_services_widget = AdditionalServicesWidget(self.currency_symbol, self.currency_combo.currentText())
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
@@ -599,7 +616,7 @@ class TranslationCostCalculator(QMainWindow):
             header_title = tgt["text"]
         self.pair_headers[pair_key] = header_title
 
-        widget = LanguagePairWidget(display_name)  # только Перевод
+        widget = LanguagePairWidget(display_name, self.currency_symbol, self.currency_combo.currentText())  # только Перевод
         widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
         self.language_pairs[pair_key] = widget
         if self.only_new_repeats_mode:
@@ -801,6 +818,7 @@ class TranslationCostCalculator(QMainWindow):
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
             "legal_entity": self.legal_entity_combo.currentText(),
+            "currency": self.currency_combo.currentText(),
             "language_pairs": [],
             "additional_services": [],
             "pm_name": self.current_pm.get("name_ru", ""),
@@ -838,7 +856,7 @@ class TranslationCostCalculator(QMainWindow):
 
         entity_name = self.legal_entity_combo.currentText()
         template_path = self.legal_entities.get(entity_name)
-        exporter = ExcelExporter(template_path)
+        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
 
         if exporter.export_to_excel(project_data, file_path):
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
@@ -888,6 +906,8 @@ class TranslationCostCalculator(QMainWindow):
         self.email_edit.setText(project_data.get("email", ""))
         if hasattr(self, "legal_entity_combo"):
             self.legal_entity_combo.setCurrentText(project_data.get("legal_entity", ""))
+        if hasattr(self, "currency_combo"):
+            self.currency_combo.setCurrentText(project_data.get("currency", "RUB"))
 
         for w in self.language_pairs.values():
             w.setParent(None)
@@ -897,7 +917,7 @@ class TranslationCostCalculator(QMainWindow):
         for pair_data in project_data.get("language_pairs", []):
             pair_key = pair_data["pair_name"]  # в твоём текущем формате это строка, оставляем как есть
             header_title = pair_data.get("header_title", pair_key)
-            widget = LanguagePairWidget(pair_key)
+            widget = LanguagePairWidget(pair_key, self.currency_symbol, self.currency_combo.currentText())
             widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
             self.language_pairs[pair_key] = widget
             # Вставляем новый виджет перед растягивающимся элементом
@@ -914,7 +934,7 @@ class TranslationCostCalculator(QMainWindow):
         ps_rows = project_data.get("project_setup")
         if ps_rows:
             if not self.project_setup_widget:
-                self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value())
+                self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value(), self.currency_symbol, self.currency_combo.currentText())
                 self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
                 self.project_setup_widget.table.itemChanged.connect(self.on_project_setup_item_changed)
                 self.pairs_layout.insertWidget(0, self.project_setup_widget)
