@@ -488,6 +488,10 @@ class ExcelExporter:
 
             # Переходим к следующему блоку
             current_row = t_subtotal_row + 1
+        # Если шаблонный блок находился на той же странице, удаляем его хвост,
+        # чтобы не оставлять повторно скопированный фрагмент после данных.
+        if template_ws == ws:
+            ws.delete_rows(current_row, template_height)
 
         return current_row - 1, subtot_cells
 
@@ -519,6 +523,10 @@ class ExcelExporter:
 
         ws.insert_rows(start_row, template_height)
         self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
+        # При использовании текущего листа как источника шаблона необходимо
+        # удалить исходный шаблонный блок, который был сдвинут вниз вставкой.
+        if template_ws == ws:
+            ws.delete_rows(start_row + template_height, template_height)
 
         block_top = start_row
         t_headers_row = block_top + headers_rel
@@ -755,6 +763,10 @@ class ExcelExporter:
             )
 
             current_row = subtotal_row + 1
+        # Если шаблон брался с текущего листа, убираем оставшийся оригинальный
+        # блок, чтобы предотвратить его дублирование в конце документа.
+        if template_ws == ws:
+            ws.delete_rows(current_row, template_height)
 
         return current_row - 1, subtot_cells
 
