@@ -44,7 +44,7 @@ PS_HDR = {
     "unit": "{{unit.project_setup}}",
     "qty": "{{quantity.project_setup}}",
     "rate": "{{rate.project_setup}}",
-    "total": "{{total_{project_setup_table}}}",
+    "total": "{{total_project_setup_table}}",
 }
 PS_HDR_TITLES = {
     PS_HDR["param"]: "Названия работ",
@@ -774,15 +774,41 @@ class ExcelExporter:
         total_formula = f"=SUM({','.join(subtot_cells)})" if subtot_cells else "0"
         self.logger.debug("Total formula calculated: %s", total_formula)
 
+        # формируем строку всех языков: сорс (первый), затем уникальные таргеты
+        source_lang = ""
+        target_langs: List[str] = []
+        for p in project_data.get("language_pairs", []):
+            pair_name = p.get("pair_name", "")
+            if "→" in pair_name:
+                src, tgt = [s.strip() for s in pair_name.split("→", 1)]
+            elif "-" in pair_name:
+                src, tgt = [s.strip() for s in pair_name.split("-", 1)]
+            else:
+                src, tgt = "", pair_name.strip()
+            if not source_lang and src:
+                source_lang = src
+            if tgt:
+                target_langs.append(tgt)
+        # удаляем дубликаты в порядке появления
+        uniq_targets: List[str] = []
+        for lang in target_langs:
+            if lang and lang not in uniq_targets:
+                uniq_targets.append(lang)
+        target_langs_str = ", ".join(filter(None, [source_lang] + uniq_targets))
+
         strict_map = {
             "{{project_name}}": project_data.get("project_name", ""),
             "{{client}}": project_data.get("client_name", ""),
-            "{{Entity}}": project_data.get("entity_name", project_data.get("company_name", "")),
-            "{{Entity_address}}": project_data.get("entity_address", project_data.get("email", "")),
+            "{{Entity}}": project_data.get(
+                "entity_name", project_data.get("company_name", "")
+            ),
+            "{{Entity_address}}": project_data.get(
+                "entity_address", project_data.get("email", "")
+            ),
             "{{client_name}}": project_data.get("contact_person", ""),
             "{{PM_name}}": project_data.get("pm_name", "PM"),
             "{{PM_email}}": project_data.get("pm_email", "pm@company.com"),
-            "{{target_langs}}": ", ".join([p.get("pair_name", "") for p in project_data.get("language_pairs", [])]),
+            "{{target_langs}}": target_langs_str,
         }
         self.logger.debug("Filling text placeholders with map: %s", strict_map)
 
