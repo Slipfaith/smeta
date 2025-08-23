@@ -118,12 +118,23 @@ class ExcelExporter:
 
             q_subtot_cells: List[str] = []
             if quotation_ws is not None:
-                _, q_subtot_cells = self._render_translation_blocks(quotation_ws, project_data, 13)
+                q_row = 13
+                last_row, q_ps_cell = self._render_project_setup_table(quotation_ws, project_data, q_row)
+                if q_ps_cell:
+                    q_subtot_cells.append(q_ps_cell)
+                q_row = last_row + 1
+
+                last_row, q_tr_cells = self._render_translation_blocks(quotation_ws, project_data, q_row)
+                q_subtot_cells += q_tr_cells
+                q_row = last_row + 1
+
+                last_row, q_add_cells = self._render_additional_services_tables(quotation_ws, project_data, q_row)
+                q_subtot_cells += q_add_cells
 
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
             # Remove template sheets after rendering
-            for name in ("ProjectSetup", "Languages", "AdditionalServices"):
+            for name in ("ProjectSetup", "Setupfee", "Languages", "AdditionalServices", "Addservice"):
                 if name in wb.sheetnames:
                     del wb[name]
 
@@ -485,7 +496,13 @@ class ExcelExporter:
         if not items:
             return start_row - 1, None
 
-        template_ws = ws.parent["ProjectSetup"] if "ProjectSetup" in ws.parent.sheetnames else ws
+        template_ws = (
+            ws.parent["Setupfee"]
+            if "Setupfee" in ws.parent.sheetnames
+            else ws.parent["ProjectSetup"]
+            if "ProjectSetup" in ws.parent.sheetnames
+            else ws
+        )
         tpl_start = self._find_first(template_ws, PS_START_PH)
         if not tpl_start:
             return start_row - 1, None
@@ -603,7 +620,13 @@ class ExcelExporter:
             return start_row - 1, []
         self.logger.debug("Rendering %d additional services block(s)", len(blocks))
 
-        template_ws = ws.parent["AdditionalServices"] if "AdditionalServices" in ws.parent.sheetnames else ws
+        template_ws = (
+            ws.parent["Addservice"]
+            if "Addservice" in ws.parent.sheetnames
+            else ws.parent["AdditionalServices"]
+            if "AdditionalServices" in ws.parent.sheetnames
+            else ws
+        )
         tpl_start = self._find_first(template_ws, ADD_START_PH)
         if not tpl_start:
             return start_row - 1, []
