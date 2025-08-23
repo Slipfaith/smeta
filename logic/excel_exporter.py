@@ -10,6 +10,8 @@ from openpyxl.utils import get_column_letter
 
 from .service_config import ServiceConfig
 
+CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
+
 # Шаблон теперь ищем относительно корня проекта, чтобы код работал на любой машине
 DEFAULT_TEMPLATE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "templates", "шаблон.modern.xlsx"
@@ -34,7 +36,7 @@ HDR_TITLES = {
     HDR["rate"]: "Ставка",
     HDR["total"]: "Итого",
 }
-SUBTOTAL_TITLE = "Промежуточная сумма (Руб):"
+SUBTOTAL_TITLE_TMPL = "Промежуточная сумма ({currency}):"
 
 # блок запуска и управления проектом
 PS_START_PH = "{{project_setup}}"
@@ -76,8 +78,13 @@ ADD_HDR_TITLES = {
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
-    def __init__(self, template_path: Optional[str] = None, log_path: str = "excel_export.md"):
+    def __init__(self, template_path: Optional[str] = None, currency: str = "RUB", log_path: str = "excel_export.md"):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
+        self.currency = currency
+        self.currency_symbol = CURRENCY_SYMBOLS.get(currency, "")
+        self.rate_fmt = self._currency_format(3)
+        self.total_fmt = self._currency_format(2)
+        self.subtotal_title = SUBTOTAL_TITLE_TMPL.format(currency=currency)
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
@@ -87,6 +94,12 @@ class ExcelExporter:
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
         self.logger.debug("Initialized ExcelExporter with template %s", self.template_path)
+
+    def _currency_format(self, decimals: int) -> str:
+        sym = self.currency_symbol
+        if self.currency == "USD":
+            return f'"{sym}"#,##0.{"0"*decimals}'
+        return f'#,##0.{"0"*decimals} "{sym}"'
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
@@ -441,9 +454,9 @@ class ExcelExporter:
                 else:
                     cell = ws.cell(rr, col_rate, it["rate"])
                     self.logger.debug("  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
-                cell.number_format = "0.###"
+                cell.number_format = self.rate_fmt
                 total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
-                total_cell.number_format = "0.00"
+                total_cell.number_format = self.total_fmt
                 self.logger.debug(
                     "  total formula %s%d=%s%d*%s%d",
                     get_column_letter(col_total),
@@ -457,7 +470,7 @@ class ExcelExporter:
             # Субтотал (заменяем плейсхолдер и ставим формулу)
             for c in range(1, ws.max_column + 1):
                 if ws.cell(t_subtotal_row, c).value == END_PH:
-                    ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
+                    ws.cell(t_subtotal_row, c, self.subtotal_title)
                     break
 
             totalL = get_column_letter(col_total)
@@ -465,7 +478,7 @@ class ExcelExporter:
                 subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
             else:
                 subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
-            subtotal_cell.number_format = "0.00"
+            subtotal_cell.number_format = self.total_fmt
 
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
             self.logger.debug(
@@ -594,16 +607,16 @@ class ExcelExporter:
             ws.cell(r, col_unit, "час")
             ws.cell(r, col_qty, it.get("volume", 0))
             rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
-            rate_cell.number_format = "0.00"
+            rate_cell.number_format = self.rate_fmt
             qtyL = get_column_letter(col_qty)
             rateL = get_column_letter(col_rate)
             total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
-            total_cell.number_format = "0.00"
+            total_cell.number_format = self.total_fmt
             r += 1
 
         for c in range(1, ws.max_column + 1):
             if ws.cell(t_subtotal_row, c).value == PS_END_PH:
-                ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
+                ws.cell(t_subtotal_row, c, self.subtotal_title)
                 break
 
         totalL = get_column_letter(col_total)
@@ -611,7 +624,7 @@ class ExcelExporter:
             subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
         else:
             subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
-        subtotal_cell.number_format = "0.00"
+        subtotal_cell.number_format = self.total_fmt
         self.logger.debug("Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}")
 
         return t_subtotal_row, f"{totalL}{t_subtotal_row}"
@@ -731,16 +744,16 @@ class ExcelExporter:
                 ws.cell(r, col_unit, it.get("unit", ""))
                 ws.cell(r, col_qty, it.get("volume", 0))
                 rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
-                rate_cell.number_format = "0.00"
+                rate_cell.number_format = self.rate_fmt
                 qtyL = get_column_letter(col_qty)
                 rateL = get_column_letter(col_rate)
                 total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
-                total_cell.number_format = "0.00"
+                total_cell.number_format = self.total_fmt
                 r += 1
 
             for c in range(first_col, last_col + 1):
                 if ws.cell(subtotal_row, c).value == ADD_END_PH:
-                    ws.cell(subtotal_row, c, SUBTOTAL_TITLE)
+                    ws.cell(subtotal_row, c, self.subtotal_title)
                     break
 
             totalL = get_column_letter(col_total)
@@ -748,7 +761,7 @@ class ExcelExporter:
                 subtotal_cell = ws.cell(subtotal_row, col_total, 0)
             else:
                 subtotal_cell = ws.cell(subtotal_row, col_total, f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})")
-            subtotal_cell.number_format = "0.00"
+            subtotal_cell.number_format = self.total_fmt
             subtot_cells.append(f"{totalL}{subtotal_row}")
             self.logger.debug(
                 "Subtotal for '%s' stored in %s",
@@ -815,6 +828,7 @@ class ExcelExporter:
                 "entity_address", project_data.get("email", "")
             ),
             "{{target_langs}}": target_langs_str,
+            "{{currency}}": self.currency,
         }
         self.logger.debug("Filling text placeholders with map: %s", strict_map)
 

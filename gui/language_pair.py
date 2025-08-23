@@ -25,9 +25,11 @@ class LanguagePairWidget(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, pair_name: str):
+    def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB"):
         super().__init__()
         self.pair_name = pair_name
+        self.currency_symbol = currency_symbol
+        self.currency_code = currency_code
         self.only_new_repeats_mode = False
         # резерв для восстановления исходных значений объёмов/ставок
         self._backup_volumes = []
@@ -65,10 +67,7 @@ class LanguagePairWidget(QWidget):
 
     @staticmethod
     def _format_rate(value: float) -> str:
-        text = f"{value:.3f}"
-        if "." in text:
-            text = text.rstrip("0").rstrip(".")
-        return text or "0"
+        return f"{value:.3f}"
 
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(service_name)
@@ -82,7 +81,12 @@ class LanguagePairWidget(QWidget):
             r['deleted'] = False
 
         table = QTableWidget(len(rows), 4)
-        table.setHorizontalHeaderLabels(["Параметр", "Объем", "Ставка (руб)", "Сумма (руб)"])
+        table.setHorizontalHeaderLabels([
+            "Параметр",
+            "Объем",
+            f"Ставка ({self.currency_symbol})",
+            f"Сумма ({self.currency_symbol})",
+        ])
 
         # ВАЖНО: никаких локальных скроллов — всё видно сразу
         table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -149,7 +153,7 @@ class LanguagePairWidget(QWidget):
         table.customContextMenuRequested.connect(show_menu)
 
         # Промежуточная сумма
-        subtotal_label = QLabel("Промежуточная сумма: 0.00 ₽")
+        subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
         subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtotal_label.setObjectName("subtotal_label")
         vbox.addWidget(subtotal_label)
@@ -338,7 +342,7 @@ class LanguagePairWidget(QWidget):
             parent_group: QGroupBox = self.translation_group
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
-                lbl.setText(f"Промежуточная сумма: {subtotal:.2f} ₽")
+                lbl.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
 
             # после любых изменений гарантируем отсутствие локального скролла
             self._fit_table_height(table)
@@ -413,3 +417,19 @@ class LanguagePairWidget(QWidget):
         setattr(group, 'base_rate_row', base_rate_row)
         self.update_rates_and_sums(table, rows, base_rate_row)
         self._fit_table_height(table)
+
+    def set_currency(self, symbol: str, code: str):
+        self.currency_symbol = symbol
+        self.currency_code = code
+        if hasattr(self.translation_group, 'table'):
+            self.translation_group.table.setHorizontalHeaderLabels([
+                "Параметр",
+                "Объем",
+                f"Ставка ({symbol})",
+                f"Сумма ({symbol})",
+            ])
+            self.update_rates_and_sums(
+                self.translation_group.table,
+                self.translation_group.rows_config,
+                getattr(self.translation_group, 'base_rate_row')
+            )
