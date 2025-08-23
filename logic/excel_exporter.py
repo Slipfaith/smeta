@@ -97,18 +97,35 @@ class ExcelExporter:
                 raise FileNotFoundError(f"Шаблон не найден: {self.template_path}")
 
             wb = load_workbook(self.template_path)
-            ws = wb.active
+
+            report_ws = wb["Report"] if "Report" in wb.sheetnames else wb.active
+            quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else None
 
             subtot_cells: List[str] = []
-            ps_cell = self._render_project_setup_table(ws, project_data)
+            current_row = 13
+
+            last_row, ps_cell = self._render_project_setup_table(report_ws, project_data, current_row)
             if ps_cell:
                 subtot_cells.append(ps_cell)
-            subtot_cells += self._render_translation_blocks(ws, project_data)
-            add_cells = self._render_additional_services_tables(ws, project_data)
-            if add_cells:
-                subtot_cells += add_cells
+            current_row = last_row + 1
+
+            last_row, tr_cells = self._render_translation_blocks(report_ws, project_data, current_row)
+            subtot_cells += tr_cells
+            current_row = last_row + 1
+
+            last_row, add_cells = self._render_additional_services_tables(report_ws, project_data, current_row)
+            subtot_cells += add_cells
+
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
-            self._fill_text_placeholders(ws, project_data, subtot_cells)
+
+            # Remove template sheets after rendering
+            for name in ("ProjectSetup", "Translation", "AdditionalServices"):
+                if name in wb.sheetnames:
+                    del wb[name]
+
+            self._fill_text_placeholders(report_ws, project_data, subtot_cells)
+            if quotation_ws is not None:
+                self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=13)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
@@ -235,41 +252,41 @@ class ExcelExporter:
 
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
 
-    def _render_translation_blocks(self, ws: Worksheet, project_data: Dict[str, Any]) -> List[str]:
+    def _render_translation_blocks(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, List[str]]:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
-            return []
+            return start_row - 1, []
         self.logger.debug("Rendering %d translation pair(s)", len(pairs))
 
-        pairs = sorted(pairs, key=lambda p: p.get("pair_name", "").split(" - ")[1] if " - " in p.get("pair_name", "") else p.get("pair_name", ""))
+        pairs = sorted(
+            pairs,
+            key=lambda p: p.get("pair_name", "").split(" - ")[1]
+            if " - " in p.get("pair_name", "")
+            else p.get("pair_name", ""),
+        )
 
-        start = self._find_first(ws, START_PH)
-        if not start:
+        template_ws = ws.parent["Translation"] if "Translation" in ws.parent.sheetnames else ws
+        tpl_start = self._find_first(template_ws, START_PH)
+        if not tpl_start:
             raise RuntimeError("В шаблоне не найден {{translation_table}}")
-        start_row, _ = start
-
-        end = self._find_below(ws, start_row, END_PH)
-        if not end:
+        tpl_start_row, _ = tpl_start
+        tpl_end = self._find_below(template_ws, tpl_start_row, END_PH)
+        if not tpl_end:
             raise RuntimeError("В шаблоне не найден {{subtotal_translation_table}} ниже {{translation_table}}")
-        end_row, _ = end
+        tpl_end_row, _ = tpl_end
 
-        template_height = end_row - start_row + 1
+        template_height = tpl_end_row - tpl_start_row + 1
         headers_rel = 1
         first_data_rel = 2
         subtotal_rel = template_height - 1
 
-        template_wb = load_workbook(self.template_path)
-        template_ws = template_wb.active
-
         subtot_cells: List[str] = []
         current_row = start_row
 
-        for i, pair in enumerate(pairs):
+        for pair in pairs:
             self.logger.debug("Rendering translation block '%s'", pair.get("pair_name"))
-            # Если не первый блок - добавляем новый
-            if i > 0:
-                ws.insert_rows(current_row, template_height)
-                self._copy_block(ws, template_ws, start_row, end_row, current_row)
+            ws.insert_rows(current_row, template_height)
+            self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
 
             block_top = current_row
             t_headers_row = block_top + headers_rel
@@ -457,26 +474,30 @@ class ExcelExporter:
             # Переходим к следующему блоку
             current_row = t_subtotal_row + 1
 
-        return subtot_cells
+        return current_row - 1, subtot_cells
 
-    def _render_project_setup_table(self, ws: Worksheet, project_data: Dict[str, Any]) -> Optional[str]:
+    def _render_project_setup_table(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, Optional[str]]:
         items: List[Dict[str, Any]] = project_data.get("project_setup", [])
         if not items:
-            return None
+            return start_row - 1, None
 
-        start = self._find_first(ws, PS_START_PH)
-        if not start:
-            return None
-        start_row, _ = start
-        end = self._find_below(ws, start_row, PS_END_PH)
-        if not end:
+        template_ws = ws.parent["ProjectSetup"] if "ProjectSetup" in ws.parent.sheetnames else ws
+        tpl_start = self._find_first(template_ws, PS_START_PH)
+        if not tpl_start:
+            return start_row - 1, None
+        tpl_start_row, _ = tpl_start
+        tpl_end = self._find_below(template_ws, tpl_start_row, PS_END_PH)
+        if not tpl_end:
             raise RuntimeError("В шаблоне не найден {{subtotal_project_setup}} ниже {{project_setup}}")
-        end_row, _ = end
+        tpl_end_row, _ = tpl_end
 
-        template_height = end_row - start_row + 1
+        template_height = tpl_end_row - tpl_start_row + 1
         headers_rel = 1
         first_data_rel = 2
         subtotal_rel = template_height - 1
+
+        ws.insert_rows(start_row, template_height)
+        self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
 
         block_top = start_row
         t_headers_row = block_top + headers_rel
@@ -570,60 +591,40 @@ class ExcelExporter:
         subtotal_cell.number_format = "0.00"
         self.logger.debug("Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}")
 
-        return f"{totalL}{t_subtotal_row}"
+        return t_subtotal_row, f"{totalL}{t_subtotal_row}"
 
-    def _render_additional_services_tables(self, ws: Worksheet, project_data: Dict[str, Any]) -> List[str]:
+    def _render_additional_services_tables(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, List[str]]:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
-            start = self._find_first(ws, ADD_START_PH)
-            if start:
-                start_row, _ = start
-                end = self._find_below(ws, start_row, ADD_END_PH)
-                if end:
-                    end_row, _ = end
-                    ws.delete_rows(start_row, end_row - start_row + 1)
-            return []
+            return start_row - 1, []
         self.logger.debug("Rendering %d additional services block(s)", len(blocks))
 
-        # исходный шаблон — чтобы копировать новые блоки
-        template_wb = load_workbook(self.template_path)
-        template_ws = template_wb.active
+        template_ws = ws.parent["AdditionalServices"] if "AdditionalServices" in ws.parent.sheetnames else ws
         tpl_start = self._find_first(template_ws, ADD_START_PH)
         if not tpl_start:
-            return []
+            return start_row - 1, []
         tpl_start_row, _ = tpl_start
         tpl_end = self._find_below(template_ws, tpl_start_row, ADD_END_PH)
         if not tpl_end:
-            return []
+            return start_row - 1, []
         tpl_end_row, _ = tpl_end
         template_height = tpl_end_row - tpl_start_row + 1
 
         subtot_cells: List[str] = []
-        search_row = 1
+        current_row = start_row
 
-        for i, block in enumerate(blocks):
-            # для каждого нового блока — вставляем шаблонный блок
-            if i > 0:
-                ws.insert_rows(search_row, template_height)
-                self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, search_row)
+        for block in blocks:
+            ws.insert_rows(current_row, template_height)
+            self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
 
-            start = self._find_first(ws, ADD_START_PH, search_row)
-            if not start:
-                break
-            start_row, _ = start
-            end = self._find_below(ws, start_row, ADD_END_PH)
-            if not end:
-                break
-            subtotal_row, _ = end
-
-            headers_row = start_row + 1
-            first_data_row = start_row + 2
+            headers_row = current_row + 1
+            first_data_row = current_row + 2
+            subtotal_row = current_row + template_height - 1
 
             hmap = self._header_map(ws, headers_row, ADD_HDR)
             first_col = min(hmap.values())
             last_col = max(hmap.values())
 
-            # ширины колонок берём из шаблона
             for c in range(first_col, last_col + 1):
                 letter = get_column_letter(c)
                 tpl_width = template_ws.column_dimensions[letter].width
@@ -636,15 +637,14 @@ class ExcelExporter:
                 header_title,
                 len(block.get("rows", [])),
             )
-            header_ref = f"{get_column_letter(first_col)}{start_row}:{get_column_letter(last_col)}{start_row}"
+            header_ref = f"{get_column_letter(first_col)}{current_row}:{get_column_letter(last_col)}{current_row}"
             try:
                 ws.unmerge_cells(header_ref)
             except Exception:
                 pass
             ws.merge_cells(header_ref)
-            ws.cell(start_row, first_col, header_title)
+            ws.cell(current_row, first_col, header_title)
 
-            # заголовки колонок
             for c in range(first_col, last_col + 1):
                 v = ws.cell(headers_row, c).value
                 if isinstance(v, str) and v.strip() in ADD_HDR_TITLES:
@@ -678,7 +678,6 @@ class ExcelExporter:
                     ws.delete_rows(subtotal_row - 1)
                     subtotal_row -= 1
 
-            # очистка блока
             for r in range(first_data_row, subtotal_row):
                 for c in range(first_col, last_col + 1):
                     ws.cell(r, c).value = None
@@ -728,13 +727,19 @@ class ExcelExporter:
                 f"{totalL}{subtotal_row}",
             )
 
-            search_row = subtotal_row + 1
+            current_row = subtotal_row + 1
 
-        return subtot_cells
+        return current_row - 1, subtot_cells
 
     # ----------------------------- ТЕКСТОВЫЕ ПЛЕЙСХОЛДЕРЫ -----------------------------
 
-    def _fill_text_placeholders(self, ws: Worksheet, project_data: Dict[str, Any], subtot_cells: List[str]) -> None:
+    def _fill_text_placeholders(
+        self,
+        ws: Worksheet,
+        project_data: Dict[str, Any],
+        subtot_cells: List[str],
+        start_row: int = 1,
+    ) -> None:
         # общий итог — именно как формула SUM по найденным субтоталам (чтобы Excel считал сам)
         total_formula = f"=SUM({','.join(subtot_cells)})" if subtot_cells else "0"
         self.logger.debug("Total formula calculated: %s", total_formula)
@@ -751,7 +756,7 @@ class ExcelExporter:
         }
         self.logger.debug("Filling text placeholders with map: %s", strict_map)
 
-        for r in range(1, ws.max_row + 1):
+        for r in range(start_row, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(r, c).value
                 if isinstance(v, str):
