@@ -116,16 +116,20 @@ class ExcelExporter:
             last_row, add_cells = self._render_additional_services_tables(report_ws, project_data, current_row)
             subtot_cells += add_cells
 
+            q_subtot_cells: List[str] = []
+            if quotation_ws is not None:
+                _, q_subtot_cells = self._render_translation_blocks(quotation_ws, project_data, 13)
+
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
             # Remove template sheets after rendering
-            for name in ("ProjectSetup", "Translation", "AdditionalServices"):
+            for name in ("ProjectSetup", "Languages", "AdditionalServices"):
                 if name in wb.sheetnames:
                     del wb[name]
 
             self._fill_text_placeholders(report_ws, project_data, subtot_cells)
             if quotation_ws is not None:
-                self._fill_text_placeholders(quotation_ws, project_data, subtot_cells, start_row=13)
+                self._fill_text_placeholders(quotation_ws, project_data, q_subtot_cells, start_row=13)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
@@ -265,7 +269,7 @@ class ExcelExporter:
             else p.get("pair_name", ""),
         )
 
-        template_ws = ws.parent["Translation"] if "Translation" in ws.parent.sheetnames else ws
+        template_ws = ws.parent["Languages"] if "Languages" in ws.parent.sheetnames else ws
         tpl_start = self._find_first(template_ws, START_PH)
         if not tpl_start:
             raise RuntimeError("В шаблоне не найден {{translation_table}}")
