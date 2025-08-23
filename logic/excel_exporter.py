@@ -121,22 +121,26 @@ class ExcelExporter:
 
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------
 
-    @staticmethod
-    def _find_first(ws: Worksheet, token: str, row_from: int = 1) -> Optional[Tuple[int, int]]:
+    def _find_first(self, ws: Worksheet, token: str, row_from: int = 1) -> Optional[Tuple[int, int]]:
+        self.logger.debug("Searching for '%s' starting from row %d", token, row_from)
         for r in range(row_from, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(r, c).value
                 if isinstance(v, str) and v.strip() == token:
+                    self.logger.debug("  found '%s' at row %d col %d", token, r, c)
                     return r, c
+        self.logger.debug("  token '%s' not found", token)
         return None
 
-    @staticmethod
-    def _find_below(ws: Worksheet, start_row: int, token: str) -> Optional[Tuple[int, int]]:
+    def _find_below(self, ws: Worksheet, start_row: int, token: str) -> Optional[Tuple[int, int]]:
+        self.logger.debug("Searching below row %d for '%s'", start_row, token)
         for r in range(start_row + 1, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(r, c).value
                 if isinstance(v, str) and v.strip() == token:
+                    self.logger.debug("  found '%s' at row %d col %d", token, r, c)
                     return r, c
+        self.logger.debug("  token '%s' not found below row %d", token, start_row)
         return None
 
     def _copy_style(self, s: Cell, d: Cell) -> None:
@@ -176,6 +180,7 @@ class ExcelExporter:
         for i in range(height):
             sr = src_start + i
             dr = dst_start + i
+            self.logger.debug("  copying row %d -> %d", sr, dr)
             try:
                 dst_ws.row_dimensions[dr].height = src_ws.row_dimensions[sr].height
             except Exception:
@@ -219,6 +224,13 @@ class ExcelExporter:
                         mapping[key] = c
         if not mapping:
             mapping = {"param": 1, "type": 2, "unit": 3, "qty": 4, "rate": 5, "total": 6}
+            self.logger.debug(
+                "Header tokens not found at row %d, using default mapping %s",
+                headers_row,
+                mapping,
+            )
+        else:
+            self.logger.debug("Header map at row %d: %s", headers_row, mapping)
         return mapping
 
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
@@ -270,13 +282,18 @@ class ExcelExporter:
                     ws.cell(block_top, c, pair.get("pair_name") or pair.get("header_title") or "")
                     break
 
+            hmap = self._header_map(ws, t_headers_row)
+            self.logger.debug(
+                "Header map for translation block '%s': %s",
+                pair.get("pair_name"),
+                hmap,
+            )
             # Заголовки колонок (заменяем плейсхолдеры на русские названия)
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(t_headers_row, c).value
                 if isinstance(v, str) and v.strip() in HDR_TITLES:
                     ws.cell(t_headers_row, c, HDR_TITLES[v.strip()])
 
-            hmap = self._header_map(ws, t_headers_row)
             first_col = min(hmap.values())
             last_col = max(hmap.values())
 
@@ -472,13 +489,13 @@ class ExcelExporter:
                 ws.cell(block_top, c, "Запуск и управление проектом")
                 break
 
+        hmap = self._header_map(ws, t_headers_row, PS_HDR)
+        self.logger.debug("Header map for project setup: %s", hmap)
         # Заголовки колонок
         for c in range(1, ws.max_column + 1):
             v = ws.cell(t_headers_row, c).value
             if isinstance(v, str) and v.strip() in PS_HDR_TITLES:
                 ws.cell(t_headers_row, c, PS_HDR_TITLES[v.strip()])
-
-        hmap = self._header_map(ws, t_headers_row, PS_HDR)
 
         need = len(items)
         cur_cap = max(0, t_subtotal_row - t_first_data)
