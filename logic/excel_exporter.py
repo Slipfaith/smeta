@@ -256,20 +256,14 @@ class ExcelExporter:
 
             # Подготовка данных: фиксированные 4 строки статистики
             translation_rows = (pair.get("services") or {}).get("translation", [])
-            # Normalize parameter names to avoid mismatches caused by extra spaces or
-            # invisible characters coming from the XML reports. Such artifacts were
-            # observed for some language pairs (e.g. Chinese and Arabic), which led
-            # to the last row staying empty even though the XML contained the data.
-            # Stripping the name ensures we map rows correctly for all languages.
-            data_map = {(r.get("parameter") or "").strip(): r for r in translation_rows}
-            cfg_map = {r["name"]: r for r in ServiceConfig.TRANSLATION_ROWS}
+            data_map = {r.get("key"): r for r in translation_rows}
 
             items: List[Dict[str, Any]] = []
-            for name in ServiceConfig.ROW_NAMES:
-                src_row = data_map.get(name, {})
-                cfg = cfg_map.get(name, {})
+            for cfg in ServiceConfig.TRANSLATION_ROWS:
+                key = cfg.get("key")
+                src_row = data_map.get(key, {})
                 items.append({
-                    "parameter": name,
+                    "parameter": cfg.get("name"),
                     "volume": float(src_row.get("volume") or 0),
                     "rate": float(src_row.get("rate") or 0),
                     "multiplier": cfg.get("multiplier"),
