@@ -1,6 +1,8 @@
 # logic/excel_exporter.py
 import os
 import logging
+import tempfile
+import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -127,9 +129,16 @@ class ExcelExporter:
                 return
         cell.number_format = self.rate_fmt
 
+    def _fit_sheet_to_page(self, ws: Worksheet) -> None:
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToHeight = 1
+        ws.page_setup.fitToWidth = 1
+        last_col = get_column_letter(ws.max_column)
+        ws.print_area = f"A1:{last_col}{ws.max_row}"
+
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
-    def export_to_excel(self, project_data: Dict[str, Any], output_path: str) -> bool:
+    def export_to_excel(self, project_data: Dict[str, Any], output_path: str, fit_to_page: bool = False) -> bool:
         try:
             self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
@@ -138,6 +147,8 @@ class ExcelExporter:
             wb = load_workbook(self.template_path)
 
             quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
+            if fit_to_page:
+                self._fit_sheet_to_page(quotation_ws)
 
             subtot_cells: List[str] = []
             current_row = 13
@@ -181,6 +192,47 @@ class ExcelExporter:
         except Exception as e:
             self.logger.exception("Export failed")
             print(f"[ExcelExporter] Ошибка экспорта: {e}")
+            return False
+
+    def export_to_pdf(self, project_data: Dict[str, Any], output_path: str) -> bool:
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                xlsx_path = os.path.join(tmpdir, "temp.xlsx")
+                if not self.export_to_excel(project_data, xlsx_path, fit_to_page=True):
+                    return False
+                if not self.xlsx_to_pdf(xlsx_path, output_path):
+                    raise RuntimeError("Не удалось конвертировать в PDF")
+            return True
+        except Exception as e:
+            self.logger.exception("PDF export failed")
+            print(f"[ExcelExporter] Ошибка экспорта PDF: {e}")
+            return False
+
+    @staticmethod
+    def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
+        try:
+            import win32com.client  # type: ignore
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            wb = excel.Workbooks.Open(xlsx_path)
+            wb.ExportAsFixedFormat(0, pdf_path)
+            wb.Close(False)
+            excel.Quit()
+            return os.path.exists(pdf_path)
+        except Exception:
+            pass
+
+        try:
+            outdir = os.path.dirname(pdf_path)
+            subprocess.run(
+                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", outdir, xlsx_path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return os.path.exists(pdf_path)
+        except Exception:
             return False
 
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------
