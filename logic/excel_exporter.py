@@ -464,100 +464,106 @@ class ExcelExporter:
         if not blocks:
             return []
 
-        start = self._find_first(ws, ADD_START_PH)
-        if not start:
-            return []
-        start_row, _ = start
-        end = self._find_below(ws, start_row, ADD_END_PH)
-        if not end:
-            raise RuntimeError("В шаблоне не найден {{subtotal.add.service}} ниже {{add.service_table}}")
-        end_row, _ = end
-
-        template_height = end_row - start_row + 1
-        headers_rel = 1
-        first_data_rel = 2
-        subtotal_rel = template_height - 1
-
+        # исходный шаблон — чтобы копировать новые блоки
         template_wb = load_workbook(self.template_path)
         template_ws = template_wb.active
+        tpl_start = self._find_first(template_ws, ADD_START_PH)
+        if not tpl_start:
+            return []
+        tpl_start_row, _ = tpl_start
+        tpl_end = self._find_below(template_ws, tpl_start_row, ADD_END_PH)
+        if not tpl_end:
+            return []
+        tpl_end_row, _ = tpl_end
+        template_height = tpl_end_row - tpl_start_row + 1
 
         subtot_cells: List[str] = []
-        current_row = start_row
+        search_row = 1
 
         for i, block in enumerate(blocks):
+            # для каждого нового блока — вставляем шаблонный блок
             if i > 0:
-                ws.insert_rows(current_row, template_height)
-                self._copy_block(ws, template_ws, start_row, end_row, current_row)
+                ws.insert_rows(search_row, template_height)
+                self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, search_row)
 
-            block_top = current_row
-            t_headers_row = block_top + headers_rel
-            t_first_data = block_top + first_data_rel
-            t_subtotal_row = block_top + subtotal_rel
+            start = self._find_first(ws, ADD_START_PH, search_row)
+            if not start:
+                break
+            start_row, _ = start
+            end = self._find_below(ws, start_row, ADD_END_PH)
+            if not end:
+                break
+            subtotal_row, _ = end
 
-            # Заголовок блока
-            header_title = block.get("header_title", "Дополнительные услуги")
-            for c in range(1, ws.max_column + 1):
-                if ws.cell(block_top, c).value == ADD_START_PH:
-                    ws.cell(block_top, c, header_title)
-                    break
+            headers_row = start_row + 1
+            first_data_row = start_row + 2
 
-            # Заголовки колонок
-            for c in range(1, ws.max_column + 1):
-                v = ws.cell(t_headers_row, c).value
-                if isinstance(v, str) and v.strip() in ADD_HDR_TITLES:
-                    ws.cell(t_headers_row, c, ADD_HDR_TITLES[v.strip()])
-
-            hmap = self._header_map(ws, t_headers_row, ADD_HDR)
-
-            # merge header
+            hmap = self._header_map(ws, headers_row, ADD_HDR)
             first_col = min(hmap.values())
             last_col = max(hmap.values())
 
-            # ensure column widths from template are preserved
+            # ширины колонок берём из шаблона
             for c in range(first_col, last_col + 1):
                 letter = get_column_letter(c)
                 tpl_width = template_ws.column_dimensions[letter].width
                 if tpl_width is not None:
                     ws.column_dimensions[letter].width = tpl_width
 
-            ref = f"{get_column_letter(first_col)}{block_top}:{get_column_letter(last_col)}{block_top}"
+            header_title = block.get("header_title", "Дополнительные услуги")
+            header_ref = f"{get_column_letter(first_col)}{start_row}:{get_column_letter(last_col)}{start_row}"
             try:
-                ws.unmerge_cells(ref)
+                ws.unmerge_cells(header_ref)
             except Exception:
                 pass
-            ws.merge_cells(ref)
-            ws.cell(block_top, first_col, header_title)
+            ws.merge_cells(header_ref)
+            ws.cell(start_row, first_col, header_title)
+
+            # заголовки колонок
+            for c in range(first_col, last_col + 1):
+                v = ws.cell(headers_row, c).value
+                if isinstance(v, str) and v.strip() in ADD_HDR_TITLES:
+                    ws.cell(headers_row, c, ADD_HDR_TITLES[v.strip()])
 
             items: List[Dict[str, Any]] = block.get("rows", [])
 
             need = len(items)
-            cur_cap = max(0, t_subtotal_row - t_first_data)
+            cur_cap = max(0, subtotal_row - first_data_row)
             if need > cur_cap:
                 add = need - cur_cap
-                ws.insert_rows(t_subtotal_row, add)
-                tpl_row = t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
+                ws.insert_rows(subtotal_row, add)
+                tpl_row = first_data_row if cur_cap > 0 else subtotal_row - 1
+                merges_to_copy = [
+                    m for m in ws.merged_cells.ranges
+                    if m.min_row == m.max_row == tpl_row
+                    and first_col <= m.min_col and m.max_col <= last_col
+                ]
                 for k in range(add):
-                    dst = t_subtotal_row + k
-                    for c in range(1, ws.max_column + 1):
+                    dst = subtotal_row + k
+                    for c in range(first_col, last_col + 1):
                         self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
-                t_subtotal_row += add
+                    for m in merges_to_copy:
+                        sc, ec = m.min_col, m.max_col
+                        ref = f"{get_column_letter(sc)}{dst}:{get_column_letter(ec)}{dst}"
+                        ws.merge_cells(ref)
+                subtotal_row += add
             elif need < cur_cap:
                 delete_count = cur_cap - need
-                if delete_count > 0:
-                    ws.delete_rows(t_first_data + need, delete_count)
-                    t_subtotal_row -= delete_count
+                for _ in range(delete_count):
+                    ws.delete_rows(subtotal_row - 1)
+                    subtotal_row -= 1
 
-            for rr in range(t_first_data, t_subtotal_row):
-                for c in range(1, ws.max_column + 1):
-                    ws.cell(rr, c).value = None
+            # очистка блока
+            for r in range(first_data_row, subtotal_row):
+                for c in range(first_col, last_col + 1):
+                    ws.cell(r, c).value = None
 
-            col_param = hmap.get("param", 1)
-            col_unit = hmap.get("unit", 2)
-            col_qty = hmap.get("qty", 3)
-            col_rate = hmap.get("rate", 4)
-            col_total = hmap.get("total", 5)
+            col_param = hmap["param"]
+            col_unit = hmap["unit"]
+            col_qty = hmap["qty"]
+            col_rate = hmap["rate"]
+            col_total = hmap["total"]
 
-            r = t_first_data
+            r = first_data_row
             for it in items:
                 ws.cell(r, col_param, it.get("parameter", ""))
                 ws.cell(r, col_unit, it.get("unit", ""))
@@ -570,20 +576,20 @@ class ExcelExporter:
                 total_cell.number_format = "0.00"
                 r += 1
 
-            for c in range(1, ws.max_column + 1):
-                if ws.cell(t_subtotal_row, c).value == ADD_END_PH:
-                    ws.cell(t_subtotal_row, c, SUBTOTAL_TITLE)
+            for c in range(first_col, last_col + 1):
+                if ws.cell(subtotal_row, c).value == ADD_END_PH:
+                    ws.cell(subtotal_row, c, SUBTOTAL_TITLE)
                     break
 
             totalL = get_column_letter(col_total)
-            if r == t_first_data:
-                subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
+            if r == first_data_row:
+                subtotal_cell = ws.cell(subtotal_row, col_total, 0)
             else:
-                subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+                subtotal_cell = ws.cell(subtotal_row, col_total, f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})")
             subtotal_cell.number_format = "0.00"
+            subtot_cells.append(f"{totalL}{subtotal_row}")
 
-            subtot_cells.append(f"{totalL}{t_subtotal_row}")
-            current_row = t_subtotal_row + 1
+            search_row = subtotal_row + 1
 
         return subtot_cells
 
