@@ -171,8 +171,8 @@ class ExcelExporter:
                 quotation_ws, project_data, subtot_cells, start_row=1, wb=wb
             )
 
-            if "VAT" in wb.sheetnames:
-                del wb["VAT"]
+            if "Vat" in wb.sheetnames:
+                del wb["Vat"]
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
@@ -895,12 +895,12 @@ class ExcelExporter:
         total_cell_ref: str,
         project_data: Dict[str, Any],
     ) -> None:
-        """Copy VAT table from 'VAT' sheet and insert after total row."""
+        """Copy VAT table from 'Vat' sheet and insert after total row."""
         vat_rate = float(project_data.get("vat_rate", 0) or 0)
-        if vat_rate <= 0 or "VAT" not in wb.sheetnames:
+        if vat_rate <= 0 or "Vat" not in wb.sheetnames:
             return
 
-        vat_ws = wb["VAT"]
+        vat_ws = wb["Vat"]
         rows = vat_ws.max_row
         cols = vat_ws.max_column
         total_row = ws[total_cell_ref].row
