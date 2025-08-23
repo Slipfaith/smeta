@@ -10,6 +10,7 @@ from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument
 
 from logic.excel_exporter import ExcelExporter
+from logic.legal_entities import load_legal_entities
 
 
 class PreviewWidget(QWidget):
@@ -29,6 +30,7 @@ class PreviewWidget(QWidget):
 
         self.btn_refresh.clicked.connect(self._refresh_button)
         self.btn_open_xlsx.clicked.connect(self._open_xlsx)
+        self.legal_entities = load_legal_entities()
 
         top = QHBoxLayout()
         top.addWidget(self.status)
@@ -76,7 +78,9 @@ class PreviewWidget(QWidget):
             xlsx = os.path.join(tmpdir, "preview.xlsx")
             pdf = os.path.join(tmpdir, "preview.pdf")
 
-            ok = ExcelExporter().export_to_excel(data, xlsx)
+            entity_name = data.get("legal_entity")
+            template_path = self.legal_entities.get(entity_name)
+            ok = ExcelExporter(template_path).export_to_excel(data, xlsx)
             if not ok:
                 self.status.setText("Ошибка экспорта XLSX (см. консоль).")
                 return
