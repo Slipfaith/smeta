@@ -9,6 +9,9 @@ class ServiceConfig:
         {"name": "Перевод, повторы и 100% совпадения (30%)", "multiplier": 0.30, "is_base": False}
     ]
 
+    # Имена строк статистики, используемые при экспорте и парсинге отчётов
+    ROW_NAMES = [row["name"] for row in TRANSLATION_ROWS]
+
     # ---- Доп. услуги ----
     ADDITIONAL_SERVICES = {
         "Верстка": [
