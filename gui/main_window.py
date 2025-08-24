@@ -1049,8 +1049,10 @@ class TranslationCostCalculator(QMainWindow):
             return
 
         client_name = project_data["client_name"].replace(" ", "_")
-        date_str = datetime.now().strftime("%Y%m%d")
-        filename = f"КП_{client_name}_{date_str}.xlsx"
+        entity_for_file = self.legal_entity_combo.currentText().replace(" ", "_")
+        currency = self.currency_combo.currentText()
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.xlsx"
 
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить Excel файл", filename, "Excel files (*.xlsx)"
@@ -1075,19 +1077,24 @@ class TranslationCostCalculator(QMainWindow):
         if not self.project_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название проекта")
             return
+        if not self.client_name_edit.text().strip():
+            QMessageBox.warning(self, "Ошибка", "Введите название клиента")
+            return
         project_data = self.collect_project_data()
-        project_name = project_data["project_name"].replace(" ", "_")
-        filename = f"КП_{project_name}.pdf"
+        client_name = project_data["client_name"].replace(" ", "_")
+        entity_for_file = self.legal_entity_combo.currentText().replace(" ", "_")
+        currency = self.currency_combo.currentText()
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.pdf"
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить PDF файл", filename, "PDF files (*.pdf)"
         )
         if not file_path:
             return
-        entity_name = self.legal_entity_combo.currentText()
-        template_path = self.legal_entities.get(entity_name)
+        template_path = self.legal_entities.get(self.legal_entity_combo.currentText())
         exporter = ExcelExporter(
             template_path,
-            currency=self.currency_combo.currentText(),
+            currency=currency,
             lang="ru" if self.lang_display_ru else "en",
         )
         try:
