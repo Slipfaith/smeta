@@ -779,22 +779,32 @@ class TranslationCostCalculator(QMainWindow):
                 print(f"Volumes: {volumes}")
 
                 widget = self.language_pairs.get(pair_key)
-                display_name = pair_key.replace(" → ", " - ")
+
+                # Отображаемое имя и заголовок формируем в соответствии с текущим режимом
+                display_name = self._display_pair_name(pair_key)
+                tgt_key = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
+                lang_info = self._find_language_by_key(tgt_key)
+                header_title = lang_info["ru"] if self.lang_display_ru else lang_info["en"]
 
                 if widget is None:
                     print(f"Creating new widget for pair: {pair_key}")
-                    widget = LanguagePairWidget(display_name)
+                    widget = LanguagePairWidget(
+                        display_name,
+                        self.currency_symbol,
+                        self.currency_combo.currentText(),
+                        lang="ru" if self.lang_display_ru else "en",
+                    )
                     widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
                     self.language_pairs[pair_key] = widget
                     # Вставляем новый виджет перед растягивающимся элементом
                     self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
-
-                    # Извлекаем целевой язык для заголовка
-                    tgt = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
-                    self.pair_headers[pair_key] = tgt
+                    self.pair_headers[pair_key] = header_title
                     added_pairs += 1
                 else:
                     print(f"Updating existing widget for pair: {pair_key}")
+                    widget.set_pair_name(display_name)
+                    widget.set_language("ru" if self.lang_display_ru else "en")
+                    self.pair_headers[pair_key] = header_title
                     updated_pairs += 1
 
                 if self.only_new_repeats_mode:
