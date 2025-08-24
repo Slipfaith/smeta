@@ -24,7 +24,7 @@ def export_to_pdf(
             xlsx_path = os.path.join(tmpdir, "temp.xlsx")
             if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):
                 return False
-            if not xlsx_to_pdf(xlsx_path, output_path):
+            if not xlsx_to_pdf(xlsx_path, output_path, lang=lang):
                 raise RuntimeError("Не удалось конвертировать в PDF")
         return True
     except Exception as e:
@@ -33,16 +33,34 @@ def export_to_pdf(
         return False
 
 
-def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
-    """Convert XLSX file to PDF using available backend (Excel or LibreOffice)."""
+def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
+    """Convert XLSX file to PDF using available backend (Excel or LibreOffice).
+
+    If ``lang`` is ``"en"``, the Excel automation backend is instructed to use
+    the dot (``.``) as the decimal separator so that numbers in the resulting
+    PDF always display with dots regardless of the system locale.
+    """
 
     excel = wb = None
+    orig_decimal = orig_thousands = orig_use_sys = None
     try:
         import win32com.client  # type: ignore
 
         excel = win32com.client.Dispatch("Excel.Application")
         excel.Visible = False
         excel.DisplayAlerts = False
+
+        if lang.lower().startswith("en"):
+            try:
+                orig_decimal = excel.DecimalSeparator
+                orig_thousands = excel.ThousandsSeparator
+                orig_use_sys = excel.UseSystemSeparators
+                excel.DecimalSeparator = "."
+                excel.ThousandsSeparator = ","
+                excel.UseSystemSeparators = False
+            except Exception:
+                pass
+
         wb = excel.Workbooks.Open(xlsx_path)
         wb.ExportAsFixedFormat(0, pdf_path)
         success = os.path.exists(pdf_path)
@@ -55,6 +73,13 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
             except Exception:
                 pass
         if excel is not None:
+            if lang.lower().startswith("en") and orig_use_sys is not None:
+                try:
+                    excel.DecimalSeparator = orig_decimal
+                    excel.ThousandsSeparator = orig_thousands
+                    excel.UseSystemSeparators = orig_use_sys
+                except Exception:
+                    pass
             try:
                 excel.Quit()
             except Exception:
@@ -65,6 +90,9 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
 
     try:
         outdir = os.path.dirname(pdf_path)
+        env = os.environ.copy()
+        if lang.lower().startswith("en"):
+            env["LC_NUMERIC"] = "C"
         subprocess.run(
             [
                 "soffice",
@@ -78,6 +106,7 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
         return os.path.exists(pdf_path)
     except Exception:
