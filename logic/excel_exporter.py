@@ -154,11 +154,6 @@ class ExcelExporter:
 
             quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
 
-            # Ensure images (e.g. logo) from the template sheet are preserved.
-            # Without re-adding them, openpyxl may drop images when saving the
-            # workbook.  Copying them explicitly keeps them in the resulting file.
-            self._copy_images_between_sheets(quotation_ws, quotation_ws)
-
             subtot_cells: List[str] = []
             current_row = 13
 
@@ -201,6 +196,10 @@ class ExcelExporter:
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
+            # openpyxl may drop images embedded in the template.  After saving the
+            # workbook we re-open it via the COM Excel API and copy pictures from
+            # the original template so that logos are preserved.
+            self._restore_images_via_com(output_path)
             self.logger.info("Export completed successfully")
             return True
         except Exception as e:
@@ -366,15 +365,62 @@ class ExcelExporter:
                     new_img.anchor = new_anchor
                     dst_ws.add_image(new_img)
 
-    def _copy_images_between_sheets(self, dst_ws: Worksheet, src_ws: Worksheet) -> None:
-        """Copy all images from src_ws to dst_ws preserving anchors."""
-        for img in getattr(src_ws, "_images", []):
-            anchor = getattr(img, "anchor", None)
-            if anchor is None:
-                continue
-            new_img = XLImage(img._data())
-            new_img.anchor = deepcopy(anchor)
-            dst_ws.add_image(new_img)
+    def _restore_images_via_com(self, output_path: str) -> None:
+        """Re-open the saved workbook and copy images from the template via COM.
+
+        This step is required on Windows because openpyxl does not preserve
+        embedded pictures (such as company logos) when saving the workbook.  The
+        method uses ``win32com.client`` to copy every picture from the template's
+        ``Quotation`` sheet to the corresponding sheet in the generated file,
+        keeping their positions and sizes intact.
+        """
+        excel = tpl_wb = out_wb = None
+        try:
+            import win32com.client  # type: ignore
+
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = False
+            excel.DisplayAlerts = False
+
+            tpl_path = os.path.abspath(self.template_path)
+            out_path = os.path.abspath(output_path)
+
+            tpl_wb = excel.Workbooks.Open(tpl_path)
+            out_wb = excel.Workbooks.Open(out_path)
+            tpl_ws = tpl_wb.Worksheets("Quotation")
+            out_ws = out_wb.Worksheets("Quotation")
+
+            # remove any existing shapes to avoid duplicates
+            while out_ws.Shapes.Count > 0:
+                out_ws.Shapes(1).Delete()
+
+            for shape in tpl_ws.Shapes:
+                # 13 corresponds to msoPicture
+                if int(getattr(shape, "Type", 0)) == 13:
+                    shape.Copy()
+                    out_ws.Paste()
+                    pasted = out_ws.Shapes(out_ws.Shapes.Count)
+                    pasted.Left = shape.Left
+                    pasted.Top = shape.Top
+                    pasted.Width = shape.Width
+                    pasted.Height = shape.Height
+
+            out_wb.Save()
+        except Exception as e:  # pragma: no cover - Windows only
+            self.logger.debug("COM image restoration skipped: %s", e)
+        finally:  # pragma: no cover - ensure COM objects are closed
+            try:
+                tpl_wb.Close(False)
+            except Exception:
+                pass
+            try:
+                out_wb.Close(True)
+            except Exception:
+                pass
+            try:
+                excel.Quit()
+            except Exception:
+                pass
 
     def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
         """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
