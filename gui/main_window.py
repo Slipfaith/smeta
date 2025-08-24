@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QComboBox,
     QSlider,
     QDoubleSpinBox,
+    QApplication,
+    QProgressDialog,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -1067,8 +1069,21 @@ class TranslationCostCalculator(QMainWindow):
             currency=self.currency_combo.currentText(),
             lang="ru" if self.lang_display_ru else "en",
         )
+        progress = QProgressDialog("Сохранение...", None, 0, 100, self)
+        progress.setWindowTitle("Сохранение")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
 
-        if exporter.export_to_excel(project_data, file_path):
+        def on_progress(percent: int, message: str) -> None:
+            progress.setLabelText(message)
+            progress.setValue(percent)
+            QApplication.processEvents()
+
+        success = exporter.export_to_excel(
+            project_data, file_path, progress_callback=on_progress
+        )
+        progress.close()
+        if success:
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
         else:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
@@ -1097,23 +1112,42 @@ class TranslationCostCalculator(QMainWindow):
             currency=currency,
             lang="ru" if self.lang_display_ru else "en",
         )
+        progress = QProgressDialog("Сохранение...", None, 0, 100, self)
+        progress.setWindowTitle("Сохранение")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
+
+        def on_excel_progress(percent: int, message: str) -> None:
+            progress.setLabelText(message)
+            progress.setValue(int(percent * 0.8))
+            QApplication.processEvents()
+
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
                 pdf_path = os.path.join(tmpdir, "quotation.pdf")
                 if not exporter.export_to_excel(
-                    project_data, xlsx_path, fit_to_page=True
+                    project_data, xlsx_path, fit_to_page=True, progress_callback=on_excel_progress
                 ):
+                    progress.close()
                     QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
                     return
+                progress.setLabelText("Конвертация в PDF")
+                progress.setValue(80)
+                QApplication.processEvents()
                 if not xlsx_to_pdf(xlsx_path, pdf_path):
+                    progress.close()
                     QMessageBox.critical(
                         self, "Ошибка", "Не удалось конвертировать в PDF"
                     )
                     return
+                progress.setValue(100)
+                QApplication.processEvents()
                 shutil.copyfile(pdf_path, file_path)
+            progress.close()
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
         except Exception as e:
+            progress.close()
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
 
     def save_project(self):
