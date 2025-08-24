@@ -1,0 +1,2 @@
+langcodes>=3.3
+pycountry

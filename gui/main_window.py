@@ -2,8 +2,12 @@ import json
 import os
 import shutil
 import tempfile
+import re
 from datetime import datetime
 from typing import Dict, List, Any
+
+import langcodes
+import pycountry
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -677,7 +681,30 @@ class TranslationCostCalculator(QMainWindow):
         for lang in self._languages:
             if key.lower() == lang["en"].lower() or key.lower() == lang["ru"].lower():
                 return lang
-        return {"en": key, "ru": key}
+
+        try:
+            tag = key
+            match = re.match(r"(.+?)\s*\((.+)\)$", key)
+            if match:
+                base = match.group(1).strip()
+                region = match.group(2).strip()
+                base_code = langcodes.find(base)
+                try:
+                    region_code = pycountry.countries.lookup(region).alpha_2
+                except LookupError:
+                    region_code = region
+                tag = f"{base_code}-{region_code}".lower()
+            elif re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", key):
+                tag = key.lower()
+            else:
+                tag = langcodes.find(key)
+            lang_obj = langcodes.Language.get(tag)
+            en_name = lang_obj.display_name("en").title()
+            ru_name = lang_obj.display_name("ru")
+            ru_name = ru_name[0].upper() + ru_name[1:]
+            return {"en": en_name, "ru": ru_name}
+        except Exception:
+            return {"en": key, "ru": key}
 
     def _display_pair_name(self, pair_key: str) -> str:
         left_key, right_key = pair_key.split(" → ")
