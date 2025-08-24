@@ -197,22 +197,44 @@ class PdfExportWorker(QObject):
 
     finished = Signal(str)
     error = Signal(str)
+    progress = Signal(int)
+    canceled = Signal()
 
     def __init__(self, exporter: ExcelExporter, project_data: Dict[str, Any]):
         super().__init__()
         self._exporter = exporter
         self._project_data = project_data
+        self._cancel = False
+
+    def request_cancel(self) -> None:
+        """Запрашивает остановку генерации."""
+        self._cancel = True
 
     def run(self):
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
                 pdf_tmp = os.path.join(tmpdir, "quotation.pdf")
+
+                self.progress.emit(0)
+                if self._cancel:
+                    self.canceled.emit()
+                    return
                 if not self._exporter.export_to_excel(self._project_data, xlsx_path, fit_to_page=True):
                     self.error.emit("Не удалось подготовить файл")
                     return
+
+                self.progress.emit(50)
+                if self._cancel:
+                    self.canceled.emit()
+                    return
                 if not self._exporter.xlsx_to_pdf(xlsx_path, pdf_tmp):
                     self.error.emit("Не удалось конвертировать в PDF")
+                    return
+
+                self.progress.emit(100)
+                if self._cancel:
+                    self.canceled.emit()
                     return
                 tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
                 tmp_pdf.close()
@@ -919,10 +941,12 @@ class TranslationCostCalculator(QMainWindow):
         template_path = self.legal_entities.get(entity_name)
         exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
 
-        progress = QProgressDialog("Генерация PDF...", "", 0, 0, self)
+        progress = QProgressDialog("Генерация PDF...", "Отмена", 0, 100, self)
         progress.setWindowTitle("Пожалуйста, подождите")
         progress.setWindowModality(Qt.WindowModal)
-        progress.setCancelButton(None)
+        progress.setValue(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
         progress.show()
 
         worker = PdfExportWorker(exporter, project_data)
@@ -957,9 +981,21 @@ class TranslationCostCalculator(QMainWindow):
             cleanup()
             QMessageBox.critical(self, "Ошибка", msg)
 
-        thread.started.connect(worker.run)
+        def on_canceled():
+            progress.close()
+            cleanup()
+            QMessageBox.information(self, "Отмена", "Генерация PDF отменена")
+
+        def on_cancel_request():
+            progress.setLabelText("Отмена...")
+            worker.request_cancel()
+
+        progress.canceled.connect(on_cancel_request)
+        worker.progress.connect(progress.setValue)
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
+        worker.canceled.connect(on_canceled)
+        thread.started.connect(worker.run)
         thread.start()
 
     def save_project(self):
