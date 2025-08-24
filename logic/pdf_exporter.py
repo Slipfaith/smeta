@@ -35,6 +35,8 @@ def export_to_pdf(
 
 def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
     """Convert XLSX file to PDF using available backend (Excel or LibreOffice)."""
+
+    excel = wb = None
     try:
         import win32com.client  # type: ignore
 
@@ -43,11 +45,23 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
         excel.DisplayAlerts = False
         wb = excel.Workbooks.Open(xlsx_path)
         wb.ExportAsFixedFormat(0, pdf_path)
-        wb.Close(False)
-        excel.Quit()
-        return os.path.exists(pdf_path)
+        success = os.path.exists(pdf_path)
     except Exception:
-        pass
+        success = False
+    finally:
+        if wb is not None:
+            try:
+                wb.Close(False)
+            except Exception:
+                pass
+        if excel is not None:
+            try:
+                excel.Quit()
+            except Exception:
+                pass
+
+    if success:
+        return True
 
     try:
         outdir = os.path.dirname(pdf_path)
