@@ -198,7 +198,10 @@ class ProjectSetupWidget(QWidget):
                 rate_item = self.table.item(row, 2)
                 volume = _to_float(volume_item.text() if volume_item else "0")
                 rate_text = rate_item.text() if rate_item else "0"
-                sep = "," if "," in rate_text else "."
+                if self.lang == "en":
+                    sep = "."
+                else:
+                    sep = "," if "," in rate_text else "."
                 rate = _to_float(rate_text)
                 self.table.blockSignals(True)
                 rate_item.setText(format_rate(rate_text, sep))
@@ -239,7 +242,8 @@ class ProjectSetupWidget(QWidget):
         for i, row_data in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(row_data.get("parameter", "")))
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0))))
+            sep = "." if self.lang == "en" else None
+            self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0), sep)))
             total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
