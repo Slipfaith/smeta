@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont
 import copy
 
 from logic.service_config import ServiceConfig
+from logic.translation_config import tr
 from .utils import format_rate
 
 
@@ -26,11 +27,12 @@ class LanguagePairWidget(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB"):
+    def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
         self.pair_name = pair_name
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
+        self.lang = lang
         self.only_new_repeats_mode = False
         # резерв для восстановления исходных значений объёмов/ставок
         self._backup_volumes = []
@@ -42,9 +44,9 @@ class LanguagePairWidget(QWidget):
         layout = QVBoxLayout()
 
         header = QHBoxLayout()
-        title = QLabel(f"Языковая пара: {self.pair_name}")
-        title.setFont(QFont("Arial", 10, QFont.Bold))
-        header.addWidget(title)
+        self.title_label = QLabel()
+        self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
+        header.addWidget(self.title_label)
         header.addStretch()
         remove_btn = QPushButton()
         remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
@@ -62,16 +64,16 @@ class LanguagePairWidget(QWidget):
         # Только Перевод
         self.translation_group = self.create_service_group("Перевод", ServiceConfig.TRANSLATION_ROWS)
         self.services_layout.addWidget(self.translation_group)
-
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
+        self.set_language(self.lang)
 
     @staticmethod
     def _format_rate(value: float) -> str:
         return format_rate(value)
 
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
-        group = QGroupBox(service_name)
+        group = QGroupBox(tr(service_name, self.lang))
         group.setCheckable(True)
         group.setChecked(False)
 
@@ -83,10 +85,10 @@ class LanguagePairWidget(QWidget):
 
         table = QTableWidget(len(rows), 4)
         table.setHorizontalHeaderLabels([
-            "Параметр",
-            "Объем",
-            f"Ставка ({self.currency_symbol})",
-            f"Сумма ({self.currency_symbol})",
+            tr("Параметр", self.lang),
+            tr("Объем", self.lang),
+            f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
+            f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
 
         # ВАЖНО: никаких локальных скроллов — всё видно сразу
@@ -97,7 +99,7 @@ class LanguagePairWidget(QWidget):
 
         base_rate_row = None
         for i, row_info in enumerate(rows):
-            table.setItem(i, 0, QTableWidgetItem(row_info["name"]))
+            table.setItem(i, 0, QTableWidgetItem(tr(row_info["name"], self.lang)))
             table.setItem(i, 1, QTableWidgetItem("0"))
 
             rate_item = QTableWidgetItem("0")
@@ -132,9 +134,9 @@ class LanguagePairWidget(QWidget):
             if row < 0:
                 return
             menu = QMenu(table)
-            add_act = menu.addAction("Добавить строку")
-            del_act = menu.addAction("Удалить строку")
-            restore_act = menu.addAction("Восстановить строку")
+            add_act = menu.addAction(tr("Добавить строку", self.lang))
+            del_act = menu.addAction(tr("Удалить строку", self.lang))
+            restore_act = menu.addAction(tr("Восстановить строку", self.lang))
             row_cfg = rows[row]
             if row_cfg.get("deleted"):
                 del_act.setEnabled(False)
@@ -154,7 +156,7 @@ class LanguagePairWidget(QWidget):
         table.customContextMenuRequested.connect(show_menu)
 
         # Промежуточная сумма
-        subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
+        subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
         subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtotal_label.setObjectName("subtotal_label")
         vbox.addWidget(subtotal_label)
@@ -177,7 +179,7 @@ class LanguagePairWidget(QWidget):
         base_rate_row = getattr(group, 'base_rate_row', None)
         insert_at = row + 1
         table.insertRow(insert_at)
-        table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
+        table.setItem(insert_at, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
         table.setItem(insert_at, 1, QTableWidgetItem("0"))
         rate_item = QTableWidgetItem("0")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -297,6 +299,29 @@ class LanguagePairWidget(QWidget):
         table.setMinimumHeight(total)
         table.setMaximumHeight(total)
 
+    def set_language(self, lang: str):
+        self.lang = lang
+        self.title_label.setText(f"{tr('Языковая пара', lang)}: {self.pair_name}")
+        group = self.translation_group
+        group.setTitle(tr("Перевод", lang))
+        table: QTableWidget = group.table
+        table.setHorizontalHeaderLabels([
+            tr("Параметр", lang),
+            tr("Объем", lang),
+            f"{tr('Ставка', lang)} ({self.currency_symbol})",
+            f"{tr('Сумма', lang)} ({self.currency_symbol})",
+        ])
+        rows = group.rows_config
+        for i, row_info in enumerate(rows):
+            item = table.item(i, 0)
+            if item:
+                item.setText(tr(row_info["name"], lang))
+        self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
+
+    def set_pair_name(self, name: str):
+        self.pair_name = name
+        self.title_label.setText(f"{tr('Языковая пара', self.lang)}: {name}")
+
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
             base_rate = 0.0
@@ -343,7 +368,7 @@ class LanguagePairWidget(QWidget):
             parent_group: QGroupBox = self.translation_group
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
-                lbl.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
+                lbl.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
 
             # после любых изменений гарантируем отсутствие локального скролла
             self._fit_table_height(table)
@@ -394,7 +419,7 @@ class LanguagePairWidget(QWidget):
             for _ in range(len(data) - table.rowCount()):
                 r = table.rowCount()
                 table.insertRow(r)
-                table.setItem(r, 0, QTableWidgetItem("Новая строка"))
+                table.setItem(r, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
                 table.setItem(r, 1, QTableWidgetItem("0"))
                 rate_item = QTableWidgetItem("0")
                 rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -424,10 +449,10 @@ class LanguagePairWidget(QWidget):
         self.currency_code = code
         if hasattr(self.translation_group, 'table'):
             self.translation_group.table.setHorizontalHeaderLabels([
-                "Параметр",
-                "Объем",
-                f"Ставка ({symbol})",
-                f"Сумма ({symbol})",
+                tr("Параметр", self.lang),
+                tr("Объем", self.lang),
+                f"{tr('Ставка', self.lang)} ({symbol})",
+                f"{tr('Сумма', self.lang)} ({symbol})",
             ])
             self.update_rates_and_sums(
                 self.translation_group.table,

@@ -14,6 +14,7 @@ from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from openpyxl.drawing.image import Image as XLImage
 
 from .service_config import ServiceConfig
+from .translation_config import tr
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -41,7 +42,6 @@ HDR_TITLES = {
     HDR["rate"]: "Ставка",
     HDR["total"]: "Итого",
 }
-SUBTOTAL_TITLE_TMPL = "Промежуточная сумма ({currency}):"
 
 # блок запуска и управления проектом
 PS_START_PH = "{{project_setup}}"
@@ -83,13 +83,17 @@ ADD_HDR_TITLES = {
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
-    def __init__(self, template_path: Optional[str] = None, currency: str = "RUB", log_path: str = "excel_export.md"):
+    def __init__(self, template_path: Optional[str] = None, currency: str = "RUB", log_path: str = "excel_export.md", lang: str = "ru"):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
         self.currency = currency
         self.currency_symbol = CURRENCY_SYMBOLS.get(currency, "")
         self.rate_fmt = self._currency_format(3)
         self.total_fmt = self._currency_format(2)
-        self.subtotal_title = SUBTOTAL_TITLE_TMPL.format(currency=currency)
+        self.lang = lang
+        self.hdr_titles = {k: tr(v, lang) for k, v in HDR_TITLES.items()}
+        self.ps_hdr_titles = {k: tr(v, lang) for k, v in PS_HDR_TITLES.items()}
+        self.add_hdr_titles = {k: tr(v, lang) for k, v in ADD_HDR_TITLES.items()}
+        self.subtotal_title = f"{tr('Промежуточная сумма', lang)} ({currency}):"
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
@@ -521,8 +525,8 @@ class ExcelExporter:
             # Заголовки колонок (заменяем плейсхолдеры на русские названия)
             for c in range(1, ws.max_column + 1):
                 v = ws.cell(t_headers_row, c).value
-                if isinstance(v, str) and v.strip() in HDR_TITLES:
-                    ws.cell(t_headers_row, c, HDR_TITLES[v.strip()])
+                if isinstance(v, str) and v.strip() in self.hdr_titles:
+                    ws.cell(t_headers_row, c, self.hdr_titles[v.strip()])
 
             first_col = min(hmap.values())
             last_col = max(hmap.values())
@@ -551,7 +555,7 @@ class ExcelExporter:
                 key = cfg.get("key")
                 src_row = data_map.get(key, {})
                 items.append({
-                    "parameter": cfg.get("name"),
+                    "parameter": tr(cfg.get("name"), self.lang),
                     "volume": float(src_row.get("volume") or 0),
                     "rate": float(src_row.get("rate") or 0),
                     "multiplier": cfg.get("multiplier"),
@@ -748,8 +752,8 @@ class ExcelExporter:
         # Заголовки колонок
         for c in range(1, ws.max_column + 1):
             v = ws.cell(t_headers_row, c).value
-            if isinstance(v, str) and v.strip() in PS_HDR_TITLES:
-                ws.cell(t_headers_row, c, PS_HDR_TITLES[v.strip()])
+            if isinstance(v, str) and v.strip() in self.ps_hdr_titles:
+                ws.cell(t_headers_row, c, self.ps_hdr_titles[v.strip()])
 
         need = len(items)
         cur_cap = max(0, t_subtotal_row - t_first_data)
@@ -886,8 +890,8 @@ class ExcelExporter:
 
             for c in range(first_col, last_col + 1):
                 v = ws.cell(headers_row, c).value
-                if isinstance(v, str) and v.strip() in ADD_HDR_TITLES:
-                    ws.cell(headers_row, c, ADD_HDR_TITLES[v.strip()])
+                if isinstance(v, str) and v.strip() in self.add_hdr_titles:
+                    ws.cell(headers_row, c, self.add_hdr_titles[v.strip()])
 
             items: List[Dict[str, Any]] = block.get("rows", [])
 
