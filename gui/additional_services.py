@@ -128,10 +128,12 @@ class AdditionalServiceTable(QWidget):
         for r in range(self.table.rowCount()):
             volume = _to_float(self._text(r, 2))
             rate_item = self.table.item(r, 3)
-            rate = _to_float(rate_item.text() if rate_item else "0")
+            rate_text = rate_item.text() if rate_item else "0"
+            sep = "," if "," in rate_text else "."
+            rate = _to_float(rate_text)
             self.table.blockSignals(True)
             if rate_item:
-                rate_item.setText(format_rate(rate))
+                rate_item.setText(format_rate(rate_text, sep))
             self.table.blockSignals(False)
             total = volume * rate
             subtotal += total
@@ -178,7 +180,7 @@ class AdditionalServiceTable(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    item.setText(format_rate(_to_float(val)))
+                    item.setText(format_rate(val))
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)
