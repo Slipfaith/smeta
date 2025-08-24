@@ -25,6 +25,7 @@ from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
+from logic.translation_config import tr
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -298,7 +299,7 @@ class TranslationCostCalculator(QMainWindow):
         self.on_legal_entity_changed(self.legal_entity_combo.currentText())
 
         # Языковые пары
-        pairs_group = QGroupBox("Языковые пары")
+        self.pairs_group = QGroupBox(tr("Языковые пары", "ru"))
         pg = QVBoxLayout()
 
         # Переключатель RU/EN
@@ -346,7 +347,8 @@ class TranslationCostCalculator(QMainWindow):
         pg.addLayout(info_layout)
 
         setup_layout = QHBoxLayout()
-        setup_layout.addWidget(QLabel("Запуск и управление проектом:"))
+        self.project_setup_label = QLabel(tr("Запуск и управление проектом", "ru") + ":")
+        setup_layout.addWidget(self.project_setup_label)
         self.project_setup_fee_spin = QDoubleSpinBox()
         self.project_setup_fee_spin.setDecimals(2)
         self.project_setup_fee_spin.setSingleStep(0.25)
@@ -377,8 +379,8 @@ class TranslationCostCalculator(QMainWindow):
         add_lang_group.setLayout(lg);
         pg.addWidget(add_lang_group)
 
-        pairs_group.setLayout(pg);
-        lay.addWidget(pairs_group)
+        self.pairs_group.setLayout(pg);
+        lay.addWidget(self.pairs_group)
 
         lay.addStretch()
         container.setLayout(lay)
@@ -424,6 +426,23 @@ class TranslationCostCalculator(QMainWindow):
         self.lang_display_ru = (value == 1)
         self.populate_lang_combo(self.source_lang_combo)
         self.populate_lang_combo(self.target_lang_combo)
+        lang = "ru" if self.lang_display_ru else "en"
+        if getattr(self, "project_setup_widget", None):
+            self.project_setup_widget.set_language(lang)
+        if getattr(self, "additional_services_widget", None):
+            self.additional_services_widget.set_language(lang)
+        self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
+        self.pairs_group.setTitle(tr("Языковые пары", lang))
+        for pair_key, widget in self.language_pairs.items():
+            widget.set_language(lang)
+            display_name = self._display_pair_name(pair_key)
+            widget.set_pair_name(display_name)
+            right_key = pair_key.split(" → ")[1]
+            lang_info = self._find_language_by_key(right_key)
+            self.pair_headers[pair_key] = lang_info[lang]
+        self.update_pairs_list()
+        self.tabs.setTabText(0, tr("Языковые пары", lang))
+        self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
 
     def on_currency_changed(self, code: str):
         self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
@@ -463,7 +482,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
 
         # Таблица запуска и управления проектом
-        self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value(), self.currency_symbol, self.currency_combo.currentText())
+        self.project_setup_widget = ProjectSetupWidget(self.project_setup_fee_spin.value(), self.currency_symbol, self.currency_combo.currentText(), lang="ru" if self.lang_display_ru else "en")
         self.project_setup_widget.remove_requested.connect(self.remove_project_setup_widget)
         self.pairs_layout.addWidget(self.project_setup_widget)
         self.project_setup_fee_spin.valueChanged.connect(self.update_project_setup_volume_from_spin)
@@ -494,13 +513,13 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_scroll.setAcceptDrops(True)
         self.setup_drag_drop()
 
-        self.tabs.addTab(self.pairs_scroll, "Языковые пары")
+        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", "ru"))
 
-        self.additional_services_widget = AdditionalServicesWidget(self.currency_symbol, self.currency_combo.currentText())
+        self.additional_services_widget = AdditionalServicesWidget(self.currency_symbol, self.currency_combo.currentText(), lang="ru" if self.lang_display_ru else "en")
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
-        self.tabs.addTab(add_scroll, "Дополнительные услуги")
+        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", "ru"))
 
         lay.addWidget(self.tabs);
         w.setLayout(lay)
@@ -514,7 +533,7 @@ class TranslationCostCalculator(QMainWindow):
 
         # Обновляем вкладку
         self.tabs.removeTab(0)
-        self.tabs.insertTab(0, drop_area, "Языковые пары")
+        self.tabs.insertTab(0, drop_area, tr("Языковые пары", "ru"))
         self.pairs_scroll = drop_area
 
     def _hide_drop_hint(self):
@@ -636,7 +655,7 @@ class TranslationCostCalculator(QMainWindow):
             header_title = tgt["text"]
         self.pair_headers[pair_key] = header_title
 
-        widget = LanguagePairWidget(display_name, self.currency_symbol, self.currency_combo.currentText())  # только Перевод
+        widget = LanguagePairWidget(display_name, self.currency_symbol, self.currency_combo.currentText(), lang="ru" if self.lang_display_ru else "en")  # только Перевод
         widget.remove_requested.connect(lambda pk=pair_key: self.remove_language_pair(pk))
         self.language_pairs[pair_key] = widget
         if self.only_new_repeats_mode:
@@ -653,6 +672,19 @@ class TranslationCostCalculator(QMainWindow):
     def _pair_sort_key(self, pair_key: str) -> str:
         parts = pair_key.split(" → ")
         return parts[1] if len(parts) > 1 else parts[0]
+
+    def _find_language_by_key(self, key: str) -> Dict[str, str]:
+        for lang in self._languages:
+            if key.lower() == lang["en"].lower() or key.lower() == lang["ru"].lower():
+                return lang
+        return {"en": key, "ru": key}
+
+    def _display_pair_name(self, pair_key: str) -> str:
+        left_key, right_key = pair_key.split(" → ")
+        left = self._find_language_by_key(left_key)
+        right = self._find_language_by_key(right_key)
+        lang = "ru" if self.lang_display_ru else "en"
+        return f"{left[lang]} - {right[lang]}"
 
     def update_pairs_list(self):
         self.pairs_list.setText("\n".join(
@@ -872,7 +904,7 @@ class TranslationCostCalculator(QMainWindow):
 
         entity_name = self.legal_entity_combo.currentText()
         template_path = self.legal_entities.get(entity_name)
-        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
+        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText(), lang="ru" if self.lang_display_ru else "en")
 
         if exporter.export_to_excel(project_data, file_path):
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
@@ -886,7 +918,7 @@ class TranslationCostCalculator(QMainWindow):
         project_data = self.collect_project_data()
         entity_name = self.legal_entity_combo.currentText()
         template_path = self.legal_entities.get(entity_name)
-        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
+        exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText(), lang="ru" if self.lang_display_ru else "en")
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
