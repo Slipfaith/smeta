@@ -2,7 +2,6 @@
 import os
 import logging
 import tempfile
-import subprocess
 from typing import Dict, Any
 
 from .excel_exporter import ExcelExporter
@@ -34,7 +33,7 @@ def export_to_pdf(
 
 
 def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
-    """Convert XLSX file to PDF using available backend (Excel or LibreOffice).
+    """Convert an XLSX file to PDF using Excel.
 
     If ``lang`` is ``"en"``, the Excel automation backend is instructed to use
     the dot (``.``) as the decimal separator so that numbers in the resulting
@@ -85,29 +84,4 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
             except Exception:
                 pass
 
-    if success:
-        return True
-
-    try:
-        outdir = os.path.dirname(pdf_path)
-        env = os.environ.copy()
-        if lang.lower().startswith("en"):
-            env["LC_NUMERIC"] = "C"
-        subprocess.run(
-            [
-                "soffice",
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                outdir,
-                xlsx_path,
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        )
-        return os.path.exists(pdf_path)
-    except Exception:
-        return False
+    return success
