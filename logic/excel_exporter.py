@@ -1,8 +1,6 @@
 # logic/excel_exporter.py
 import os
 import logging
-import tempfile
-import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
@@ -83,7 +81,13 @@ ADD_HDR_TITLES = {
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
-    def __init__(self, template_path: Optional[str] = None, currency: str = "RUB", log_path: str = "excel_export.md", lang: str = "ru"):
+    def __init__(
+        self,
+        template_path: Optional[str] = None,
+        currency: str = "RUB",
+        log_path: str = "excel_export.md",
+        lang: str = "ru",
+    ):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
         self.currency = currency
         self.currency_symbol = CURRENCY_SYMBOLS.get(currency, "")
@@ -102,7 +106,9 @@ class ExcelExporter:
             formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
-        self.logger.debug("Initialized ExcelExporter with template %s", self.template_path)
+        self.logger.debug(
+            "Initialized ExcelExporter with template %s", self.template_path
+        )
 
     def _currency_format(self, decimals: int) -> str:
         sym = self.currency_symbol
@@ -148,7 +154,9 @@ class ExcelExporter:
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
-    def export_to_excel(self, project_data: Dict[str, Any], output_path: str, fit_to_page: bool = False) -> bool:
+    def export_to_excel(
+        self, project_data: Dict[str, Any], output_path: str, fit_to_page: bool = False
+    ) -> bool:
         try:
             self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
@@ -156,27 +164,41 @@ class ExcelExporter:
 
             wb = load_workbook(self.template_path)
 
-            quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
+            quotation_ws = (
+                wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
+            )
 
             subtot_cells: List[str] = []
             current_row = 13
 
-            last_row, ps_cell = self._render_project_setup_table(quotation_ws, project_data, current_row)
+            last_row, ps_cell = self._render_project_setup_table(
+                quotation_ws, project_data, current_row
+            )
             if ps_cell:
                 subtot_cells.append(ps_cell)
             current_row = last_row + 1
 
-            last_row, tr_cells = self._render_translation_blocks(quotation_ws, project_data, current_row)
+            last_row, tr_cells = self._render_translation_blocks(
+                quotation_ws, project_data, current_row
+            )
             subtot_cells += tr_cells
             current_row = last_row + 1
 
-            last_row, add_cells = self._render_additional_services_tables(quotation_ws, project_data, current_row)
+            last_row, add_cells = self._render_additional_services_tables(
+                quotation_ws, project_data, current_row
+            )
             subtot_cells += add_cells
 
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
             # Remove template sheets after rendering
-            for name in ("ProjectSetup", "Setupfee", "Languages", "AdditionalServices", "Addservice"):
+            for name in (
+                "ProjectSetup",
+                "Setupfee",
+                "Languages",
+                "AdditionalServices",
+                "Addservice",
+            ):
                 if name in wb.sheetnames:
                     del wb[name]
 
@@ -211,50 +233,11 @@ class ExcelExporter:
             print(f"[ExcelExporter] Ошибка экспорта: {e}")
             return False
 
-    def export_to_pdf(self, project_data: Dict[str, Any], output_path: str) -> bool:
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                xlsx_path = os.path.join(tmpdir, "temp.xlsx")
-                if not self.export_to_excel(project_data, xlsx_path, fit_to_page=True):
-                    return False
-                if not self.xlsx_to_pdf(xlsx_path, output_path):
-                    raise RuntimeError("Не удалось конвертировать в PDF")
-            return True
-        except Exception as e:
-            self.logger.exception("PDF export failed")
-            print(f"[ExcelExporter] Ошибка экспорта PDF: {e}")
-            return False
-
-    @staticmethod
-    def xlsx_to_pdf(xlsx_path: str, pdf_path: str) -> bool:
-        try:
-            import win32com.client  # type: ignore
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            wb = excel.Workbooks.Open(xlsx_path)
-            wb.ExportAsFixedFormat(0, pdf_path)
-            wb.Close(False)
-            excel.Quit()
-            return os.path.exists(pdf_path)
-        except Exception:
-            pass
-
-        try:
-            outdir = os.path.dirname(pdf_path)
-            subprocess.run(
-                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", outdir, xlsx_path],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return os.path.exists(pdf_path)
-        except Exception:
-            return False
-
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------
 
-    def _find_first(self, ws: Worksheet, token: str, row_from: int = 1) -> Optional[Tuple[int, int]]:
+    def _find_first(
+        self, ws: Worksheet, token: str, row_from: int = 1
+    ) -> Optional[Tuple[int, int]]:
         self.logger.debug("Searching for '%s' starting from row %d", token, row_from)
         for r in range(row_from, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
@@ -265,7 +248,9 @@ class ExcelExporter:
         self.logger.debug("  token '%s' not found", token)
         return None
 
-    def _find_below(self, ws: Worksheet, start_row: int, token: str) -> Optional[Tuple[int, int]]:
+    def _find_below(
+        self, ws: Worksheet, start_row: int, token: str
+    ) -> Optional[Tuple[int, int]]:
         self.logger.debug("Searching below row %d for '%s'", start_row, token)
         for r in range(start_row + 1, ws.max_row + 1):
             for c in range(1, ws.max_column + 1):
@@ -279,26 +264,59 @@ class ExcelExporter:
     def _copy_style(self, s: Cell, d: Cell) -> None:
         d.value = s.value
         if s.font:
-            d.font = Font(name=s.font.name, size=s.font.size, bold=s.font.bold,
-                          italic=s.font.italic, vertAlign=s.font.vertAlign,
-                          underline=s.font.underline, strike=s.font.strike, color=s.font.color)
+            d.font = Font(
+                name=s.font.name,
+                size=s.font.size,
+                bold=s.font.bold,
+                italic=s.font.italic,
+                vertAlign=s.font.vertAlign,
+                underline=s.font.underline,
+                strike=s.font.strike,
+                color=s.font.color,
+            )
         if s.alignment:
-            d.alignment = Alignment(horizontal=s.alignment.horizontal, vertical=s.alignment.vertical,
-                                    text_rotation=s.alignment.text_rotation, wrap_text=s.alignment.wrap_text,
-                                    shrink_to_fit=s.alignment.shrink_to_fit, indent=s.alignment.indent)
+            d.alignment = Alignment(
+                horizontal=s.alignment.horizontal,
+                vertical=s.alignment.vertical,
+                text_rotation=s.alignment.text_rotation,
+                wrap_text=s.alignment.wrap_text,
+                shrink_to_fit=s.alignment.shrink_to_fit,
+                indent=s.alignment.indent,
+            )
         if s.fill:
-            d.fill = PatternFill(fill_type=s.fill.fill_type, start_color=s.fill.start_color, end_color=s.fill.end_color)
+            d.fill = PatternFill(
+                fill_type=s.fill.fill_type,
+                start_color=s.fill.start_color,
+                end_color=s.fill.end_color,
+            )
         if s.border:
-            d.border = Border(left=s.border.left, right=s.border.right, top=s.border.top, bottom=s.border.bottom,
-                              diagonal=s.border.diagonal, diagonalUp=s.border.diagonalUp,
-                              diagonalDown=s.border.diagonalDown, outline=s.border.outline,
-                              vertical=s.border.vertical, horizontal=s.border.horizontal)
+            d.border = Border(
+                left=s.border.left,
+                right=s.border.right,
+                top=s.border.top,
+                bottom=s.border.bottom,
+                diagonal=s.border.diagonal,
+                diagonalUp=s.border.diagonalUp,
+                diagonalDown=s.border.diagonalDown,
+                outline=s.border.outline,
+                vertical=s.border.vertical,
+                horizontal=s.border.horizontal,
+            )
         if s.has_style and s.number_format:
             d.number_format = s.number_format
         if s.protection:
-            d.protection = Protection(locked=s.protection.locked, hidden=s.protection.hidden)
+            d.protection = Protection(
+                locked=s.protection.locked, hidden=s.protection.hidden
+            )
 
-    def _copy_block(self, dst_ws: Worksheet, src_ws: Worksheet, src_start: int, src_end: int, dst_start: int) -> None:
+    def _copy_block(
+        self,
+        dst_ws: Worksheet,
+        src_ws: Worksheet,
+        src_start: int,
+        src_end: int,
+        dst_start: int,
+    ) -> None:
         """Копирует строки [src_start..src_end] со страницы src_ws на позицию dst_start в dst_ws
         со стилями и слияниями. Используется, чтобы копировать неизменённый шаблонный
         блок даже после того, как первый блок уже заполнен данными."""
@@ -332,7 +350,9 @@ class ExcelExporter:
             # не ругался на повреждённые записи при открытии файла.
             overlap = []
             for m in dst_ws.merged_cells.ranges:
-                if not (m.max_row < sr or m.min_row > er or m.max_col < sc or m.min_col > ec):
+                if not (
+                    m.max_row < sr or m.min_row > er or m.max_col < sc or m.min_col > ec
+                ):
                     overlap.append(str(m))
             for mref in overlap:
                 try:
@@ -447,7 +467,9 @@ class ExcelExporter:
 
     # ----------------------------- МАП КОЛОНОК -----------------------------
 
-    def _header_map(self, ws: Worksheet, headers_row: int, hdr_tokens: Dict[str, str] = HDR) -> Dict[str, int]:
+    def _header_map(
+        self, ws: Worksheet, headers_row: int, hdr_tokens: Dict[str, str] = HDR
+    ) -> Dict[str, int]:
         mapping: Dict[str, int] = {}
         for c in range(1, ws.max_column + 1):
             v = ws.cell(headers_row, c).value
@@ -457,7 +479,14 @@ class ExcelExporter:
                     if t == tok:
                         mapping[key] = c
         if not mapping:
-            mapping = {"param": 1, "type": 2, "unit": 3, "qty": 4, "rate": 5, "total": 6}
+            mapping = {
+                "param": 1,
+                "type": 2,
+                "unit": 3,
+                "qty": 4,
+                "rate": 5,
+                "total": 6,
+            }
             self.logger.debug(
                 "Header tokens not found at row %d, using default mapping %s",
                 headers_row,
@@ -469,7 +498,9 @@ class ExcelExporter:
 
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
 
-    def _render_translation_blocks(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, List[str]]:
+    def _render_translation_blocks(
+        self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
+    ) -> Tuple[int, List[str]]:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
             return start_row - 1, []
@@ -477,19 +508,25 @@ class ExcelExporter:
 
         pairs = sorted(
             pairs,
-            key=lambda p: p.get("pair_name", "").split(" - ")[1]
-            if " - " in p.get("pair_name", "")
-            else p.get("pair_name", ""),
+            key=lambda p: (
+                p.get("pair_name", "").split(" - ")[1]
+                if " - " in p.get("pair_name", "")
+                else p.get("pair_name", "")
+            ),
         )
 
-        template_ws = ws.parent["Languages"] if "Languages" in ws.parent.sheetnames else ws
+        template_ws = (
+            ws.parent["Languages"] if "Languages" in ws.parent.sheetnames else ws
+        )
         tpl_start = self._find_first(template_ws, START_PH)
         if not tpl_start:
             raise RuntimeError("В шаблоне не найден {{translation_table}}")
         tpl_start_row, _ = tpl_start
         tpl_end = self._find_below(template_ws, tpl_start_row, END_PH)
         if not tpl_end:
-            raise RuntimeError("В шаблоне не найден {{subtotal_translation_table}} ниже {{translation_table}}")
+            raise RuntimeError(
+                "В шаблоне не найден {{subtotal_translation_table}} ниже {{translation_table}}"
+            )
         tpl_end_row, _ = tpl_end
 
         template_height = tpl_end_row - tpl_start_row + 1
@@ -513,7 +550,11 @@ class ExcelExporter:
             # Заголовок блока (заменяем плейсхолдер)
             for c in range(1, ws.max_column + 1):
                 if ws.cell(block_top, c).value == START_PH:
-                    ws.cell(block_top, c, pair.get("pair_name") or pair.get("header_title") or "")
+                    ws.cell(
+                        block_top,
+                        c,
+                        pair.get("pair_name") or pair.get("header_title") or "",
+                    )
                     break
 
             hmap = self._header_map(ws, t_headers_row)
@@ -548,20 +589,28 @@ class ExcelExporter:
                     data_map.setdefault("fuzzy_75_94", row)
                 elif "100" in lname:
                     data_map.setdefault("reps_100_30", row)
-                self.logger.debug("  mapped '%s' -> %s", key, {k: v for k, v in row.items() if k in ("volume", "rate")})
+                self.logger.debug(
+                    "  mapped '%s' -> %s",
+                    key,
+                    {k: v for k, v in row.items() if k in ("volume", "rate")},
+                )
 
             items: List[Dict[str, Any]] = []
             for cfg in ServiceConfig.TRANSLATION_ROWS:
                 key = cfg.get("key")
                 src_row = data_map.get(key, {})
-                items.append({
-                    "parameter": tr(cfg.get("name"), self.lang),
-                    "volume": float(src_row.get("volume") or 0),
-                    "rate": float(src_row.get("rate") or 0),
-                    "multiplier": cfg.get("multiplier"),
-                    "is_base": bool(cfg.get("is_base")),
-                })
-            self.logger.debug("Items prepared for '%s': %s", pair.get("pair_name"), items)
+                items.append(
+                    {
+                        "parameter": tr(cfg.get("name"), self.lang),
+                        "volume": float(src_row.get("volume") or 0),
+                        "rate": float(src_row.get("rate") or 0),
+                        "multiplier": cfg.get("multiplier"),
+                        "is_base": bool(cfg.get("is_base")),
+                    }
+                )
+            self.logger.debug(
+                "Items prepared for '%s': %s", pair.get("pair_name"), items
+            )
 
             # Подгонка количества строк данных
             cur_cap = max(0, t_subtotal_row - t_first_data)
@@ -580,14 +629,20 @@ class ExcelExporter:
                     for c in range(1, ws.max_column + 1):
                         self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
                 t_subtotal_row += add
-                self.logger.debug("  inserted %d row(s) at %d", add, t_subtotal_row - add)
+                self.logger.debug(
+                    "  inserted %d row(s) at %d", add, t_subtotal_row - add
+                )
             elif need < cur_cap:
                 delete_count = cur_cap - need
                 for _ in range(delete_count):
                     ws.delete_rows(t_subtotal_row - 1)
                     t_subtotal_row -= 1
                 if delete_count:
-                    self.logger.debug("  deleted %d extra row(s) before %d", delete_count, t_subtotal_row)
+                    self.logger.debug(
+                        "  deleted %d extra row(s) before %d",
+                        delete_count,
+                        t_subtotal_row,
+                    )
 
             # Очистка всех строк данных
             for rr in range(t_first_data, t_subtotal_row):
@@ -631,7 +686,9 @@ class ExcelExporter:
                 )
                 r += 1
 
-            base_idx = next((idx for idx, it in enumerate(items) if it.get("is_base")), None)
+            base_idx = next(
+                (idx for idx, it in enumerate(items) if it.get("is_base")), None
+            )
             base_rate_cell = None
             if base_idx is not None and base_idx < len(row_numbers):
                 base_rate_cell = f"{get_column_letter(col_rate)}{row_numbers[base_idx]}"
@@ -642,9 +699,16 @@ class ExcelExporter:
                 rr = row_numbers[idx]
                 if it.get("is_base"):
                     cell = ws.cell(rr, col_rate, it["rate"])
-                    self.logger.debug("  rate base %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
+                    self.logger.debug(
+                        "  rate base %s%d=%s",
+                        get_column_letter(col_rate),
+                        rr,
+                        it["rate"],
+                    )
                 elif base_rate_cell and it.get("multiplier") is not None:
-                    cell = ws.cell(rr, col_rate, f"={base_rate_cell}*{it['multiplier']}")
+                    cell = ws.cell(
+                        rr, col_rate, f"={base_rate_cell}*{it['multiplier']}"
+                    )
                     self.logger.debug(
                         "  rate formula %s%d=%s*%s",
                         get_column_letter(col_rate),
@@ -654,7 +718,9 @@ class ExcelExporter:
                     )
                 else:
                     cell = ws.cell(rr, col_rate, it["rate"])
-                    self.logger.debug("  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"])
+                    self.logger.debug(
+                        "  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"]
+                    )
                 self._apply_rate_format(cell)
                 total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
                 total_cell.number_format = self.total_fmt
@@ -678,7 +744,11 @@ class ExcelExporter:
             if r == t_first_data:
                 subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
             else:
-                subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+                subtotal_cell = ws.cell(
+                    t_subtotal_row,
+                    col_total,
+                    f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
+                )
             subtotal_cell.number_format = self.total_fmt
 
             subtot_cells.append(f"{totalL}{t_subtotal_row}")
@@ -700,7 +770,9 @@ class ExcelExporter:
 
         return current_row - 1, subtot_cells
 
-    def _render_project_setup_table(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, Optional[str]]:
+    def _render_project_setup_table(
+        self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
+    ) -> Tuple[int, Optional[str]]:
         items: List[Dict[str, Any]] = project_data.get("project_setup", [])
         if not items:
             return start_row - 1, None
@@ -708,9 +780,11 @@ class ExcelExporter:
         template_ws = (
             ws.parent["Setupfee"]
             if "Setupfee" in ws.parent.sheetnames
-            else ws.parent["ProjectSetup"]
-            if "ProjectSetup" in ws.parent.sheetnames
-            else ws
+            else (
+                ws.parent["ProjectSetup"]
+                if "ProjectSetup" in ws.parent.sheetnames
+                else ws
+            )
         )
         tpl_start = self._find_first(template_ws, PS_START_PH)
         if not tpl_start:
@@ -718,7 +792,9 @@ class ExcelExporter:
         tpl_start_row, _ = tpl_start
         tpl_end = self._find_below(template_ws, tpl_start_row, PS_END_PH)
         if not tpl_end:
-            raise RuntimeError("В шаблоне не найден {{subtotal_project_setup}} ниже {{project_setup}}")
+            raise RuntimeError(
+                "В шаблоне не найден {{subtotal_project_setup}} ниже {{project_setup}}"
+            )
         tpl_end_row, _ = tpl_end
 
         template_height = tpl_end_row - tpl_start_row + 1
@@ -760,7 +836,9 @@ class ExcelExporter:
         if need > cur_cap:
             add = need - cur_cap
             self._insert_rows(ws, t_subtotal_row, add)
-            tpl_row = t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
+            tpl_row = (
+                t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
+            )
             for k in range(add):
                 dst = t_subtotal_row + k
                 for c in range(1, ws.max_column + 1):
@@ -824,13 +902,21 @@ class ExcelExporter:
         if r == t_first_data:
             subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
         else:
-            subtotal_cell = ws.cell(t_subtotal_row, col_total, f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})")
+            subtotal_cell = ws.cell(
+                t_subtotal_row,
+                col_total,
+                f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
+            )
         subtotal_cell.number_format = self.total_fmt
-        self.logger.debug("Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}")
+        self.logger.debug(
+            "Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}"
+        )
 
         return t_subtotal_row, f"{totalL}{t_subtotal_row}"
 
-    def _render_additional_services_tables(self, ws: Worksheet, project_data: Dict[str, Any], start_row: int) -> Tuple[int, List[str]]:
+    def _render_additional_services_tables(
+        self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
+    ) -> Tuple[int, List[str]]:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
             return start_row - 1, []
@@ -839,9 +925,11 @@ class ExcelExporter:
         template_ws = (
             ws.parent["Addservice"]
             if "Addservice" in ws.parent.sheetnames
-            else ws.parent["AdditionalServices"]
-            if "AdditionalServices" in ws.parent.sheetnames
-            else ws
+            else (
+                ws.parent["AdditionalServices"]
+                if "AdditionalServices" in ws.parent.sheetnames
+                else ws
+            )
         )
         tpl_start = self._find_first(template_ws, ADD_START_PH)
         if not tpl_start:
@@ -902,9 +990,11 @@ class ExcelExporter:
                 self._insert_rows(ws, subtotal_row, add)
                 tpl_row = first_data_row if cur_cap > 0 else subtotal_row - 1
                 merges_to_copy = [
-                    m for m in ws.merged_cells.ranges
+                    m
+                    for m in ws.merged_cells.ranges
                     if m.min_row == m.max_row == tpl_row
-                    and first_col <= m.min_col and m.max_col <= last_col
+                    and first_col <= m.min_col
+                    and m.max_col <= last_col
                 ]
                 for k in range(add):
                     dst = subtotal_row + k
@@ -912,7 +1002,9 @@ class ExcelExporter:
                         self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
                     for m in merges_to_copy:
                         sc, ec = m.min_col, m.max_col
-                        ref = f"{get_column_letter(sc)}{dst}:{get_column_letter(ec)}{dst}"
+                        ref = (
+                            f"{get_column_letter(sc)}{dst}:{get_column_letter(ec)}{dst}"
+                        )
                         ws.merge_cells(ref)
                 subtotal_row += add
             elif need < cur_cap:
@@ -961,7 +1053,11 @@ class ExcelExporter:
             if r == first_data_row:
                 subtotal_cell = ws.cell(subtotal_row, col_total, 0)
             else:
-                subtotal_cell = ws.cell(subtotal_row, col_total, f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})")
+                subtotal_cell = ws.cell(
+                    subtotal_row,
+                    col_total,
+                    f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})",
+                )
             subtotal_cell.number_format = self.total_fmt
             subtot_cells.append(f"{totalL}{subtotal_row}")
             self.logger.debug(
@@ -1119,4 +1215,3 @@ class ExcelExporter:
                     cell.value = new_val
                 if had_total:
                     cell.number_format = self.total_fmt
-
