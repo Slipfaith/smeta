@@ -670,8 +670,9 @@ class ExcelExporter:
                 )
                 ws.cell(r, col_param, it["parameter"])
                 ws.cell(r, col_type, "")
-                ws.cell(r, col_unit, "Слово")
-                ws.cell(r, col_qty, it["volume"])
+                ws.cell(r, col_unit, tr("Слово", self.lang))
+                qty_cell = ws.cell(r, col_qty, it["volume"])
+                qty_cell.alignment = Alignment(horizontal="right", vertical="top")
                 self.logger.debug(
                     "  cells: %s%d='%s', %s%d='%s', %s%d=%s",
                     get_column_letter(col_param),
@@ -679,7 +680,7 @@ class ExcelExporter:
                     it["parameter"],
                     get_column_letter(col_unit),
                     r,
-                    "Слово",
+                    tr("Слово", self.lang),
                     get_column_letter(col_qty),
                     r,
                     it["volume"],
@@ -870,7 +871,7 @@ class ExcelExporter:
         except Exception:
             pass
         ws.merge_cells(ref)
-        ws.cell(block_top, first_col, "Запуск и управление проектом")
+        ws.cell(block_top, first_col, tr("Запуск и управление проектом", self.lang))
 
         self.logger.debug("Rendering project setup table with %d items", len(items))
         r = t_first_data
@@ -883,8 +884,9 @@ class ExcelExporter:
                 it.get("rate"),
             )
             ws.cell(r, col_param, it.get("parameter", ""))
-            ws.cell(r, col_unit, "час")
-            ws.cell(r, col_qty, it.get("volume", 0))
+            ws.cell(r, col_unit, tr("час", self.lang))
+            qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
+            qty_cell.alignment = Alignment(horizontal="right", vertical="top")
             rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
             self._apply_rate_format(rate_cell)
             qtyL = get_column_letter(col_qty)
@@ -974,7 +976,7 @@ class ExcelExporter:
             except Exception:
                 pass
             ws.merge_cells(header_ref)
-            ws.cell(current_row, first_col, header_title)
+            ws.cell(current_row, first_col, tr(header_title, self.lang))
 
             for c in range(first_col, last_col + 1):
                 v = ws.cell(headers_row, c).value
@@ -1034,8 +1036,9 @@ class ExcelExporter:
                     it.get("rate"),
                 )
                 ws.cell(r, col_param, it.get("parameter", ""))
-                ws.cell(r, col_unit, it.get("unit", ""))
-                ws.cell(r, col_qty, it.get("volume", 0))
+                ws.cell(r, col_unit, tr(it.get("unit", ""), self.lang))
+                qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
+                qty_cell.alignment = Alignment(horizontal="right", vertical="top")
                 rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
                 self._apply_rate_format(rate_cell)
                 qtyL = get_column_letter(col_qty)
