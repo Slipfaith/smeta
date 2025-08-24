@@ -36,6 +36,7 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
+from gui.utils import shorten_locale
 from logic.excel_exporter import ExcelExporter
 from logic.pdf_exporter import xlsx_to_pdf
 from logic.user_config import load_languages, add_language
@@ -434,6 +435,7 @@ class TranslationCostCalculator(QMainWindow):
         combo.clear()
         for lang in self._languages:
             name = lang["ru"] if self.lang_display_ru else lang["en"]
+            name = shorten_locale(name, "ru" if self.lang_display_ru else "en")
             label = f"{name}"
             combo.addItem(label, lang)
         combo.blockSignals(False)
@@ -706,7 +708,10 @@ class TranslationCostCalculator(QMainWindow):
 
         # Заголовок для Excel = текущее отображаемое имя целевого
         if tgt["dict"]:
-            header_title = tgt["ru"] if self.lang_display_ru else tgt["en"]
+            name = tgt["ru"] if self.lang_display_ru else tgt["en"]
+            header_title = shorten_locale(
+                name, "ru" if self.lang_display_ru else "en"
+            )
         else:
             header_title = tgt["text"]
         self.pair_headers[pair_key] = header_title
@@ -759,8 +764,10 @@ class TranslationCostCalculator(QMainWindow):
                 tag = langcodes.find(key)
             lang_obj = langcodes.Language.get(tag)
             en_name = lang_obj.display_name("en").title()
+            en_name = shorten_locale(en_name, "en")
             ru_name = lang_obj.display_name("ru")
             ru_name = ru_name[0].upper() + ru_name[1:]
+            ru_name = shorten_locale(ru_name, "ru")
             return {"en": en_name, "ru": ru_name}
         except Exception:
             return {"en": key, "ru": key}
