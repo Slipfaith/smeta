@@ -330,7 +330,10 @@ class LanguagePairWidget(QWidget):
                 base_rate_row = None
             if base_rate_row is not None and table.item(base_rate_row, 2):
                 base_text = table.item(base_rate_row, 2).text()
-                base_sep = "," if "," in base_text else "."
+                if self.lang == "en":
+                    base_sep = "."
+                else:
+                    base_sep = "," if "," in base_text else "."
                 base_rate = _to_float(base_text)
                 table.blockSignals(True)
                 table.item(base_rate_row, 2).setText(self._format_rate(base_text, base_sep))
@@ -357,7 +360,10 @@ class LanguagePairWidget(QWidget):
                 volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
                 rate_item = table.item(row, 2)
                 rate_text = rate_item.text() if rate_item else "0"
-                sep = "," if "," in rate_text else "."
+                if self.lang == "en":
+                    sep = "."
+                else:
+                    sep = "," if "," in rate_text else "."
                 rate = _to_float(rate_text)
                 table.blockSignals(True)
                 rate_item.setText(self._format_rate(rate_text, sep))
@@ -434,12 +440,13 @@ class LanguagePairWidget(QWidget):
                 table.setItem(r, 3, sum_item)
                 rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
 
-        for row, row_data in enumerate(data):
-            if row < table.rowCount():
-                table.item(row, 0).setText(row_data.get("parameter", ""))
-                table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0)))
-                table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
+            for row, row_data in enumerate(data):
+                if row < table.rowCount():
+                    table.item(row, 0).setText(row_data.get("parameter", ""))
+                    table.item(row, 1).setText(str(row_data.get("volume", 0)))
+                    sep = "." if self.lang == "en" else None
+                    table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
+                    table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
                 rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
                 rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
                 if rows[row].get("is_base"):
