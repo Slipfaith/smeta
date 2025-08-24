@@ -116,6 +116,14 @@ class ExcelExporter:
             return f'"{sym}"#,##0.{"0"*decimals}'
         return f'#,##0.{"0"*decimals} "{sym}"'
 
+    def _to_number(self, value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                return float(value.replace(",", "."))
+            except ValueError:
+                return value
+        return value
+
     def _apply_rate_format(self, cell: Cell) -> None:
         """Apply correct number format for rate cells.
 
@@ -125,7 +133,7 @@ class ExcelExporter:
         num: Optional[float] = None
         if isinstance(val, str):
             try:
-                num = float(val)
+                num = float(val.replace(",", "."))
             except ValueError:
                 num = None
         elif isinstance(val, (int, float)):
@@ -638,8 +646,8 @@ class ExcelExporter:
                 items.append(
                     {
                         "parameter": tr(cfg.get("name"), self.lang),
-                        "volume": float(src_row.get("volume") or 0),
-                        "rate": float(src_row.get("rate") or 0),
+                        "volume": self._to_number(src_row.get("volume") or 0),
+                        "rate": self._to_number(src_row.get("rate") or 0),
                         "multiplier": cfg.get("multiplier"),
                         "is_base": bool(cfg.get("is_base")),
                     }
@@ -708,7 +716,7 @@ class ExcelExporter:
                 ws.cell(r, col_type, "")
                 unit_cell = ws.cell(r, col_unit, tr("Слово", self.lang))
                 unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-                qty_cell = ws.cell(r, col_qty, it["volume"])
+                qty_cell = ws.cell(r, col_qty, self._to_number(it["volume"]))
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
                 self.logger.debug(
                     "  cells: %s%d='%s', %s%d='%s', %s%d=%s",
@@ -736,7 +744,7 @@ class ExcelExporter:
             for idx, it in enumerate(items):
                 rr = row_numbers[idx]
                 if it.get("is_base"):
-                    cell = ws.cell(rr, col_rate, it["rate"])
+                    cell = ws.cell(rr, col_rate, self._to_number(it["rate"]))
                     self.logger.debug(
                         "  rate base %s%d=%s",
                         get_column_letter(col_rate),
@@ -744,18 +752,19 @@ class ExcelExporter:
                         it["rate"],
                     )
                 elif base_rate_cell and it.get("multiplier") is not None:
+                    multiplier = self._to_number(it["multiplier"])
                     cell = ws.cell(
-                        rr, col_rate, f"={base_rate_cell}*{it['multiplier']}"
+                        rr, col_rate, f"={base_rate_cell}*{multiplier}"
                     )
                     self.logger.debug(
                         "  rate formula %s%d=%s*%s",
                         get_column_letter(col_rate),
                         rr,
                         base_rate_cell,
-                        it["multiplier"],
+                        multiplier,
                     )
                 else:
-                    cell = ws.cell(rr, col_rate, it["rate"])
+                    cell = ws.cell(rr, col_rate, self._to_number(it["rate"]))
                     self.logger.debug(
                         "  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"]
                     )
@@ -929,9 +938,9 @@ class ExcelExporter:
             ws.cell(r, col_param, it.get("parameter", ""))
             unit_cell = ws.cell(r, col_unit, tr("час", self.lang))
             unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-            qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
+            qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
             qty_cell.alignment = Alignment(horizontal="right", vertical="top")
-            rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
+            rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
             self._apply_rate_format(rate_cell)
             qtyL = get_column_letter(col_qty)
             rateL = get_column_letter(col_rate)
@@ -1086,9 +1095,9 @@ class ExcelExporter:
                 ws.cell(r, col_param, it.get("parameter", ""))
                 unit_cell = ws.cell(r, col_unit, tr(it.get("unit", ""), self.lang))
                 unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-                qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
+                qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
-                rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
+                rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
                 self._apply_rate_format(rate_cell)
                 qtyL = get_column_letter(col_qty)
                 rateL = get_column_letter(col_rate)
@@ -1224,8 +1233,8 @@ class ExcelExporter:
         project_data: Dict[str, Any],
     ) -> None:
         """Copy VAT table from 'Vat' sheet and insert after total row."""
-        vat_rate = float(project_data.get("vat_rate", 0) or 0)
-        if vat_rate <= 0 or "Vat" not in wb.sheetnames:
+        vat_rate = self._to_number(project_data.get("vat_rate", 0) or 0)
+        if not isinstance(vat_rate, (int, float)) or vat_rate <= 0 or "Vat" not in wb.sheetnames:
             return
 
         vat_ws = wb["Vat"]
