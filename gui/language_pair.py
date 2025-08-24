@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
@@ -69,8 +69,8 @@ class LanguagePairWidget(QWidget):
         self.set_language(self.lang)
 
     @staticmethod
-    def _format_rate(value: float) -> str:
-        return format_rate(value)
+    def _format_rate(value: Union[str, float], sep: str | None = None) -> str:
+        return format_rate(value, sep)
 
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(tr(service_name, self.lang))
@@ -325,12 +325,15 @@ class LanguagePairWidget(QWidget):
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
             base_rate = 0.0
+            base_sep = "."
             if base_rate_row is not None and rows[base_rate_row].get('deleted'):
                 base_rate_row = None
             if base_rate_row is not None and table.item(base_rate_row, 2):
-                base_rate = _to_float(table.item(base_rate_row, 2).text())
+                base_text = table.item(base_rate_row, 2).text()
+                base_sep = "," if "," in base_text else "."
+                base_rate = _to_float(base_text)
                 table.blockSignals(True)
-                table.item(base_rate_row, 2).setText(self._format_rate(base_rate))
+                table.item(base_rate_row, 2).setText(self._format_rate(base_text, base_sep))
                 table.blockSignals(False)
 
             subtotal = 0.0
@@ -348,14 +351,16 @@ class LanguagePairWidget(QWidget):
                     auto_rate = base_rate * row_cfg["multiplier"]
                     if table.item(row, 2):
                         table.blockSignals(True)
-                        table.item(row, 2).setText(self._format_rate(auto_rate))
+                        table.item(row, 2).setText(self._format_rate(auto_rate, base_sep))
                         table.blockSignals(False)
 
                 volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
                 rate_item = table.item(row, 2)
-                rate = _to_float(rate_item.text() if rate_item else "0")
+                rate_text = rate_item.text() if rate_item else "0"
+                sep = "," if "," in rate_text else "."
+                rate = _to_float(rate_text)
                 table.blockSignals(True)
-                rate_item.setText(self._format_rate(rate))
+                rate_item.setText(self._format_rate(rate_text, sep))
                 table.blockSignals(False)
                 total = volume * rate
                 if table.item(row, 3):

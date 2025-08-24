@@ -197,9 +197,11 @@ class ProjectSetupWidget(QWidget):
                 volume_item = self.table.item(row, 1)
                 rate_item = self.table.item(row, 2)
                 volume = _to_float(volume_item.text() if volume_item else "0")
-                rate = _to_float(rate_item.text() if rate_item else "0")
+                rate_text = rate_item.text() if rate_item else "0"
+                sep = "," if "," in rate_text else "."
+                rate = _to_float(rate_text)
                 self.table.blockSignals(True)
-                rate_item.setText(format_rate(rate))
+                rate_item.setText(format_rate(rate_text, sep))
                 self.table.blockSignals(False)
                 total = volume * rate
                 total_item = self.table.item(row, 3)
