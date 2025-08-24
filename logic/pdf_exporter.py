@@ -2,6 +2,7 @@
 import os
 import logging
 import tempfile
+import gc
 from typing import Dict, Any
 
 from .excel_exporter import ExcelExporter
@@ -22,9 +23,14 @@ def export_to_pdf(
         exporter = ExcelExporter(template_path, currency=currency, lang=lang)
         with tempfile.TemporaryDirectory() as tmpdir:
             xlsx_path = os.path.join(tmpdir, "temp.xlsx")
-            if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):
+            if not exporter.export_to_excel(
+                project_data,
+                xlsx_path,
+                fit_to_page=True,
+                restore_images=False,
+            ):
                 return False
-            if not xlsx_to_pdf(xlsx_path, output_path, lang=lang):
+            if not xlsx_to_pdf(xlsx_path, output_path, template_path, lang=lang):
                 raise RuntimeError("Не удалось конвертировать в PDF")
         return True
     except Exception as e:
@@ -33,19 +39,37 @@ def export_to_pdf(
         return False
 
 
-def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
-    """Convert an XLSX file to PDF using Excel.
+def xlsx_to_pdf(
+    xlsx_path: str, pdf_path: str, template_path: str, lang: str = "ru"
+) -> bool:
+    """Convert an XLSX file to PDF using a single Excel session.
 
-    The Excel automation backend is instructed to use language-specific
-    decimal and thousands separators so that numbers in the resulting PDF
-    always display with the correct symbols regardless of the system locale.
+    The function restores images from ``template_path``, adjusts page setup,
+    toggles heavy Excel features off for faster processing and finally exports
+    the workbook to ``pdf_path``.  All changes to the Excel environment are
+    reverted in a ``finally`` block.
     """
 
-    excel = wb = None
+    excel = tpl_wb = out_wb = None
     orig_decimal = orig_thousands = orig_use_sys = None
+    orig_screen = orig_events = orig_alerts = orig_calc = None
     custom_sep = None
     try:
         excel = get_excel_app()
+
+        # store and tweak performance toggles
+        try:
+            orig_screen = excel.ScreenUpdating
+            orig_events = excel.EnableEvents
+            orig_alerts = excel.DisplayAlerts
+            orig_calc = excel.Calculation
+            excel.ScreenUpdating = False
+            excel.EnableEvents = False
+            excel.DisplayAlerts = False
+            # xlCalculationManual = -4135
+            excel.Calculation = -4135
+        except Exception:
+            pass
 
         lang_lc = lang.lower()
         if lang_lc.startswith("en"):
@@ -63,17 +87,53 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
             except Exception:
                 pass
 
-        wb = excel.Workbooks.Open(xlsx_path)
-        wb.ExportAsFixedFormat(0, pdf_path)
+        tpl_wb = excel.Workbooks.Open(os.path.abspath(template_path))
+        out_wb = excel.Workbooks.Open(os.path.abspath(xlsx_path))
+        tpl_ws = tpl_wb.Worksheets("Quotation")
+        out_ws = out_wb.Worksheets("Quotation")
+
+        # restore pictures from template
+        while out_ws.Shapes.Count > 0:
+            out_ws.Shapes(1).Delete()
+        for shape in tpl_ws.Shapes:
+            if int(getattr(shape, "Type", 0)) == 13:  # msoPicture
+                shape.Copy()
+                out_ws.Paste()
+                pasted = out_ws.Shapes(out_ws.Shapes.Count)
+                pasted.Left = shape.Left
+                pasted.Top = shape.Top
+                pasted.Width = shape.Width
+                pasted.Height = shape.Height
+
+        tpl_wb.Close(False)
+        tpl_wb = None
+
+        # PageSetup adjustments
+        try:
+            ps = out_ws.PageSetup
+            ps.Zoom = False
+            ps.FitToPagesTall = 1
+            ps.FitToPagesWide = 1
+        except Exception:
+            pass
+
+        out_wb.ExportAsFixedFormat(0, pdf_path)
         success = os.path.exists(pdf_path)
     except Exception:
         success = False
     finally:
-        if wb is not None:
+        if out_wb is not None:
             try:
-                wb.Close(False)
+                out_wb.Close(False)
             except Exception:
                 pass
+            out_wb = None
+        if tpl_wb is not None:
+            try:
+                tpl_wb.Close(False)
+            except Exception:
+                pass
+            tpl_wb = None
         if excel is not None:
             try:
                 if custom_sep is not None and orig_use_sys is not None:
@@ -83,8 +143,21 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
                         excel.UseSystemSeparators = orig_use_sys
                     except Exception:
                         pass
+                try:
+                    if orig_screen is not None:
+                        excel.ScreenUpdating = orig_screen
+                    if orig_events is not None:
+                        excel.EnableEvents = orig_events
+                    if orig_alerts is not None:
+                        excel.DisplayAlerts = orig_alerts
+                    if orig_calc is not None:
+                        excel.Calculation = orig_calc
+                except Exception:
+                    pass
                 close_excel_app(excel)
             except Exception:
                 pass
+            excel = None
+        gc.collect()
 
     return success

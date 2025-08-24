@@ -1115,10 +1115,11 @@ class TranslationCostCalculator(QMainWindow):
         if not file_path:
             return
         template_path = self.legal_entities.get(self.legal_entity_combo.currentText())
+        export_lang = "ru" if self.lang_display_ru else "en"
         exporter = ExcelExporter(
             template_path,
             currency=currency,
-            lang="ru" if self.lang_display_ru else "en",
+            lang=export_lang,
         )
         with Progress(parent=self) as progress:
             def on_excel_progress(percent: int, message: str) -> None:
@@ -1133,12 +1134,13 @@ class TranslationCostCalculator(QMainWindow):
                         xlsx_path,
                         fit_to_page=True,
                         progress_callback=on_excel_progress,
+                        restore_images=False,
                     ):
                         QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
                         return
                     progress.set_label("Конвертация в PDF")
                     progress.set_value(80)
-                    if not xlsx_to_pdf(xlsx_path, pdf_path):
+                    if not xlsx_to_pdf(xlsx_path, pdf_path, template_path, lang=export_lang):
                         QMessageBox.critical(
                             self, "Ошибка", "Не удалось конвертировать в PDF"
                         )

@@ -21,9 +21,11 @@ def get_excel_app():
     if win32com is None:
         raise RuntimeError("win32com.client is not available")
 
-    app = win32com.client.Dispatch("Excel.Application")
+    # ``DispatchEx`` creates a completely new Excel process every time which
+    # avoids leaking state between exports.  Callers are responsible for
+    # tweaking any performance related flags (``ScreenUpdating`` etc.).
+    app = win32com.client.DispatchEx("Excel.Application")
     app.Visible = False
-    app.DisplayAlerts = False
     return app
 
 

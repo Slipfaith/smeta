@@ -210,6 +210,7 @@ class ExcelExporter:
         output_path: str,
         fit_to_page: bool = False,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        restore_images: bool = True,
     ) -> bool:
         try:
             self.logger.info("Starting export to %s", output_path)
@@ -302,7 +303,7 @@ class ExcelExporter:
             wb.save(output_path)
             step("Сохранение файла")
 
-            if os.name == "nt":
+            if restore_images and os.name == "nt":
                 if not self._restore_images_via_com(output_path):
                     raise RuntimeError("COM image restoration failed")
                 step("Восстановление изображений")
