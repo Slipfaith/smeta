@@ -154,6 +154,11 @@ class ExcelExporter:
 
             quotation_ws = wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
 
+            # Ensure images (e.g. logo) from the template sheet are preserved.
+            # Without re-adding them, openpyxl may drop images when saving the
+            # workbook.  Copying them explicitly keeps them in the resulting file.
+            self._copy_images_between_sheets(quotation_ws, quotation_ws)
+
             subtot_cells: List[str] = []
             current_row = 13
 
@@ -360,6 +365,16 @@ class ExcelExporter:
                     new_img = XLImage(img._data())
                     new_img.anchor = new_anchor
                     dst_ws.add_image(new_img)
+
+    def _copy_images_between_sheets(self, dst_ws: Worksheet, src_ws: Worksheet) -> None:
+        """Copy all images from src_ws to dst_ws preserving anchors."""
+        for img in getattr(src_ws, "_images", []):
+            anchor = getattr(img, "anchor", None)
+            if anchor is None:
+                continue
+            new_img = XLImage(img._data())
+            new_img.anchor = deepcopy(anchor)
+            dst_ws.add_image(new_img)
 
     def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
         """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
