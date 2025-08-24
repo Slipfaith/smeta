@@ -998,7 +998,9 @@ class TranslationCostCalculator(QMainWindow):
             "currency": self.currency_combo.currentText(),
             "language_pairs": [],
             "additional_services": [],
-            "pm_name": self.current_pm.get("name_ru", ""),
+            "pm_name": self.current_pm.get(
+                "name_ru" if self.lang_display_ru else "name_en", ""
+            ),
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
             "project_setup": (
