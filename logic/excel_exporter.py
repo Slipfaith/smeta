@@ -11,7 +11,7 @@ from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from openpyxl.drawing.image import Image as XLImage
-from .com_utils import get_excel_app
+from .com_utils import get_excel_app, close_excel_app
 
 from .service_config import ServiceConfig
 from .translation_config import tr
@@ -541,11 +541,16 @@ class ExcelExporter:
                 out_wb.Close(True)
             except Exception:
                 pass
-            if excel is not None and custom_sep is not None and orig_use_sys is not None:
+            if excel is not None:
                 try:
-                    excel.DecimalSeparator = orig_decimal
-                    excel.ThousandsSeparator = orig_thousands
-                    excel.UseSystemSeparators = orig_use_sys
+                    if custom_sep is not None and orig_use_sys is not None:
+                        try:
+                            excel.DecimalSeparator = orig_decimal
+                            excel.ThousandsSeparator = orig_thousands
+                            excel.UseSystemSeparators = orig_use_sys
+                        except Exception:
+                            pass
+                    close_excel_app(excel)
                 except Exception:
                     pass
 

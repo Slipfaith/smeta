@@ -50,7 +50,7 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 from logic.translation_config import tr
-from logic.com_utils import get_excel_app
+from logic.com_utils import get_excel_app, close_excel_app
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -298,7 +298,8 @@ class TranslationCostCalculator(QMainWindow):
 
         def _warmup() -> None:
             try:
-                get_excel_app()
+                app = get_excel_app()
+                close_excel_app(app)
             except Exception:
                 pass
 
