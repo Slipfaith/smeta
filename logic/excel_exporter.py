@@ -482,12 +482,30 @@ class ExcelExporter:
         keeping their positions and sizes intact.
         """
         excel = tpl_wb = out_wb = None
+        orig_decimal = orig_thousands = orig_use_sys = None
+        custom_sep = None
         try:
             import win32com.client  # type: ignore
 
             excel = win32com.client.Dispatch("Excel.Application")
             excel.Visible = False
             excel.DisplayAlerts = False
+
+            lang_lc = self.lang.lower()
+            if lang_lc.startswith("en"):
+                custom_sep = (".", ",")
+            elif lang_lc.startswith("ru"):
+                custom_sep = (",", " ")
+
+            if custom_sep is not None:
+                try:
+                    orig_decimal = excel.DecimalSeparator
+                    orig_thousands = excel.ThousandsSeparator
+                    orig_use_sys = excel.UseSystemSeparators
+                    excel.DecimalSeparator, excel.ThousandsSeparator = custom_sep
+                    excel.UseSystemSeparators = False
+                except Exception:
+                    pass
 
             tpl_path = os.path.abspath(self.template_path)
             out_path = os.path.abspath(output_path)
@@ -524,6 +542,13 @@ class ExcelExporter:
                 out_wb.Close(True)
             except Exception:
                 pass
+            if excel is not None and custom_sep is not None and orig_use_sys is not None:
+                try:
+                    excel.DecimalSeparator = orig_decimal
+                    excel.ThousandsSeparator = orig_thousands
+                    excel.UseSystemSeparators = orig_use_sys
+                except Exception:
+                    pass
             try:
                 excel.Quit()
             except Exception:
