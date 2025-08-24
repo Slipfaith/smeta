@@ -28,10 +28,11 @@ from PySide6.QtWidgets import (
     QSlider,
     QDoubleSpinBox,
     QApplication,
-    QProgressDialog,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+
+from logic.progress import Progress
 
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
@@ -1069,20 +1070,10 @@ class TranslationCostCalculator(QMainWindow):
             currency=self.currency_combo.currentText(),
             lang="ru" if self.lang_display_ru else "en",
         )
-        progress = QProgressDialog("Сохранение...", None, 0, 100, self)
-        progress.setWindowTitle("Сохранение")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setValue(0)
-
-        def on_progress(percent: int, message: str) -> None:
-            progress.setLabelText(message)
-            progress.setValue(percent)
-            QApplication.processEvents()
-
-        success = exporter.export_to_excel(
-            project_data, file_path, progress_callback=on_progress
-        )
-        progress.close()
+        with Progress(parent=self) as progress:
+            success = exporter.export_to_excel(
+                project_data, file_path, progress_callback=progress.on_progress
+            )
         if success:
             QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
         else:
@@ -1112,43 +1103,34 @@ class TranslationCostCalculator(QMainWindow):
             currency=currency,
             lang="ru" if self.lang_display_ru else "en",
         )
-        progress = QProgressDialog("Сохранение...", None, 0, 100, self)
-        progress.setWindowTitle("Сохранение")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setValue(0)
+        with Progress(parent=self) as progress:
+            def on_excel_progress(percent: int, message: str) -> None:
+                progress.on_progress(int(percent * 0.8), message)
 
-        def on_excel_progress(percent: int, message: str) -> None:
-            progress.setLabelText(message)
-            progress.setValue(int(percent * 0.8))
-            QApplication.processEvents()
-
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
-                pdf_path = os.path.join(tmpdir, "quotation.pdf")
-                if not exporter.export_to_excel(
-                    project_data, xlsx_path, fit_to_page=True, progress_callback=on_excel_progress
-                ):
-                    progress.close()
-                    QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
-                    return
-                progress.setLabelText("Конвертация в PDF")
-                progress.setValue(80)
-                QApplication.processEvents()
-                if not xlsx_to_pdf(xlsx_path, pdf_path):
-                    progress.close()
-                    QMessageBox.critical(
-                        self, "Ошибка", "Не удалось конвертировать в PDF"
-                    )
-                    return
-                progress.setValue(100)
-                QApplication.processEvents()
-                shutil.copyfile(pdf_path, file_path)
-            progress.close()
-            QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
-        except Exception as e:
-            progress.close()
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
+            try:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
+                    pdf_path = os.path.join(tmpdir, "quotation.pdf")
+                    if not exporter.export_to_excel(
+                        project_data,
+                        xlsx_path,
+                        fit_to_page=True,
+                        progress_callback=on_excel_progress,
+                    ):
+                        QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
+                        return
+                    progress.set_label("Конвертация в PDF")
+                    progress.set_value(80)
+                    if not xlsx_to_pdf(xlsx_path, pdf_path):
+                        QMessageBox.critical(
+                            self, "Ошибка", "Не удалось конвертировать в PDF"
+                        )
+                        return
+                    progress.set_value(100)
+                    shutil.copyfile(pdf_path, file_path)
+                QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
 
     def save_project(self):
         if not self.project_name_edit.text().strip():
