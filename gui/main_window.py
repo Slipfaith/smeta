@@ -8,9 +8,9 @@ from typing import Dict, List, Any
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QGroupBox, QTextEdit, QFileDialog, QMessageBox, QScrollArea, QTabWidget, QSplitter,
-    QComboBox, QSlider, QDoubleSpinBox, QDialog
+    QComboBox, QSlider, QDoubleSpinBox, QDialog, QProgressDialog
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtGui import QAction
 
 from gui.language_pair import LanguagePairWidget
@@ -190,6 +190,36 @@ class DropArea(QScrollArea):
                                     f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n"
                                     "Поддерживаются только файлы с расширением .xml")
             event.ignore()
+
+
+class PdfExportWorker(QObject):
+    """Фоновый экспорт PDF, чтобы не блокировать интерфейс."""
+
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, exporter: ExcelExporter, project_data: Dict[str, Any]):
+        super().__init__()
+        self._exporter = exporter
+        self._project_data = project_data
+
+    def run(self):
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
+                pdf_tmp = os.path.join(tmpdir, "quotation.pdf")
+                if not self._exporter.export_to_excel(self._project_data, xlsx_path, fit_to_page=True):
+                    self.error.emit("Не удалось подготовить файл")
+                    return
+                if not self._exporter.xlsx_to_pdf(xlsx_path, pdf_tmp):
+                    self.error.emit("Не удалось конвертировать в PDF")
+                    return
+                tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                tmp_pdf.close()
+                shutil.copyfile(pdf_tmp, tmp_pdf.name)
+            self.finished.emit(tmp_pdf.name)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class TranslationCostCalculator(QMainWindow):
@@ -883,37 +913,54 @@ class TranslationCostCalculator(QMainWindow):
         if not self.project_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название проекта")
             return
+
         project_data = self.collect_project_data()
         entity_name = self.legal_entity_combo.currentText()
         template_path = self.legal_entities.get(entity_name)
         exporter = ExcelExporter(template_path, currency=self.currency_combo.currentText())
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
-                pdf_path = os.path.join(tmpdir, "quotation.pdf")
-                if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):
-                    QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
-                    return
-                if not exporter.xlsx_to_pdf(xlsx_path, pdf_path):
-                    QMessageBox.critical(self, "Ошибка", "Не удалось конвертировать в PDF")
-                    return
-                preview = PdfPreviewDialog(pdf_path, self)
-                result = preview.exec()
-                preview.deleteLater()
-                if result == QDialog.Accepted:
-                    project_name = project_data["project_name"].replace(" ", "_")
-                    filename = f"КП_{project_name}.pdf"
-                    file_path, _ = QFileDialog.getSaveFileName(
-                        self, "Сохранить PDF", filename, "PDF files (*.pdf)"
-                    )
-                    if not file_path:
-                        return
-                    shutil.copyfile(pdf_path, file_path)
-                    QMessageBox.information(
-                        self, "Успех", f"Файл сохранен: {file_path}"
-                    )
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
+
+        progress = QProgressDialog("Генерация PDF...", "", 0, 0, self)
+        progress.setWindowTitle("Пожалуйста, подождите")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+
+        worker = PdfExportWorker(exporter, project_data)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def cleanup():
+            thread.quit()
+            thread.wait()
+            thread.deleteLater()
+            worker.deleteLater()
+
+        def on_finished(temp_pdf: str):
+            progress.close()
+            cleanup()
+            preview = PdfPreviewDialog(temp_pdf, self)
+            result = preview.exec()
+            preview.deleteLater()
+            if result == QDialog.Accepted:
+                project_name = project_data["project_name"].replace(" ", "_")
+                filename = f"КП_{project_name}.pdf"
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self, "Сохранить PDF", filename, "PDF files (*.pdf)"
+                )
+                if file_path:
+                    shutil.copyfile(temp_pdf, file_path)
+                    QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+            os.unlink(temp_pdf)
+
+        def on_error(msg: str):
+            progress.close()
+            cleanup()
+            QMessageBox.critical(self, "Ошибка", msg)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(on_finished)
+        worker.error.connect(on_error)
+        thread.start()
 
     def save_project(self):
         if not self.project_name_edit.text().strip():
