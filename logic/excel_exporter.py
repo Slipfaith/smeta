@@ -9,6 +9,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 
 from .service_config import ServiceConfig
 
@@ -333,6 +334,25 @@ class ExcelExporter:
             except Exception:
                 pass
 
+    def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
+        """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
+        for image in getattr(ws, "_images", []):
+            anchor = getattr(image, "anchor", None)
+            if anchor is None:
+                continue
+            if isinstance(anchor, TwoCellAnchor):
+                if anchor.from_.row >= idx - 1:
+                    anchor.from_.row += amount
+                    anchor.to.row += amount
+            elif isinstance(anchor, OneCellAnchor):
+                if anchor._from.row >= idx - 1:
+                    anchor._from.row += amount
+
+    def _insert_rows(self, ws: Worksheet, idx: int, amount: int) -> None:
+        """Вставляет строки и корректирует позиции изображений."""
+        ws.insert_rows(idx, amount)
+        self._shift_images(ws, idx, amount)
+
     # ----------------------------- МАП КОЛОНОК -----------------------------
 
     def _header_map(self, ws: Worksheet, headers_row: int, hdr_tokens: Dict[str, str] = HDR) -> Dict[str, int]:
@@ -390,7 +410,7 @@ class ExcelExporter:
 
         for pair in pairs:
             self.logger.debug("Rendering translation block '%s'", pair.get("pair_name"))
-            ws.insert_rows(current_row, template_height)
+            self._insert_rows(ws, current_row, template_height)
             self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
 
             block_top = current_row
@@ -457,7 +477,7 @@ class ExcelExporter:
 
             if need > cur_cap:
                 add = need - cur_cap
-                ws.insert_rows(t_subtotal_row, add)
+                self._insert_rows(ws, t_subtotal_row, add)
                 # Копируем стиль строки данных
                 if t_first_data < t_subtotal_row:
                     tpl_row = t_first_data
@@ -614,7 +634,7 @@ class ExcelExporter:
         first_data_rel = 2
         subtotal_rel = template_height - 1
 
-        ws.insert_rows(start_row, template_height)
+        self._insert_rows(ws, start_row, template_height)
         self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
         # После вставки проверяем, не остался ли на листе исходный шаблонный
         # блок с плейсхолдерами, и при обнаружении удаляем его.
@@ -647,7 +667,7 @@ class ExcelExporter:
         cur_cap = max(0, t_subtotal_row - t_first_data)
         if need > cur_cap:
             add = need - cur_cap
-            ws.insert_rows(t_subtotal_row, add)
+            self._insert_rows(ws, t_subtotal_row, add)
             tpl_row = t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
             for k in range(add):
                 dst = t_subtotal_row + k
@@ -745,7 +765,7 @@ class ExcelExporter:
         current_row = start_row
 
         for block in blocks:
-            ws.insert_rows(current_row, template_height)
+            self._insert_rows(ws, current_row, template_height)
             self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
 
             headers_row = current_row + 1
@@ -787,7 +807,7 @@ class ExcelExporter:
             cur_cap = max(0, subtotal_row - first_data_row)
             if need > cur_cap:
                 add = need - cur_cap
-                ws.insert_rows(subtotal_row, add)
+                self._insert_rows(ws, subtotal_row, add)
                 tpl_row = first_data_row if cur_cap > 0 else subtotal_row - 1
                 merges_to_copy = [
                     m for m in ws.merged_cells.ranges
@@ -971,7 +991,7 @@ class ExcelExporter:
         cols = vat_ws.max_column
         total_row = ws[total_cell_ref].row
 
-        ws.insert_rows(total_row + 1, rows)
+        self._insert_rows(ws, total_row + 1, rows)
 
         for r in range(rows):
             for c in range(1, cols + 1):
