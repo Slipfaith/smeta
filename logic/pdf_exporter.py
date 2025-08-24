@@ -5,6 +5,7 @@ import tempfile
 from typing import Dict, Any
 
 from .excel_exporter import ExcelExporter
+from .com_utils import get_excel_app
 
 logger = logging.getLogger("PdfExporter")
 
@@ -44,11 +45,7 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
     orig_decimal = orig_thousands = orig_use_sys = None
     custom_sep = None
     try:
-        import win32com.client  # type: ignore
-
-        excel = win32com.client.Dispatch("Excel.Application")
-        excel.Visible = False
-        excel.DisplayAlerts = False
+        excel = get_excel_app()
 
         lang_lc = lang.lower()
         if lang_lc.startswith("en"):
@@ -77,16 +74,11 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
                 wb.Close(False)
             except Exception:
                 pass
-        if excel is not None:
-            if custom_sep is not None and orig_use_sys is not None:
-                try:
-                    excel.DecimalSeparator = orig_decimal
-                    excel.ThousandsSeparator = orig_thousands
-                    excel.UseSystemSeparators = orig_use_sys
-                except Exception:
-                    pass
+        if excel is not None and custom_sep is not None and orig_use_sys is not None:
             try:
-                excel.Quit()
+                excel.DecimalSeparator = orig_decimal
+                excel.ThousandsSeparator = orig_thousands
+                excel.UseSystemSeparators = orig_use_sys
             except Exception:
                 pass
 
