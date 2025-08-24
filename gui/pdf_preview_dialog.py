@@ -1,6 +1,6 @@
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QByteArray
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -29,8 +29,11 @@ class PdfPreviewDialog(QDialog):
             | Qt.WindowMaximizeButtonHint
         )
 
+        # Загружаем PDF из файла в память, чтобы избежать блокировки файла
+        with open(pdf_path, "rb") as f:
+            pdf_data = QByteArray(f.read())
         self._doc = QPdfDocument(self)
-        self._doc.load(pdf_path)
+        self._doc.load(pdf_data)
         self._view = QPdfView(self)
         self._view.setDocument(self._doc)
         self._view.setZoomMode(QPdfView.ZoomMode.Custom)
