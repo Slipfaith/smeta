@@ -133,15 +133,30 @@ class ExcelExporter:
         val = cell.value
         num: Optional[float] = None
         if isinstance(val, str):
-            try:
-                num = float(val.replace(",", "."))
-            except ValueError:
-                num = None
+            if val.startswith("="):
+                m = re.match(r"=([A-Z]+\d+)\*([0-9.,]+)$", val)
+                if m:
+                    ref, mult = m.groups()
+                    try:
+                        base = cell.parent[ref].value
+                        if isinstance(base, str):
+                            base = float(base.replace(",", "."))
+                        num = float(base) * float(mult.replace(",", "."))
+                    except Exception:
+                        num = None
+                else:
+                    num = None
+            else:
+                try:
+                    num = float(val.replace(",", "."))
+                except ValueError:
+                    num = None
         elif isinstance(val, (int, float)):
             num = float(val)
 
-        if num is not None:
+        if num is not None and not (isinstance(val, str) and val.startswith("=")):
             cell.value = num
+        if num is not None:
             if num.is_integer():
                 cell.number_format = self.total_fmt
                 return
@@ -176,7 +191,11 @@ class ExcelExporter:
                             continue
                         scaled = round(num * 1000)
                         if scaled % 10 == 0:
-                            cell.number_format = "0.00"
+                            fmt = cell.number_format or ""
+                            if "000" in fmt:
+                                cell.number_format = fmt.replace("000", "00", 1)
+                            else:
+                                cell.number_format = self.total_fmt
                     elif isinstance(value, str):
                         new_val = pattern.sub(r"\1" + "00", value)
                         if new_val != value:
