@@ -1,7 +1,7 @@
 # logic/excel_exporter.py
 import os
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -155,14 +155,34 @@ class ExcelExporter:
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
     def export_to_excel(
-        self, project_data: Dict[str, Any], output_path: str, fit_to_page: bool = False
+        self,
+        project_data: Dict[str, Any],
+        output_path: str,
+        fit_to_page: bool = False,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
     ) -> bool:
         try:
             self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
                 raise FileNotFoundError(f"Шаблон не найден: {self.template_path}")
 
+            pairs_count = len(project_data.get("language_pairs", []))
+            add_count = len(project_data.get("additional_services", []))
+            total_steps = 7 + pairs_count + add_count
+            progress = 0
+
+            def step(message: str = "") -> None:
+                nonlocal progress
+                progress += 1
+                if progress_callback:
+                    percent = int(progress / total_steps * 100)
+                    progress_callback(percent, message)
+
+            if progress_callback:
+                progress_callback(0, "Загрузка шаблона")
+
             wb = load_workbook(self.template_path)
+            step("Шаблон загружен")
 
             quotation_ws = (
                 wb["Quotation"] if "Quotation" in wb.sheetnames else wb.active
@@ -176,22 +196,28 @@ class ExcelExporter:
             )
             if ps_cell:
                 subtot_cells.append(ps_cell)
+            step("Настройка проекта")
             current_row = last_row + 1
 
             last_row, tr_cells = self._render_translation_blocks(
-                quotation_ws, project_data, current_row
+                quotation_ws,
+                project_data,
+                current_row,
+                progress_callback=lambda name: step(f"Перевод {name}"),
             )
             subtot_cells += tr_cells
             current_row = last_row + 1
 
             last_row, add_cells = self._render_additional_services_tables(
-                quotation_ws, project_data, current_row
+                quotation_ws,
+                project_data,
+                current_row,
+                progress_callback=lambda name: step(f"{name}"),
             )
             subtot_cells += add_cells
 
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
-            # Remove template sheets after rendering
             for name in (
                 "ProjectSetup",
                 "Setupfee",
@@ -202,30 +228,36 @@ class ExcelExporter:
                 if name in wb.sheetnames:
                     del wb[name]
 
-            # Fill all textual placeholders across the sheet.
-            # Previously we started from row 13, which left placeholders
-            # in the header (rows 1-12) untouched. These placeholders
-            # include client and project information entered by the user.
-            # Start from the first row so that values above row 13 are
-            # properly substituted.
+            step("Удаление шаблонных листов")
+
             self._fill_text_placeholders(
                 quotation_ws, project_data, subtot_cells, start_row=1, wb=wb
             )
+            step("Заполнение плейсхолдеров")
 
             if "Vat" in wb.sheetnames:
                 del wb["Vat"]
 
             if fit_to_page:
                 self._fit_sheet_to_page(quotation_ws)
+                step("Подгонка страницы")
             else:
                 self._set_print_area(quotation_ws)
+                step("Установка области печати")
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
+            step("Сохранение файла")
+
             # openpyxl may drop images embedded in the template.  After saving the
             # workbook we re-open it via the COM Excel API and copy pictures from
             # the original template so that logos are preserved.
             self._restore_images_via_com(output_path)
+            step("Восстановление изображений")
+
+            if progress_callback:
+                progress_callback(100, "Готово")
+
             self.logger.info("Export completed successfully")
             return True
         except Exception as e:
@@ -499,7 +531,11 @@ class ExcelExporter:
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
 
     def _render_translation_blocks(
-        self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
+        self,
+        ws: Worksheet,
+        project_data: Dict[str, Any],
+        start_row: int,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Tuple[int, List[str]]:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
@@ -761,6 +797,8 @@ class ExcelExporter:
 
             # Переходим к следующему блоку
             current_row = t_subtotal_row + 1
+            if progress_callback:
+                progress_callback(pair.get("pair_name", ""))
         # Если на листе остался оригинальный шаблонный блок с плейсхолдерами,
         # удаляем его, чтобы в результате не было дублей таблиц.
         extra_start = self._find_first(ws, START_PH, start_row)
@@ -917,7 +955,11 @@ class ExcelExporter:
         return t_subtotal_row, f"{totalL}{t_subtotal_row}"
 
     def _render_additional_services_tables(
-        self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
+        self,
+        ws: Worksheet,
+        project_data: Dict[str, Any],
+        start_row: int,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Tuple[int, List[str]]:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
@@ -1070,6 +1112,8 @@ class ExcelExporter:
             )
 
             current_row = subtotal_row + 1
+            if progress_callback:
+                progress_callback(header_title)
         # Если на листе остался невостребованный блок шаблона с плейсхолдерами,
         # удаляем его, чтобы таблица не дублировалась в конце.
         add_tail = self._find_first(ws, ADD_START_PH, start_row)
