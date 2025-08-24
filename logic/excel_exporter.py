@@ -706,7 +706,8 @@ class ExcelExporter:
                 )
                 ws.cell(r, col_param, it["parameter"])
                 ws.cell(r, col_type, "")
-                ws.cell(r, col_unit, tr("Слово", self.lang))
+                unit_cell = ws.cell(r, col_unit, tr("Слово", self.lang))
+                unit_cell.alignment = Alignment(horizontal="center", vertical="center")
                 qty_cell = ws.cell(r, col_qty, it["volume"])
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
                 self.logger.debug(
@@ -859,7 +860,11 @@ class ExcelExporter:
         # Заголовок блока
         for c in range(1, ws.max_column + 1):
             if ws.cell(block_top, c).value == PS_START_PH:
-                ws.cell(block_top, c, "Запуск и управление проектом")
+                ws.cell(
+                    block_top,
+                    c,
+                    tr("Запуск и управление проектом", self.lang),
+                )
                 break
 
         hmap = self._header_map(ws, t_headers_row, PS_HDR)
@@ -922,7 +927,8 @@ class ExcelExporter:
                 it.get("rate"),
             )
             ws.cell(r, col_param, it.get("parameter", ""))
-            ws.cell(r, col_unit, tr("час", self.lang))
+            unit_cell = ws.cell(r, col_unit, tr("час", self.lang))
+            unit_cell.alignment = Alignment(horizontal="center", vertical="center")
             qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
             qty_cell.alignment = Alignment(horizontal="right", vertical="top")
             rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
@@ -1078,7 +1084,8 @@ class ExcelExporter:
                     it.get("rate"),
                 )
                 ws.cell(r, col_param, it.get("parameter", ""))
-                ws.cell(r, col_unit, tr(it.get("unit", ""), self.lang))
+                unit_cell = ws.cell(r, col_unit, tr(it.get("unit", ""), self.lang))
+                unit_cell.alignment = Alignment(horizontal="center", vertical="center")
                 qty_cell = ws.cell(r, col_qty, it.get("volume", 0))
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
                 rate_cell = ws.cell(r, col_rate, it.get("rate", 0))
