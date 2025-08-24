@@ -11,6 +11,7 @@ from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from openpyxl.drawing.image import Image as XLImage
+from .com_utils import get_excel_app
 
 from .service_config import ServiceConfig
 from .translation_config import tr
@@ -231,6 +232,9 @@ class ExcelExporter:
                 progress_callback(0, "Загрузка шаблона")
 
             wb = load_workbook(self.template_path)
+            template_has_images = any(
+                getattr(ws, "_images", []) for ws in wb.worksheets
+            )
             step("Шаблон загружен")
 
             quotation_ws = (
@@ -300,11 +304,12 @@ class ExcelExporter:
             wb.save(output_path)
             step("Сохранение файла")
 
-            # openpyxl may drop images embedded in the template.  After saving the
-            # workbook we re-open it via the COM Excel API and copy pictures from
-            # the original template so that logos are preserved.
-            self._restore_images_via_com(output_path)
-            step("Восстановление изображений")
+            if template_has_images and os.name == "nt":
+                # openpyxl may drop images embedded in the template. Restore them
+                # via COM only when running on Windows and the template actually
+                # contains pictures.
+                self._restore_images_via_com(output_path)
+                step("Восстановление изображений")
 
             if progress_callback:
                 progress_callback(100, "Готово")
@@ -485,11 +490,7 @@ class ExcelExporter:
         orig_decimal = orig_thousands = orig_use_sys = None
         custom_sep = None
         try:
-            import win32com.client  # type: ignore
-
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
+            excel = get_excel_app()
 
             lang_lc = self.lang.lower()
             if lang_lc.startswith("en"):
@@ -549,10 +550,6 @@ class ExcelExporter:
                     excel.UseSystemSeparators = orig_use_sys
                 except Exception:
                     pass
-            try:
-                excel.Quit()
-            except Exception:
-                pass
 
     def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
         """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
