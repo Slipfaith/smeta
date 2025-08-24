@@ -4,12 +4,14 @@ import logging
 import tempfile
 import subprocess
 from typing import Dict, Any, List, Optional, Tuple
+from copy import deepcopy
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
+from openpyxl.drawing.image import Image as XLImage
 
 from .service_config import ServiceConfig
 
@@ -333,6 +335,31 @@ class ExcelExporter:
                 dst_ws.merge_cells(ref)
             except Exception:
                 pass
+
+        # Копирование изображений, закреплённых в указанном диапазоне
+        delta = dst_start - src_start
+        for img in getattr(src_ws, "_images", []):
+            anchor = getattr(img, "anchor", None)
+            if anchor is None:
+                continue
+            if isinstance(anchor, TwoCellAnchor):
+                start_row = anchor.from_.row + 1
+                end_row = anchor.to.row + 1
+                if src_start <= start_row and end_row <= src_end:
+                    new_anchor = deepcopy(anchor)
+                    new_anchor.from_.row += delta
+                    new_anchor.to.row += delta
+                    new_img = XLImage(img._data())
+                    new_img.anchor = new_anchor
+                    dst_ws.add_image(new_img)
+            elif isinstance(anchor, OneCellAnchor):
+                row = anchor._from.row + 1
+                if src_start <= row <= src_end:
+                    new_anchor = deepcopy(anchor)
+                    new_anchor._from.row += delta
+                    new_img = XLImage(img._data())
+                    new_img.anchor = new_anchor
+                    dst_ws.add_image(new_img)
 
     def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
         """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
