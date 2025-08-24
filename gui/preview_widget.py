@@ -10,6 +10,7 @@ from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument
 
 from logic.excel_exporter import ExcelExporter
+from logic.pdf_exporter import xlsx_to_pdf
 from logic.legal_entities import load_legal_entities
 
 
@@ -80,14 +81,18 @@ class PreviewWidget(QWidget):
 
             entity_name = data.get("legal_entity")
             template_path = self.legal_entities.get(entity_name)
-            exporter = ExcelExporter(template_path, currency=data.get("currency", "RUB"))
+            exporter = ExcelExporter(
+                template_path, currency=data.get("currency", "RUB")
+            )
             ok = exporter.export_to_excel(data, xlsx, fit_to_page=True)
             if not ok:
                 self.status.setText("Ошибка экспорта XLSX (см. консоль).")
                 return
 
-            if not exporter.xlsx_to_pdf(xlsx, pdf):
-                self.status.setText("Не удалось конвертировать в PDF (нужен Excel или LibreOffice).")
+            if not xlsx_to_pdf(xlsx, pdf):
+                self.status.setText(
+                    "Не удалось конвертировать в PDF (нужен Excel или LibreOffice)."
+                )
                 self.doc.load("")
                 return
 
