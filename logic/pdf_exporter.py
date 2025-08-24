@@ -35,13 +35,14 @@ def export_to_pdf(
 def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
     """Convert an XLSX file to PDF using Excel.
 
-    If ``lang`` is ``"en"``, the Excel automation backend is instructed to use
-    the dot (``.``) as the decimal separator so that numbers in the resulting
-    PDF always display with dots regardless of the system locale.
+    The Excel automation backend is instructed to use language-specific
+    decimal and thousands separators so that numbers in the resulting PDF
+    always display with the correct symbols regardless of the system locale.
     """
 
     excel = wb = None
     orig_decimal = orig_thousands = orig_use_sys = None
+    custom_sep = None
     try:
         import win32com.client  # type: ignore
 
@@ -49,13 +50,18 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
         excel.Visible = False
         excel.DisplayAlerts = False
 
-        if lang.lower().startswith("en"):
+        lang_lc = lang.lower()
+        if lang_lc.startswith("en"):
+            custom_sep = (".", ",")
+        elif lang_lc.startswith("ru"):
+            custom_sep = (",", " ")
+
+        if custom_sep is not None:
             try:
                 orig_decimal = excel.DecimalSeparator
                 orig_thousands = excel.ThousandsSeparator
                 orig_use_sys = excel.UseSystemSeparators
-                excel.DecimalSeparator = "."
-                excel.ThousandsSeparator = ","
+                excel.DecimalSeparator, excel.ThousandsSeparator = custom_sep
                 excel.UseSystemSeparators = False
             except Exception:
                 pass
@@ -72,7 +78,7 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
             except Exception:
                 pass
         if excel is not None:
-            if lang.lower().startswith("en") and orig_use_sys is not None:
+            if custom_sep is not None and orig_use_sys is not None:
                 try:
                     excel.DecimalSeparator = orig_decimal
                     excel.ThousandsSeparator = orig_thousands
