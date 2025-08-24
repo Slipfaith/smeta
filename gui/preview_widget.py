@@ -4,13 +4,56 @@ import tempfile
 import subprocess
 from typing import Dict, Any, Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+from PySide6.QtCore import Qt, QTimer, QThread, QObject, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QProgressDialog,
+)
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument
 
 from logic.excel_exporter import ExcelExporter
 from logic.legal_entities import load_legal_entities
+
+
+class PreviewRenderWorker(QObject):
+    """Генерирует превью в отдельном потоке."""
+
+    finished = Signal(str, str)
+    error = Signal(str)
+    progress = Signal(int)
+
+    def __init__(self, exporter: ExcelExporter, data: Dict[str, Any]):
+        super().__init__()
+        self._exporter = exporter
+        self._data = data
+
+    def run(self) -> None:
+        try:
+            tmpdir = tempfile.mkdtemp(prefix="pcalc_")
+            xlsx = os.path.join(tmpdir, "preview.xlsx")
+            pdf = os.path.join(tmpdir, "preview.pdf")
+
+            self.progress.emit(0)
+            if not self._exporter.export_to_excel(self._data, xlsx, fit_to_page=True):
+                self.error.emit("Ошибка экспорта XLSX (см. консоль).")
+                return
+
+            self.progress.emit(50)
+            if not self._exporter.xlsx_to_pdf(xlsx, pdf):
+                self.error.emit(
+                    "Не удалось конвертировать в PDF (нужен Excel или LibreOffice)."
+                )
+                return
+
+            self.progress.emit(100)
+            self.finished.emit(xlsx, pdf)
+        except Exception as e:  # pragma: no cover - GUI code
+            self.error.emit(f"Ошибка превью: {e}")
 
 
 class PreviewWidget(QWidget):
@@ -71,30 +114,47 @@ class PreviewWidget(QWidget):
     # основная логика
     def _do_render(self):
         data = self._pending_data or {}
+        self._pending_data = None
         self.status.setText("Собираю превью…")
-        QApplication = None  # just to keep linter quiet
-        try:
-            tmpdir = tempfile.mkdtemp(prefix="pcalc_")
-            xlsx = os.path.join(tmpdir, "preview.xlsx")
-            pdf = os.path.join(tmpdir, "preview.pdf")
 
-            entity_name = data.get("legal_entity")
-            template_path = self.legal_entities.get(entity_name)
-            exporter = ExcelExporter(template_path, currency=data.get("currency", "RUB"))
-            ok = exporter.export_to_excel(data, xlsx, fit_to_page=True)
-            if not ok:
-                self.status.setText("Ошибка экспорта XLSX (см. консоль).")
-                return
+        entity_name = data.get("legal_entity")
+        template_path = self.legal_entities.get(entity_name)
+        exporter = ExcelExporter(template_path, currency=data.get("currency", "RUB"))
 
-            if not exporter.xlsx_to_pdf(xlsx, pdf):
-                self.status.setText("Не удалось конвертировать в PDF (нужен Excel или LibreOffice).")
-                self.doc.load("")
-                return
+        progress = QProgressDialog("Генерация превью...", "", 0, 100, self)
+        progress.setWindowTitle("Пожалуйста, подождите")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setCancelButton(None)
+        progress.show()
 
+        worker = PreviewRenderWorker(exporter, data)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def cleanup() -> None:
+            progress.close()
+            thread.quit()
+            thread.wait()
+            thread.deleteLater()
+            worker.deleteLater()
+
+        def on_finished(xlsx: str, pdf: str) -> None:
+            cleanup()
             self.doc.load(pdf)
             self.viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
             self._last_xlsx = xlsx
             self._last_pdf = pdf
             self.status.setText("Предпросмотр обновлён.")
-        except Exception as e:
-            self.status.setText(f"Ошибка превью: {e}")
+
+        def on_error(msg: str) -> None:
+            cleanup()
+            self.doc.load("")
+            self.status.setText(msg)
+
+        worker.finished.connect(on_finished)
+        worker.error.connect(on_error)
+        worker.progress.connect(progress.setValue)
+        thread.started.connect(worker.run)
+        thread.start()
