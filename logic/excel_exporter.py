@@ -1,6 +1,7 @@
 # logic/excel_exporter.py
 import os
 import logging
+import re
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
@@ -160,6 +161,27 @@ class ExcelExporter:
         ws.page_setup.fitToWidth = 1
         self._set_print_area(ws)
 
+    def _fix_trailing_zeroes(self, wb: Workbook) -> None:
+        """Заменяет три нуля после разделителя на два нуля во всех ячейках."""
+
+        pattern = re.compile(r"(\d+[,.]\d*?)000\b")
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows():
+                for cell in row:
+                    value = cell.value
+                    if isinstance(value, (int, float)):
+                        try:
+                            num = float(value)
+                        except Exception:
+                            continue
+                        scaled = round(num * 1000)
+                        if scaled % 10 == 0:
+                            cell.number_format = "0.00"
+                    elif isinstance(value, str):
+                        new_val = pattern.sub(r"\1" + "00", value)
+                        if new_val != value:
+                            cell.value = new_val
+
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
     def export_to_excel(
@@ -252,6 +274,8 @@ class ExcelExporter:
             else:
                 self._set_print_area(quotation_ws)
                 step("Установка области печати")
+
+            self._fix_trailing_zeroes(wb)
 
             self.logger.info("Saving workbook to %s", output_path)
             wb.save(output_path)
