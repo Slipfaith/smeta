@@ -3,6 +3,8 @@ import os
 import shutil
 import tempfile
 import re
+import sys
+import threading
 from datetime import datetime
 from typing import Dict, List, Any
 
@@ -48,6 +50,7 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 from logic.translation_config import tr
+from logic.com_utils import get_excel_app
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -242,6 +245,7 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
         self.setup_ui()
         self.setup_style()
+        self._preload_excel_app()
 
     def setup_ui(self):
         self.setGeometry(100, 100, 1000, 600)
@@ -287,6 +291,18 @@ class TranslationCostCalculator(QMainWindow):
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
+
+    def _preload_excel_app(self) -> None:
+        if sys.platform != "win32":
+            return
+
+        def _warmup() -> None:
+            try:
+                get_excel_app()
+            except Exception:
+                pass
+
+        threading.Thread(target=_warmup, daemon=True).start()
 
     # ---------- LEFT ----------
     def create_left_panel(self) -> QWidget:

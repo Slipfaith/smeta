@@ -218,7 +218,8 @@ class ExcelExporter:
 
             pairs_count = len(project_data.get("language_pairs", []))
             add_count = len(project_data.get("additional_services", []))
-            total_steps = 7 + pairs_count + add_count
+            restoration_step = 1 if os.name == "nt" else 0
+            total_steps = 7 + pairs_count + add_count + restoration_step
             progress = 0
 
             def step(message: str = "") -> None:
@@ -232,9 +233,6 @@ class ExcelExporter:
                 progress_callback(0, "Загрузка шаблона")
 
             wb = load_workbook(self.template_path)
-            template_has_images = any(
-                getattr(ws, "_images", []) for ws in wb.worksheets
-            )
             step("Шаблон загружен")
 
             quotation_ws = (
@@ -304,11 +302,9 @@ class ExcelExporter:
             wb.save(output_path)
             step("Сохранение файла")
 
-            if template_has_images and os.name == "nt":
-                # openpyxl may drop images embedded in the template. Restore them
-                # via COM only when running on Windows and the template actually
-                # contains pictures.
-                self._restore_images_via_com(output_path)
+            if os.name == "nt":
+                if not self._restore_images_via_com(output_path):
+                    raise RuntimeError("COM image restoration failed")
                 step("Восстановление изображений")
 
             if progress_callback:
@@ -477,7 +473,7 @@ class ExcelExporter:
                     new_img.anchor = new_anchor
                     dst_ws.add_image(new_img)
 
-    def _restore_images_via_com(self, output_path: str) -> None:
+    def _restore_images_via_com(self, output_path: str) -> bool:
         """Re-open the saved workbook and copy images from the template via COM.
 
         This step is required on Windows because openpyxl does not preserve
@@ -532,8 +528,10 @@ class ExcelExporter:
                     pasted.Height = shape.Height
 
             out_wb.Save()
+            return True
         except Exception as e:  # pragma: no cover - Windows only
-            self.logger.debug("COM image restoration skipped: %s", e)
+            self.logger.debug("COM image restoration failed: %s", e)
+            return False
         finally:  # pragma: no cover - ensure COM objects are closed
             try:
                 tpl_wb.Close(False)
