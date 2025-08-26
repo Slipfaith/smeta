@@ -673,21 +673,30 @@ class TranslationCostCalculator(QMainWindow):
                 return lang
 
         try:
-            tag = key
-            match = re.match(r"(.+?)\s*\((.+)\)$", key)
-            if match:
-                base = match.group(1).strip()
-                region = match.group(2).strip()
-                base_code = langcodes.find(base)
-                try:
-                    region_code = pycountry.countries.lookup(region).alpha_2
-                except LookupError:
-                    region_code = region
-                tag = f"{base_code}-{region_code}".lower()
-            elif re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", key):
-                tag = key.lower()
+            match_code = re.search(r"\(([A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?)\)$", key)
+            if match_code:
+                code = match_code.group(1).lower()
+                before = key[: match_code.start()].strip()
+                if "-" not in code and before:
+                    base_code = langcodes.find(before)
+                    tag = f"{base_code}-{code}".lower()
+                else:
+                    tag = code
             else:
-                tag = langcodes.find(key)
+                match = re.match(r"(.+?)\s*\(([^()]+)\)$", key)
+                if match:
+                    base = match.group(1).strip()
+                    region = match.group(2).strip()
+                    base_code = langcodes.find(base)
+                    try:
+                        region_code = pycountry.countries.lookup(region).alpha_2
+                    except LookupError:
+                        region_code = region
+                    tag = f"{base_code}-{region_code}".lower()
+                elif re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", key):
+                    tag = key.lower()
+                else:
+                    tag = langcodes.find(key)
             lang_obj = langcodes.Language.get(tag)
             en_name = lang_obj.display_name("en").title()
             en_name = shorten_locale(en_name, "en")
