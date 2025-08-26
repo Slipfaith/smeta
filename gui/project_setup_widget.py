@@ -5,14 +5,8 @@ from PySide6.QtWidgets import (
     QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
 )
 from PySide6.QtCore import Qt, Signal
-from .utils import format_rate
-
-
-def _to_float(value: str) -> float:
-    try:
-        return float((value or "0").replace(",", "."))
-    except ValueError:
-        return 0.0
+from .utils import format_rate, _to_float
+from logic.translation_config import tr
 
 
 class ProjectSetupWidget(QWidget):
@@ -20,18 +14,19 @@ class ProjectSetupWidget(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, initial_volume: float = 0.0, currency_symbol: str = "₽", currency_code: str = "RUB"):
+    def __init__(self, initial_volume: float = 0.0, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
+        self.lang = lang
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
         layout = QVBoxLayout()
 
         header = QHBoxLayout()
-        title = QLabel("Запуск и управление проектом")
-        header.addWidget(title)
+        self.title_label = QLabel()
+        header.addWidget(self.title_label)
         header.addStretch()
         remove_btn = QPushButton()
         remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
@@ -50,17 +45,17 @@ class ProjectSetupWidget(QWidget):
 
         self.table = QTableWidget(1, 4)
         self.table.setHorizontalHeaderLabels([
-            "Параметр",
-            "Объем",
-            f"Ставка ({self.currency_symbol})",
-            f"Сумма ({self.currency_symbol})",
+            tr("Названия работ", self.lang),
+            tr("час", self.lang),
+            f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
+            f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.table.setWordWrap(False)
 
-        self.table.setItem(0, 0, QTableWidgetItem("Запуск и управление проектом"))
+        self.table.setItem(0, 0, QTableWidgetItem(tr("Запуск и управление проектом", self.lang)))
         self.table.setItem(0, 1, QTableWidgetItem(str(initial_volume)))
         self.table.setItem(0, 2, QTableWidgetItem("0.00"))
         total_item = QTableWidgetItem("0.00")
@@ -84,9 +79,9 @@ class ProjectSetupWidget(QWidget):
             if row < 0:
                 row = self.table.rowCount() - 1
             menu = QMenu(self.table)
-            add_act = menu.addAction("Добавить строку")
-            del_act = menu.addAction("Удалить строку")
-            restore_act = menu.addAction("Восстановить строку")
+            add_act = menu.addAction(tr("Добавить строку", self.lang))
+            del_act = menu.addAction(tr("Удалить строку", self.lang))
+            restore_act = menu.addAction(tr("Восстановить строку", self.lang))
             if self.rows_deleted[row]:
                 del_act.setEnabled(False)
             else:
@@ -104,7 +99,7 @@ class ProjectSetupWidget(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
 
-        self.subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
+        self.subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         vbox.addWidget(self.subtotal_label)
 
@@ -114,6 +109,7 @@ class ProjectSetupWidget(QWidget):
 
         self._fit_table_height(self.table)
         self.update_sums()
+        self.set_language(self.lang)
 
     # ---------- helpers ----------
     def _fit_table_height(self, table: QTableWidget):
@@ -131,7 +127,7 @@ class ProjectSetupWidget(QWidget):
     def add_row_after(self, row: int):
         insert_at = row + 1
         self.table.insertRow(insert_at)
-        self.table.setItem(insert_at, 0, QTableWidgetItem("Новая строка"))
+        self.table.setItem(insert_at, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
         self.table.setItem(insert_at, 1, QTableWidgetItem("0"))
         self.table.setItem(insert_at, 2, QTableWidgetItem("0.00"))
         total_item = QTableWidgetItem("0.00")
@@ -194,9 +190,14 @@ class ProjectSetupWidget(QWidget):
                 volume_item = self.table.item(row, 1)
                 rate_item = self.table.item(row, 2)
                 volume = _to_float(volume_item.text() if volume_item else "0")
-                rate = _to_float(rate_item.text() if rate_item else "0")
+                rate_text = rate_item.text() if rate_item else "0"
+                if self.lang == "en":
+                    sep = "."
+                else:
+                    sep = "," if "," in rate_text else "."
+                rate = _to_float(rate_text)
                 self.table.blockSignals(True)
-                rate_item.setText(format_rate(rate))
+                rate_item.setText(format_rate(rate_text, sep))
                 self.table.blockSignals(False)
                 total = volume * rate
                 total_item = self.table.item(row, 3)
@@ -208,7 +209,7 @@ class ProjectSetupWidget(QWidget):
                 total_item.setText(f"{total:.2f}")
                 self.table.blockSignals(False)
                 subtotal += total
-            self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
+            self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
             self._fit_table_height(self.table)
         except Exception:
             pass
@@ -234,7 +235,8 @@ class ProjectSetupWidget(QWidget):
         for i, row_data in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(row_data.get("parameter", "")))
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0))))
+            sep = "." if self.lang == "en" else None
+            self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0), sep)))
             total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
@@ -247,9 +249,18 @@ class ProjectSetupWidget(QWidget):
         self.currency_symbol = symbol
         self.currency_code = code
         self.table.setHorizontalHeaderLabels([
-            "Параметр",
-            "Объем",
-            f"Ставка ({symbol})",
-            f"Сумма ({symbol})",
+            tr("Названия работ", self.lang),
+            tr("час", self.lang),
+            f"{tr('Ставка', self.lang)} ({symbol})",
+            f"{tr('Сумма', self.lang)} ({symbol})",
         ])
+        self.update_sums()
+
+    def set_language(self, lang: str):
+        self.lang = lang
+        self.title_label.setText(tr("Запуск и управление проектом", lang))
+        self.set_currency(self.currency_symbol, self.currency_code)
+        item = self.table.item(0, 0)
+        if item:
+            item.setText(tr("Запуск и управление проектом", lang))
         self.update_sums()

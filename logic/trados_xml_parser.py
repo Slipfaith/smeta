@@ -19,8 +19,8 @@ def _extract_languages_from_filename(filename: str) -> Tuple[str, str]:
     """Извлекает языки из имени файла типа 'Analyze Files en-US_ru-RU(23).xml'"""
     print(f"Extracting languages from filename: {filename}")
 
-    # Ищем паттерн типа en-US_ru-RU или en_ru
-    pattern = r'([a-z]{2}(?:-[A-Z]{2})?)[_-]([a-z]{2}(?:-[A-Z]{2})?)'
+    # Ищем паттерн типа en-US_ru-RU, en_ru или трёхбуквенный код вроде bez-TZ
+    pattern = r'([a-z]{2,3}(?:-[A-Z]{2})?)[_-]([a-z]{2,3}(?:-[A-Z]{2})?)'
     match = re.search(pattern, filename, re.IGNORECASE)
 
     if match:
@@ -128,7 +128,12 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'Portuguese'
 
             # Английский
-            elif any(word in lang_lower for word in ['english', 'английский', 'en']):
+            elif (
+                'english' in lang_lower
+                or 'английский' in lang_lower
+                or lang_lower == 'en'
+                or lang_lower.startswith('en-')
+            ):
                 if any(word in lang_lower for word in ['united states', 'us', 'usa', 'америка']):
                     return 'English (US)'
                 elif any(word in lang_lower for word in ['united kingdom', 'uk', 'britain', 'великобритания']):
@@ -172,7 +177,11 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'DE'
 
             # Арабский
-            elif any(word in lang_lower for word in ['arabic', 'العربية', 'арабский', 'ar']):
+            elif (
+                lang_lower == 'ar'
+                or lang_lower.startswith('ar-')
+                or any(word in lang_lower for word in ['arabic', 'العربية', 'арабский'])
+            ):
                 if any(word in lang_lower for word in ['saudi', 'السعودية', 'саудовская']):
                     return 'Arabic (Saudi Arabia)'
                 elif any(word in lang_lower for word in ['egypt', 'مصر', 'египет']):
@@ -205,21 +214,15 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return lang_name.strip()
 
                 # Для коротких названий (вероятно коды) возвращаем как есть в верхнем регистре
-                if len(lang_name.strip()) <= 3:
-                    result = lang_name.strip().upper()
+                stripped_name = lang_name.strip()
+                if len(stripped_name) <= 3:
+                    result = stripped_name.upper()
                     print(f"  -> Short code detected: '{result}'")
                     return result
 
-                # Для длинных названий пытаемся извлечь код из первых букв
-                clean_name = lang_name.split('(')[0].strip()
-                if len(clean_name) >= 2:
-                    result = clean_name[:2].upper()
-                    print(f"  -> Extracting code from long name: '{result}'")
-                    return result
-                else:
-                    result = clean_name.upper()
-                    print(f"  -> Using cleaned name: '{result}'")
-                    return result
+                # Для остальных случаев возвращаем полное название без сокращения
+                print(f"  -> Returning full language name: '{stripped_name}'")
+                return stripped_name
 
     print("  No language found in taskInfo")
     return ""
@@ -353,8 +356,10 @@ def parse_reports(paths: List[str], unit: str = "Words") -> Tuple[Dict[str, Dict
             if src_lang and tgt_lang:
                 determined_source_lang = src_lang
                 determined_target_lang = tgt_lang
-                pair_key = f"{src_lang} → {tgt_lang}"
-                print(f"Language pair from filename: {pair_key}")
+                print(f"Language pair from filename: {src_lang} → {tgt_lang}")
+                if taskinfo_lang and len(tgt_lang) <= 3:
+                    determined_target_lang = taskinfo_lang
+                pair_key = f"{determined_source_lang} → {determined_target_lang}"
             elif taskinfo_lang:
                 # Если из файла не удалось извлечь, предполагаем EN -> taskinfo_lang
                 determined_source_lang = "EN"

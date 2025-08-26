@@ -14,15 +14,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
 )
-from .utils import format_rate
-
-
-def _to_float(value: str) -> float:
-    """Safely convert string to float."""
-    try:
-        return float((value or "0").replace(",", "."))
-    except ValueError:
-        return 0.0
+from .utils import format_rate, _to_float
+from logic.translation_config import tr
 
 
 class AdditionalServiceTable(QWidget):
@@ -30,10 +23,11 @@ class AdditionalServiceTable(QWidget):
 
     remove_requested = Signal()
 
-    def __init__(self, title: str = "Дополнительные услуги", currency_symbol: str = "₽", currency_code: str = "RUB") -> None:
+    def __init__(self, title: str = "Дополнительные услуги", currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru") -> None:
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
+        self.lang = lang
         self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
@@ -41,7 +35,7 @@ class AdditionalServiceTable(QWidget):
         layout = QVBoxLayout()
 
         header = QHBoxLayout()
-        self.header_edit = QLineEdit(title)
+        self.header_edit = QLineEdit(tr(title, self.lang))
         header.addWidget(self.header_edit)
         remove_btn = QPushButton()
         remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
@@ -56,11 +50,11 @@ class AdditionalServiceTable(QWidget):
 
         self.table = QTableWidget(1, 5)
         self.table.setHorizontalHeaderLabels([
-            "Параметр",
-            "Ед-ца",
-            "Объем",
-            f"Ставка ({self.currency_symbol})",
-            f"Сумма ({self.currency_symbol})",
+            tr("Параметр", self.lang),
+            tr("Ед-ца", self.lang),
+            tr("Объем", self.lang),
+            f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
+            f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
 
         header_view = self.table.horizontalHeader()
@@ -82,7 +76,7 @@ class AdditionalServiceTable(QWidget):
 
         layout.addWidget(self.table)
 
-        self.subtotal_label = QLabel(f"Промежуточная сумма: 0.00 {self.currency_symbol}")
+        self.subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.subtotal_label)
 
@@ -95,8 +89,8 @@ class AdditionalServiceTable(QWidget):
         if row < 0:
             row = self.table.rowCount() - 1
         menu = QMenu(self.table)
-        add_act = menu.addAction("Добавить строку")
-        del_act = menu.addAction("Удалить строку")
+        add_act = menu.addAction(tr("Добавить строку", self.lang))
+        del_act = menu.addAction(tr("Удалить строку", self.lang))
         if self.table.rowCount() <= 1:
             del_act.setEnabled(False)
         action = menu.exec(self.table.mapToGlobal(pos))
@@ -126,10 +120,15 @@ class AdditionalServiceTable(QWidget):
         for r in range(self.table.rowCount()):
             volume = _to_float(self._text(r, 2))
             rate_item = self.table.item(r, 3)
-            rate = _to_float(rate_item.text() if rate_item else "0")
+            rate_text = rate_item.text() if rate_item else "0"
+            if self.lang == "en":
+                sep = "."
+            else:
+                sep = "," if "," in rate_text else "."
+            rate = _to_float(rate_text)
             self.table.blockSignals(True)
             if rate_item:
-                rate_item.setText(format_rate(rate))
+                rate_item.setText(format_rate(rate_text, sep))
             self.table.blockSignals(False)
             total = volume * rate
             subtotal += total
@@ -140,7 +139,7 @@ class AdditionalServiceTable(QWidget):
                 self.table.setItem(r, 4, item)
             item.setText(f"{total:.2f}")
 
-        self.subtotal_label.setText(f"Промежуточная сумма: {subtotal:.2f} {self.currency_symbol}")
+        self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
 
     def _text(self, row: int, col: int) -> str:
         item = self.table.item(row, col)
@@ -176,7 +175,8 @@ class AdditionalServiceTable(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    item.setText(format_rate(_to_float(val)))
+                    sep = "." if self.lang == "en" else None
+                    item.setText(format_rate(val, sep))
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)
@@ -187,22 +187,29 @@ class AdditionalServiceTable(QWidget):
         self.currency_symbol = symbol
         self.currency_code = code
         self.table.setHorizontalHeaderLabels([
-            "Параметр",
-            "Ед-ца",
-            "Объем",
-            f"Ставка ({symbol})",
-            f"Сумма ({symbol})",
+            tr("Параметр", self.lang),
+            tr("Ед-ца", self.lang),
+            tr("Объем", self.lang),
+            f"{tr('Ставка', self.lang)} ({symbol})",
+            f"{tr('Сумма', self.lang)} ({symbol})",
         ])
+        self.update_sums()
+
+    def set_language(self, lang: str) -> None:
+        self.lang = lang
+        self.header_edit.setText(tr("Дополнительные услуги", lang))
+        self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
 
 
 class AdditionalServicesWidget(QWidget):
     """Container managing multiple additional service tables."""
 
-    def __init__(self, currency_symbol: str = "₽", currency_code: str = "RUB") -> None:
+    def __init__(self, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru") -> None:
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
+        self.lang = lang
         self.tables: List[AdditionalServiceTable] = []
         self._setup_ui()
 
@@ -211,15 +218,15 @@ class AdditionalServicesWidget(QWidget):
         self.tables_layout = QVBoxLayout()
         layout.addLayout(self.tables_layout)
 
-        add_btn = QPushButton("Добавить таблицу")
-        add_btn.clicked.connect(self.add_table)
-        layout.addWidget(add_btn)
+        self.add_btn = QPushButton(tr("Добавить таблицу", self.lang))
+        self.add_btn.clicked.connect(self.add_table)
+        layout.addWidget(self.add_btn)
 
         self.setLayout(layout)
         self.add_table()
 
     def add_table(self, data: Dict = None) -> None:
-        table = AdditionalServiceTable(currency_symbol=self.currency_symbol, currency_code=self.currency_code)
+        table = AdditionalServiceTable(currency_symbol=self.currency_symbol, currency_code=self.currency_code, lang=self.lang)
         table.remove_requested.connect(lambda t=table: self.remove_table(t))
         self.tables.append(table)
         self.tables_layout.addWidget(table)
@@ -255,4 +262,10 @@ class AdditionalServicesWidget(QWidget):
         self.currency_code = code
         for tbl in self.tables:
             tbl.set_currency(symbol, code)
+
+    def set_language(self, lang: str) -> None:
+        self.lang = lang
+        self.add_btn.setText(tr("Добавить таблицу", lang))
+        for tbl in self.tables:
+            tbl.set_language(lang)
 
