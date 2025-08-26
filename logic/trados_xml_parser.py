@@ -128,7 +128,12 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'Portuguese'
 
             # Английский
-            elif any(word in lang_lower for word in ['english', 'английский', 'en']):
+            elif (
+                'english' in lang_lower
+                or 'английский' in lang_lower
+                or lang_lower == 'en'
+                or lang_lower.startswith('en-')
+            ):
                 if any(word in lang_lower for word in ['united states', 'us', 'usa', 'америка']):
                     return 'English (US)'
                 elif any(word in lang_lower for word in ['united kingdom', 'uk', 'britain', 'великобритания']):
@@ -205,21 +210,15 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return lang_name.strip()
 
                 # Для коротких названий (вероятно коды) возвращаем как есть в верхнем регистре
-                if len(lang_name.strip()) <= 3:
-                    result = lang_name.strip().upper()
+                stripped_name = lang_name.strip()
+                if len(stripped_name) <= 3:
+                    result = stripped_name.upper()
                     print(f"  -> Short code detected: '{result}'")
                     return result
 
-                # Для длинных названий пытаемся извлечь код из первых букв
-                clean_name = lang_name.split('(')[0].strip()
-                if len(clean_name) >= 2:
-                    result = clean_name[:2].upper()
-                    print(f"  -> Extracting code from long name: '{result}'")
-                    return result
-                else:
-                    result = clean_name.upper()
-                    print(f"  -> Using cleaned name: '{result}'")
-                    return result
+                # Для остальных случаев возвращаем полное название без сокращения
+                print(f"  -> Returning full language name: '{stripped_name}'")
+                return stripped_name
 
     print("  No language found in taskInfo")
     return ""
