@@ -14,16 +14,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
 )
-from .utils import format_rate
+from .utils import format_rate, _to_float
 from logic.translation_config import tr
-
-
-def _to_float(value: str) -> float:
-    """Safely convert string to float."""
-    try:
-        return float((value or "0").replace(",", "."))
-    except ValueError:
-        return 0.0
 
 
 class AdditionalServiceTable(QWidget):

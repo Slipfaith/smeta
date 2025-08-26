@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import tempfile
@@ -48,6 +47,10 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 from logic.translation_config import tr
+from logic.project_io import (
+    save_project as save_project_file,
+    load_project as load_project_file,
+)
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -88,40 +91,21 @@ class DropArea(QScrollArea):
 
     def dragEnterEvent(self, event):
         """Обработка входа перетаскиваемых файлов в область."""
-        print("=== DRAG ENTER EVENT ===")
-        print(f"Mime data has URLs: {event.mimeData().hasUrls()}")
-
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
-            print(f"Number of URLs: {len(urls)}")
-
             all_paths = []
             xml_paths = []
-
             for url in urls:
                 path = url.toLocalFile()
                 all_paths.append(path)
-                print(f"Path: '{path}'")
-
-                # Более гибкая проверка XML файлов
                 if path.lower().endswith(".xml") or path.lower().endswith(".XML"):
                     xml_paths.append(path)
-                    print(f"  -> Valid XML file")
-                else:
-                    print(f"  -> Not an XML file")
-
-            print(f"Total paths: {len(all_paths)}, XML paths: {len(xml_paths)}")
-
             if xml_paths:
-                print("Accepting drag operation")
                 event.acceptProposedAction()
-                # Визуальная обратная связь
                 self.setProperty("dragOver", True)
                 self.style().unpolish(self)
                 self.style().polish(self)
                 return
-
-        print("Ignoring drag operation")
         event.ignore()
 
     def dragMoveEvent(self, event):
@@ -133,7 +117,6 @@ class DropArea(QScrollArea):
 
     def dragLeaveEvent(self, event):
         """Обработка выхода перетаскиваемых файлов из области."""
-        print("=== DRAG LEAVE EVENT ===")
         # Убираем визуальную обратную связь
         self.setProperty("dragOver", False)
         self.style().unpolish(self)
@@ -141,83 +124,55 @@ class DropArea(QScrollArea):
 
     def dropEvent(self, event):
         """Обработка сброса файлов в область."""
-        print("=== DROP EVENT ===")
-
         # Убираем визуальную обратную связь
         self.setProperty("dragOver", False)
         self.style().unpolish(self)
         self.style().polish(self)
 
         if not event.mimeData().hasUrls():
-            print("No URLs in drop event")
             event.ignore()
             return
 
         urls = event.mimeData().urls()
-        print(f"Processing {len(urls)} dropped URLs")
 
         all_paths = []
         xml_paths = []
 
-        for i, url in enumerate(urls):
+        for url in urls:
             path = url.toLocalFile()
             all_paths.append(path)
-            print(f"URL {i + 1}: '{path}'")
 
-            # Проверяем существование файла
             try:
-                import os
-
-                if not os.path.exists(path):
-                    print(f"  -> File does not exist!")
+                if not os.path.exists(path) or not os.path.isfile(path):
                     continue
-
-                if not os.path.isfile(path):
-                    print(f"  -> Not a file!")
-                    continue
-
-                print(f"  -> File exists, size: {os.path.getsize(path)} bytes")
-            except Exception as e:
-                print(f"  -> Error checking file: {e}")
+            except Exception:
                 continue
 
-            # Более гибкая проверка XML
             if path.lower().endswith((".xml", ".XML")):
                 xml_paths.append(path)
-                print(f"  -> Added as XML file")
             else:
-                # Пробуем проверить содержимое файла
                 try:
                     with open(path, "r", encoding="utf-8", errors="ignore") as f:
                         first_line = f.readline().strip()
                         if first_line.startswith("<?xml") or "<" in first_line:
                             xml_paths.append(path)
-                            print(f"  -> Added as XML file (detected by content)")
-                        else:
-                            print(f"  -> Not an XML file (content check)")
-                except Exception as e:
-                    print(f"  -> Could not check file content: {e}")
-
-        print(f"Final result: {len(xml_paths)} XML files out of {len(all_paths)} total")
+                except Exception:
+                    pass
 
         if xml_paths:
-            print("Calling callback with XML files...")
             try:
                 self._callback(xml_paths)
                 event.acceptProposedAction()
-                print("Callback completed successfully")
             except Exception as e:
-                print(f"Error in callback: {e}")
                 QMessageBox.critical(
                     None, "Ошибка", f"Ошибка при обработке файлов: {e}"
                 )
         else:
-            print("No valid XML files found")
             if all_paths:
                 QMessageBox.warning(
                     None,
                     "Предупреждение",
-                    f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n"
+                    f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n",
                     "Поддерживаются только файлы с расширением .xml",
                 )
             event.ignore()
@@ -815,20 +770,15 @@ class TranslationCostCalculator(QMainWindow):
         self.update_pairs_list()
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
-        """Улучшенная обработка XML файлов с детальным логированием."""
-        print(f"\n=== HANDLING XML DROP ===")
-        print(f"Received {len(paths)} XML files")
-        print(f"Replace mode: {replace}")
+        """Обработка XML файлов."""
 
         try:
             data, warnings = parse_reports(paths)
-            print(f"Parse results: {len(data)} language pairs found")
 
             if warnings:
                 warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(
                     warnings
                 )
-                print(f"Warnings: {warning_msg}")
                 QMessageBox.warning(self, "Предупреждение", warning_msg)
 
             if not data:
@@ -852,9 +802,6 @@ class TranslationCostCalculator(QMainWindow):
             for pair_key, volumes in sorted(
                 data.items(), key=lambda kv: self._pair_sort_key(kv[0])
             ):
-                print(f"\nProcessing pair: {pair_key}")
-                print(f"Volumes: {volumes}")
-
                 widget = self.language_pairs.get(pair_key)
 
                 # Отображаемое имя и заголовок формируем в соответствии с текущим режимом
@@ -866,7 +813,6 @@ class TranslationCostCalculator(QMainWindow):
                 )
 
                 if widget is None:
-                    print(f"Creating new widget for pair: {pair_key}")
                     widget = LanguagePairWidget(
                         display_name,
                         self.currency_symbol,
@@ -884,7 +830,6 @@ class TranslationCostCalculator(QMainWindow):
                     self.pair_headers[pair_key] = header_title
                     added_pairs += 1
                 else:
-                    print(f"Updating existing widget for pair: {pair_key}")
                     widget.set_pair_name(display_name)
                     widget.set_language("ru" if self.lang_display_ru else "en")
                     self.pair_headers[pair_key] = header_title
@@ -912,8 +857,6 @@ class TranslationCostCalculator(QMainWindow):
                     if replace:
                         table.item(0, 1).setText(str(new_total))
                         table.item(repeat_row, 1).setText(str(repeat_total))
-                        print(f"  Set new words: {new_total}")
-                        print(f"  Set repeats: {repeat_total}")
                     else:
                         try:
                             prev_new = float(
@@ -931,12 +874,6 @@ class TranslationCostCalculator(QMainWindow):
                             prev_rep = 0
                         table.item(0, 1).setText(str(prev_new + new_total))
                         table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
-                        print(
-                            f"  Updated new words: {prev_new} + {new_total} = {prev_new + new_total}"
-                        )
-                        print(
-                            f"  Updated repeats: {prev_rep} + {repeat_total} = {prev_rep + repeat_total}"
-                        )
                 else:
                     total_volume = 0
                     for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
@@ -946,7 +883,6 @@ class TranslationCostCalculator(QMainWindow):
 
                         if replace:
                             table.item(idx, 1).setText(str(add_val))
-                            print(f"  Set {row_name}: {add_val}")
                         else:
                             try:
                                 prev_text = (
@@ -957,14 +893,8 @@ class TranslationCostCalculator(QMainWindow):
                                 prev = float(prev_text or "0")
                                 new_val = prev + add_val
                                 table.item(idx, 1).setText(str(new_val))
-                                print(
-                                    f"  Updated {row_name}: {prev} + {add_val} = {new_val}"
-                                )
-                            except (ValueError, TypeError) as e:
-                                print(f"  Error updating {row_name}: {e}")
+                            except (ValueError, TypeError):
                                 table.item(idx, 1).setText(str(add_val))
-
-                print(f"  Total volume for {pair_key}: {total_volume}")
 
                 # Пересчитываем ставки и суммы
                 widget.update_rates_and_sums(
@@ -995,7 +925,6 @@ class TranslationCostCalculator(QMainWindow):
 
         except Exception as e:
             error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
-            print(f"ERROR: {error_msg}")
             QMessageBox.critical(self, "Ошибка", error_msg)
 
     def collect_project_data(self) -> Dict[str, Any]:
@@ -1144,12 +1073,10 @@ class TranslationCostCalculator(QMainWindow):
         )
         if not file_path:
             return
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(project_data, f, ensure_ascii=False, indent=2)
+        if save_project_file(project_data, file_path):
             QMessageBox.information(self, "Успех", f"Проект сохранен: {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить проект: {e}")
+        else:
+            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить проект")
 
     def load_project(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1157,13 +1084,12 @@ class TranslationCostCalculator(QMainWindow):
         )
         if not file_path:
             return
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                project_data = json.load(f)
-            self.load_project_data(project_data)
-            QMessageBox.information(self, "Успех", "Проект загружен")
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить проект: {e}")
+        project_data = load_project_file(file_path)
+        if project_data is None:
+            QMessageBox.critical(self, "Ошибка", "Не удалось загрузить проект")
+            return
+        self.load_project_data(project_data)
+        QMessageBox.information(self, "Успех", "Проект загружен")
 
     def load_project_data(self, project_data: Dict[str, Any]):
         self.project_name_edit.setText(project_data.get("project_name", ""))

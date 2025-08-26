@@ -11,15 +11,7 @@ import copy
 
 from logic.service_config import ServiceConfig
 from logic.translation_config import tr
-from .utils import format_rate
-
-
-def _to_float(value: str) -> float:
-    """Convert string with comma or dot to float."""
-    try:
-        return float((value or "0").replace(",", "."))
-    except ValueError:
-        return 0.0
+from .utils import format_rate, _to_float
 
 
 class LanguagePairWidget(QWidget):
