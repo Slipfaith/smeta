@@ -19,8 +19,8 @@ def _extract_languages_from_filename(filename: str) -> Tuple[str, str]:
     """Извлекает языки из имени файла типа 'Analyze Files en-US_ru-RU(23).xml'"""
     print(f"Extracting languages from filename: {filename}")
 
-    # Ищем паттерн типа en-US_ru-RU или en_ru
-    pattern = r'([a-z]{2}(?:-[A-Z]{2})?)[_-]([a-z]{2}(?:-[A-Z]{2})?)'
+    # Ищем паттерн типа en-US_ru-RU, en_ru или трёхбуквенный код вроде bez-TZ
+    pattern = r'([a-z]{2,3}(?:-[A-Z]{2})?)[_-]([a-z]{2,3}(?:-[A-Z]{2})?)'
     match = re.search(pattern, filename, re.IGNORECASE)
 
     if match:
@@ -352,8 +352,10 @@ def parse_reports(paths: List[str], unit: str = "Words") -> Tuple[Dict[str, Dict
             if src_lang and tgt_lang:
                 determined_source_lang = src_lang
                 determined_target_lang = tgt_lang
-                pair_key = f"{src_lang} → {tgt_lang}"
-                print(f"Language pair from filename: {pair_key}")
+                print(f"Language pair from filename: {src_lang} → {tgt_lang}")
+                if taskinfo_lang and len(tgt_lang) <= 3:
+                    determined_target_lang = taskinfo_lang
+                pair_key = f"{determined_source_lang} → {determined_target_lang}"
             elif taskinfo_lang:
                 # Если из файла не удалось извлечь, предполагаем EN -> taskinfo_lang
                 determined_source_lang = "EN"
