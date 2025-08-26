@@ -177,7 +177,11 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'DE'
 
             # Арабский
-            elif any(word in lang_lower for word in ['arabic', 'العربية', 'арабский', 'ar']):
+            elif (
+                lang_lower == 'ar'
+                or lang_lower.startswith('ar-')
+                or any(word in lang_lower for word in ['arabic', 'العربية', 'арабский'])
+            ):
                 if any(word in lang_lower for word in ['saudi', 'السعودية', 'саудовская']):
                     return 'Arabic (Saudi Arabia)'
                 elif any(word in lang_lower for word in ['egypt', 'مصر', 'египет']):
