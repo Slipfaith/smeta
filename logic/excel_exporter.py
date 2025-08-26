@@ -192,6 +192,9 @@ class ExcelExporter:
                         scaled = round(num * 1000)
                         if scaled % 10 == 0:
                             fmt = cell.number_format or ""
+                            # Skip cells explicitly marked as general numbers (e.g. quantity columns)
+                            if fmt == "General":
+                                continue
                             if "000" in fmt:
                                 cell.number_format = fmt.replace("000", "00", 1)
                             else:
