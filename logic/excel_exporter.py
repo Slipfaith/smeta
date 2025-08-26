@@ -786,6 +786,7 @@ class ExcelExporter:
                 unit_cell.alignment = Alignment(horizontal="center", vertical="center")
                 qty_cell = ws.cell(r, col_qty, self._to_number(it["volume"]))
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
+                qty_cell.number_format = "General"
                 self.logger.debug(
                     "  cells: %s%d='%s', %s%d='%s', %s%d=%s",
                     get_column_letter(col_param),
@@ -1008,6 +1009,7 @@ class ExcelExporter:
             unit_cell.alignment = Alignment(horizontal="center", vertical="center")
             qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
             qty_cell.alignment = Alignment(horizontal="right", vertical="top")
+            qty_cell.number_format = "General"
             rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
             self._apply_rate_format(rate_cell)
             qtyL = get_column_letter(col_qty)
@@ -1165,6 +1167,7 @@ class ExcelExporter:
                 unit_cell.alignment = Alignment(horizontal="center", vertical="center")
                 qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
                 qty_cell.alignment = Alignment(horizontal="right", vertical="top")
+                qty_cell.number_format = "General"
                 rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
                 self._apply_rate_format(rate_cell)
                 qtyL = get_column_letter(col_qty)
