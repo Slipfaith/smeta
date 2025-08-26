@@ -39,6 +39,14 @@ def format_rate(value: Union[int, float, str], sep: str | None = None) -> str:
     return text
 
 
+def _to_float(value: str) -> float:
+    """Safely convert string to float."""
+    try:
+        return float((value or "0").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
 def shorten_locale(text: str, lang: str) -> str:
     """Shorten territory name in parentheses using Babel data."""
     match = re.search(r"\(([^)]+)\)", text)

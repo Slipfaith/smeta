@@ -5,15 +5,8 @@ from PySide6.QtWidgets import (
     QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
 )
 from PySide6.QtCore import Qt, Signal
-from .utils import format_rate
+from .utils import format_rate, _to_float
 from logic.translation_config import tr
-
-
-def _to_float(value: str) -> float:
-    try:
-        return float((value or "0").replace(",", "."))
-    except ValueError:
-        return 0.0
 
 
 class ProjectSetupWidget(QWidget):
