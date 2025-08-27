@@ -448,6 +448,22 @@ class LanguagePairWidget(QWidget):
         self.update_rates_and_sums(table, rows, base_rate_row)
         self._fit_table_height(table)
 
+    def set_basic_rate(self, value: float) -> None:
+        """Set base translation rate and update dependent rows."""
+        group = self.translation_group
+        table = getattr(group, 'table', None)
+        rows = getattr(group, 'rows_config', None)
+        base_row = getattr(group, 'base_rate_row', None)
+        if table is None or rows is None or base_row is None:
+            return
+        sep = "." if self.lang == "en" else None
+        item = table.item(base_row, 2)
+        if item is None:
+            item = QTableWidgetItem()
+            table.setItem(base_row, 2, item)
+        item.setText(self._format_rate(value, sep))
+        self.update_rates_and_sums(table, rows, base_row)
+
     def set_currency(self, symbol: str, code: str):
         self.currency_symbol = symbol
         self.currency_code = code
