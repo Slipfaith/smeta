@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Tuple
 
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -70,12 +71,29 @@ class ExcelRatesDialog(QDialog):
         self.table.setHorizontalHeaderLabels(headers)
         main_layout.addWidget(self.table)
 
+        copy_sc = QShortcut(QKeySequence.Copy, self.table)
+        copy_sc.activated.connect(self._copy_selection)
+
         self.resize(800, 400)
 
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Select Excel", "", "Excel Files (*.xlsx)")
         if path:
             self.file_edit.setText(path)
+
+    def _copy_selection(self) -> None:
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return
+        pieces: List[str] = []
+        for rng in ranges:
+            for row in range(rng.topRow(), rng.bottomRow() + 1):
+                row_data: List[str] = []
+                for col in range(rng.leftColumn(), rng.rightColumn() + 1):
+                    item = self.table.item(row, col)
+                    row_data.append(item.text() if item else "")
+                pieces.append("\t".join(row_data))
+        QGuiApplication.clipboard().setText("\n".join(pieces))
 
     def _load(self) -> None:
         path = self.file_edit.text()

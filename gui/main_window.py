@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import re
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 import langcodes
 import pycountry
@@ -756,8 +756,8 @@ class TranslationCostCalculator(QMainWindow):
         if not self.language_pairs:
             QMessageBox.warning(self, "Ошибка", "Сначала добавьте языковые пары")
             return
-        pairs = []
-        pair_map = {}
+        pairs: List[Tuple[str, str]] = []
+        pair_map: Dict[Tuple[str, str], str] = {}
         for key in self.language_pairs:
             parts = key.split(" → ")
             if len(parts) != 2:
@@ -766,7 +766,15 @@ class TranslationCostCalculator(QMainWindow):
             pairs.append((src, tgt))
             pair_map[(src, tgt)] = key
         dialog = ExcelRatesDialog(pairs, self)
-        dialog.exec()
+        dialog.setModal(False)
+        dialog.finished.connect(
+            lambda _res, d=dialog, pm=pair_map: self._apply_imported_rates(d, pm)
+        )
+        dialog.show()
+
+    def _apply_imported_rates(
+        self, dialog: ExcelRatesDialog, pair_map: Dict[Tuple[str, str], str]
+    ) -> None:
         for match in dialog.selected_rates():
             if not match.rates:
                 continue
