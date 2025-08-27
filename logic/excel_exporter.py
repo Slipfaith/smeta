@@ -1288,11 +1288,23 @@ class ExcelExporter:
                                 cell2.value = val2.replace("{{$}}", currency_code)
                     else:
                         new_v = v
+                        replaced_target_langs = False
                         for ph, val in strict_map.items():
                             if ph in new_v:
                                 new_v = new_v.replace(ph, str(val))
+                                if ph == "{{target_langs}}":
+                                    replaced_target_langs = True
                         if new_v != v:
-                            ws.cell(r, c, new_v)
+                            cell = ws.cell(r, c, new_v)
+                            if replaced_target_langs:
+                                cell.alignment = Alignment(
+                                    horizontal=cell.alignment.horizontal,
+                                    vertical=cell.alignment.vertical,
+                                    text_rotation=cell.alignment.text_rotation,
+                                    wrap_text=True,
+                                    shrink_to_fit=cell.alignment.shrink_to_fit,
+                                    indent=cell.alignment.indent,
+                                )
 
         if wb is not None and total_cell_ref:
             self._insert_vat_section(wb, ws, total_cell_ref, project_data)
