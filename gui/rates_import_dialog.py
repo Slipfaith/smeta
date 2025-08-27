@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -25,6 +25,8 @@ from logic import rates_importer
 
 class ExcelRatesDialog(QDialog):
     """Dialog allowing the user to load and review rate tables."""
+
+    apply_requested = Signal()
 
     def __init__(self, gui_pairs: Iterable[Tuple[str, str]], parent=None) -> None:
         super().__init__(parent)
@@ -113,6 +115,14 @@ class ExcelRatesDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
 
         layout.addWidget(self.table, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.addStretch()
+        apply_btn = QPushButton("Apply")
+        apply_btn.clicked.connect(self.apply_requested.emit)
+        btn_layout.addWidget(apply_btn)
+        layout.addLayout(btn_layout)
 
     def _setup_styles(self) -> None:
         self.setStyleSheet("""
