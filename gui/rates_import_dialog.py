@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from logic.rates_importer import load_rates_from_excel, match_pairs, PairMatch
+from logic import rates_importer
 
 
 class ExcelRatesDialog(QDialog):
@@ -84,7 +84,7 @@ class ExcelRatesDialog(QDialog):
         currency = self.currency_combo.currentText()
         rate_type = self.rate_combo.currentText()
         try:
-            rates = load_rates_from_excel(path, currency, rate_type)
+            rates = rates_importer.load_rates_from_excel(path, currency, rate_type)
         except Exception as exc:  # pragma: no cover - GUI feedback
             self.table.setRowCount(0)
             self.table.setRowCount(1)
@@ -93,7 +93,22 @@ class ExcelRatesDialog(QDialog):
             self.table.setItem(0, 0, item)
             return
 
-        matches: List[PairMatch] = match_pairs(self._pairs, rates)
+        self.table.clearSpans()
+
+        if self._pairs:
+            matches: List[rates_importer.PairMatch] = rates_importer.match_pairs(self._pairs, rates)
+        else:
+            matches = [
+                rates_importer.PairMatch(
+                    gui_source=rates_importer._language_name(src),
+                    gui_target=rates_importer._language_name(tgt),
+                    excel_source=rates_importer._language_name(src),
+                    excel_target=rates_importer._language_name(tgt),
+                    rates=rate,
+                )
+                for (src, tgt), rate in rates.items()
+            ]
+
         self.table.setRowCount(len(matches))
         for row, match in enumerate(matches):
             self.table.setItem(row, 0, QTableWidgetItem(match.gui_source))
@@ -108,9 +123,9 @@ class ExcelRatesDialog(QDialog):
                 for col in range(4, 7):
                     self.table.setItem(row, col, QTableWidgetItem(""))
 
-    def selected_rates(self) -> List[PairMatch]:
+    def selected_rates(self) -> List[rates_importer.PairMatch]:
         """Return the current mapping as edited by the user."""
-        matches: List[PairMatch] = []
+        matches: List[rates_importer.PairMatch] = []
         for row in range(self.table.rowCount()):
             gui_src = self.table.item(row, 0).text()
             gui_tgt = self.table.item(row, 1).text()
@@ -130,7 +145,7 @@ class ExcelRatesDialog(QDialog):
                 except ValueError:
                     rate = None
             matches.append(
-                PairMatch(
+                rates_importer.PairMatch(
                     gui_source=gui_src,
                     gui_target=gui_tgt,
                     excel_source=excel_src,
