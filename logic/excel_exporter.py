@@ -55,7 +55,7 @@ PS_HDR = {
 }
 PS_HDR_TITLES = {
     PS_HDR["param"]: "Названия работ",
-    PS_HDR["unit"]: "час",
+    PS_HDR["unit"]: "Ед-ца",
     PS_HDR["qty"]: "Кол-во",
     PS_HDR["rate"]: "Ставка",
     PS_HDR["total"]: "Итого",
@@ -988,6 +988,8 @@ class ExcelExporter:
         default_ps_map = {"param": 1, "unit": 2, "qty": 3, "rate": 4, "total": 5}
         hmap = self._header_map(ws, t_headers_row, PS_HDR, default_ps_map)
         self.logger.debug("Header map for project setup: %s", hmap)
+        first_col = min(hmap.values())
+        last_col = max(hmap.values())
         # Заголовки колонок
         for c in range(1, ws.max_column + 1):
             v = ws.cell(t_headers_row, c).value
@@ -1018,6 +1020,19 @@ class ExcelExporter:
             for c in range(1, ws.max_column + 1):
                 ws.cell(rr, c).value = None
 
+        # Remove merged cells inside the table body
+        for m in list(ws.merged_cells.ranges):
+            if (
+                m.min_row >= t_headers_row
+                and m.max_row < t_subtotal_row
+                and m.min_col >= first_col
+                and m.max_col <= last_col
+            ):
+                try:
+                    ws.unmerge_cells(str(m))
+                except Exception:
+                    pass
+
         col_param = hmap.get("param", 1)
         col_unit = hmap.get("unit", 2)
         col_qty = hmap.get("qty", 3)
@@ -1025,8 +1040,6 @@ class ExcelExporter:
         col_total = hmap.get("total", 5)
 
         # Ensure header is merged across the table width
-        first_col = min(hmap.values())
-        last_col = max(hmap.values())
         ref = f"{get_column_letter(first_col)}{block_top}:{get_column_letter(last_col)}{block_top}"
         try:
             ws.unmerge_cells(ref)
