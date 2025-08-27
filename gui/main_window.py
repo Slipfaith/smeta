@@ -770,11 +770,20 @@ class TranslationCostCalculator(QMainWindow):
         self._import_pair_map = pair_map
         self.excel_dialog = ExcelRatesDialog(pairs, self)
         self.excel_dialog.finished.connect(self._on_rates_dialog_closed)
+        self.excel_dialog.apply_requested.connect(self._apply_rates_from_dialog)
         self.excel_dialog.show()
 
     def _on_rates_dialog_closed(self, result: int) -> None:
+        self._apply_rates_from_dialog()
+        if self.excel_dialog:
+            self.excel_dialog.deleteLater()
+            self.excel_dialog = None
+        self._import_pair_map = {}
+
+    def _apply_rates_from_dialog(self) -> None:
         if not self.excel_dialog:
             return
+        rate_key = self.excel_dialog.selected_rate_key()
         for match in self.excel_dialog.selected_rates():
             if not match.rates:
                 continue
@@ -783,11 +792,7 @@ class TranslationCostCalculator(QMainWindow):
                 continue
             widget = self.language_pairs.get(pair_key)
             if widget:
-                rate_key = self.excel_dialog.selected_rate_key()
                 widget.set_basic_rate(match.rates.get(rate_key, 0))
-        self.excel_dialog.deleteLater()
-        self.excel_dialog = None
-        self._import_pair_map = {}
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         try:
