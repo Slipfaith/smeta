@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import re
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 import langcodes
 import pycountry
@@ -184,6 +184,8 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = False
         self.legal_entities = load_legal_entities()
         self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
+        self.excel_dialog = None
+        self._import_pair_map: Dict[Tuple[str, str], str] = {}
         self.setup_ui()
         self.setup_style()
 
@@ -765,17 +767,26 @@ class TranslationCostCalculator(QMainWindow):
             src, tgt = parts
             pairs.append((src, tgt))
             pair_map[(src, tgt)] = key
-        dialog = ExcelRatesDialog(pairs, self)
-        dialog.exec()
-        for match in dialog.selected_rates():
+        self._import_pair_map = pair_map
+        self.excel_dialog = ExcelRatesDialog(pairs, self)
+        self.excel_dialog.finished.connect(self._on_rates_dialog_closed)
+        self.excel_dialog.show()
+
+    def _on_rates_dialog_closed(self, result: int) -> None:
+        if not self.excel_dialog:
+            return
+        for match in self.excel_dialog.selected_rates():
             if not match.rates:
                 continue
-            pair_key = pair_map.get((match.gui_source, match.gui_target))
+            pair_key = self._import_pair_map.get((match.gui_source, match.gui_target))
             if not pair_key:
                 continue
             widget = self.language_pairs.get(pair_key)
             if widget:
                 widget.set_basic_rate(match.rates.get("basic", 0))
+        self.excel_dialog.deleteLater()
+        self.excel_dialog = None
+        self._import_pair_map = {}
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         try:

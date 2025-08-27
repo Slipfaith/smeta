@@ -18,9 +18,11 @@ def _normalize_language(name: str) -> str:
 
     The function is tolerant to different spellings and languages
     (e.g. "русский", "Russian (US)").  Region information in
-    parenthesis is ignored.
+    parentheses or after dashes/commas is ignored so that
+    "English (US)" and "English - US" both normalize to ``"en"``.
     """
-    cleaned = re.sub(r"\s*\(.*?\)", "", name).strip()
+    cleaned = re.sub(r"\s*\(.*?\)", "", name)
+    cleaned = re.split(r"[,\-]", cleaned, 1)[0].strip()
     return langcodes.find(cleaned).language
 
 
