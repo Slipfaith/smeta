@@ -432,17 +432,17 @@ class LanguagePairWidget(QWidget):
                 table.setItem(r, 3, sum_item)
                 rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
 
-            for row, row_data in enumerate(data):
-                if row < table.rowCount():
-                    table.item(row, 0).setText(row_data.get("parameter", ""))
-                    table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                    sep = "." if self.lang == "en" else None
-                    table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
-                    table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
-                rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
-                rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
-                if rows[row].get("is_base"):
-                    base_rate_row = row
+        for row, row_data in enumerate(data):
+            if row < table.rowCount():
+                table.item(row, 0).setText(row_data.get("parameter", ""))
+                table.item(row, 1).setText(str(row_data.get("volume", 0)))
+                sep = "." if self.lang == "en" else None
+                table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
+                table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
+            rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
+            rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
+            if rows[row].get("is_base"):
+                base_rate_row = row
 
         setattr(group, 'base_rate_row', base_rate_row)
         self.update_rates_and_sums(table, rows, base_rate_row)
