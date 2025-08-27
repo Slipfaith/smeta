@@ -18,12 +18,21 @@ def _normalize_language(name: str) -> str:
 
     The function is tolerant to different spellings and languages
     (e.g. "русский", "Russian (US)").  Region information in
-    parentheses or after dashes/commas is ignored so that
-    "English (US)" and "English - US" both normalize to ``"en"``.
+    parentheses or after dashes/commas/slashes is ignored so that
+    "English (US)" and "English/US" both normalize to ``"en"``.
+    If the language still cannot be resolved via :func:`langcodes.find`,
+    we fall back to :func:`langcodes.standardize_tag` and finally to the
+    lower-cased input.
     """
     cleaned = re.sub(r"\s*\(.*?\)", "", name)
-    cleaned = re.split(r"[,\-]", cleaned, 1)[0].strip()
-    return langcodes.find(cleaned).language
+    cleaned = re.split(r"[,/\-]", cleaned, 1)[0].strip()
+    try:
+        return langcodes.find(cleaned).language
+    except LookupError:
+        try:
+            return langcodes.standardize_tag(cleaned).split("-")[0]
+        except Exception:
+            return cleaned.lower()
 
 
 def _language_name(code: str) -> str:
