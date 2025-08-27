@@ -46,7 +46,7 @@ class ProjectSetupWidget(QWidget):
         self.table = QTableWidget(1, 4)
         self.table.setHorizontalHeaderLabels([
             tr("Названия работ", self.lang),
-            tr("Ед-ца", self.lang),
+            tr("Час", self.lang),
             f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
             f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
