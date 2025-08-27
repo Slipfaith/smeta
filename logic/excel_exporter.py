@@ -2,6 +2,7 @@
 import os
 import logging
 import re
+import textwrap
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
@@ -203,6 +204,35 @@ class ExcelExporter:
                         new_val = pattern.sub(r"\1" + "00", value)
                         if new_val != value:
                             cell.value = new_val
+
+    def _get_cell_width(self, ws: Worksheet, cell: Cell) -> float:
+        """Calculate width in characters for a cell, respecting merged ranges."""
+        for merged in ws.merged_cells.ranges:
+            if cell.coordinate in merged:
+                width = 0.0
+                for col in range(merged.min_col, merged.max_col + 1):
+                    letter = get_column_letter(col)
+                    width += ws.column_dimensions[letter].width or 8.43
+                return width
+        letter = get_column_letter(cell.column)
+        return ws.column_dimensions[letter].width or 8.43
+
+    def _adjust_row_height_for_text(self, ws: Worksheet, cell: Cell) -> None:
+        """Adjust row height to fit wrapped text inside a (possibly merged) cell."""
+        text = str(cell.value or "")
+        if not text:
+            return
+        width = self._get_cell_width(ws, cell)
+        if width <= 0:
+            return
+        max_chars = max(1, int(width))
+        lines = 0
+        for part in text.splitlines() or [text]:
+            wrapped = textwrap.wrap(part, width=max_chars) or [""]
+            lines += len(wrapped)
+        row_dim = ws.row_dimensions[cell.row]
+        base_height = row_dim.height or ws.sheet_format.defaultRowHeight or 15
+        row_dim.height = base_height * max(1, lines)
 
     # ----------------------------- ПУБЛИЧНЫЙ АПИ -----------------------------
 
@@ -1305,6 +1335,7 @@ class ExcelExporter:
                                     shrink_to_fit=cell.alignment.shrink_to_fit,
                                     indent=cell.alignment.indent,
                                 )
+                                self._adjust_row_height_for_text(ws, cell)
 
         if wb is not None and total_cell_ref:
             self._insert_vat_section(wb, ws, total_cell_ref, project_data)
