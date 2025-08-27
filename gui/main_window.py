@@ -761,7 +761,7 @@ class TranslationCostCalculator(QMainWindow):
         pairs = []
         pair_map = {}
         for key in self.language_pairs:
-            parts = key.split(" → ")
+            parts = re.split(r"\s*(?:→|->|-|>)\s*", key, maxsplit=1)
             if len(parts) != 2:
                 continue
             src, tgt = parts
@@ -783,7 +783,8 @@ class TranslationCostCalculator(QMainWindow):
                 continue
             widget = self.language_pairs.get(pair_key)
             if widget:
-                widget.set_basic_rate(match.rates.get("basic", 0))
+                rate_key = self.excel_dialog.selected_rate_key()
+                widget.set_basic_rate(match.rates.get(rate_key, 0))
         self.excel_dialog.deleteLater()
         self.excel_dialog = None
         self._import_pair_map = {}
