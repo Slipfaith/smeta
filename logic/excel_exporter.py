@@ -1019,10 +1019,10 @@ class ExcelExporter:
                 ws.cell(rr, c).value = None
 
         col_param = hmap.get("param", 1)
-        col_unit = hmap.get("unit", 3)
-        col_qty = hmap.get("qty", 4)
-        col_rate = hmap.get("rate", 5)
-        col_total = hmap.get("total", 6)
+        col_unit = hmap.get("unit", 2)
+        col_qty = hmap.get("qty", 3)
+        col_rate = hmap.get("rate", 4)
+        col_total = hmap.get("total", 5)
 
         # Ensure header is merged across the table width
         first_col = min(hmap.values())
