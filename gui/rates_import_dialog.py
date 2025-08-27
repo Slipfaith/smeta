@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Tuple
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -28,66 +30,201 @@ class ExcelRatesDialog(QDialog):
         super().__init__(parent)
         self._pairs = list(gui_pairs)
         self.setWindowTitle("Import Rates")
+        self.setFixedSize(900, 500)
 
-        main_layout = QVBoxLayout(self)
+        self._setup_ui()
+        self._setup_styles()
 
-        file_layout = QHBoxLayout()
-        self.file_edit = QLineEdit(self)
-        browse_btn = QPushButton("...")
-        browse_btn.clicked.connect(self._browse)
-        file_layout.addWidget(QLabel("Excel file:"))
-        file_layout.addWidget(self.file_edit)
-        file_layout.addWidget(browse_btn)
-        self.file_edit.editingFinished.connect(self._load)
-        main_layout.addLayout(file_layout)
-
-        options_layout = QGridLayout()
-        options_layout.addWidget(QLabel("Currency:"), 0, 0)
-        self.currency_combo = QComboBox(self)
-        self.currency_combo.addItems(["USD", "EUR", "RUB", "CNY"])
-        self.currency_combo.currentTextChanged.connect(self._load)
-        options_layout.addWidget(self.currency_combo, 0, 1)
-
-        options_layout.addWidget(QLabel("Rates:"), 1, 0)
-        self.rate_combo = QComboBox(self)
-        self.rate_combo.addItems(["R1", "R2"])
-        self.rate_combo.currentTextChanged.connect(self._load)
-        options_layout.addWidget(self.rate_combo, 1, 1)
-
-        options_layout.addWidget(QLabel("Use rate:"), 2, 0)
-        self.apply_combo = QComboBox(self)
-        self.apply_combo.addItems(["Basic", "Complex"])
-        options_layout.addWidget(self.apply_combo, 2, 1)
-
-        main_layout.addLayout(options_layout)
-
-        self.status_label = QLabel("")
-        main_layout.addWidget(self.status_label)
-
-        self.table = QTableWidget(0, 7, self)
-        headers = [
-            "GUI Source",
-            "GUI Target",
-            "Excel Source",
-            "Excel Target",
-            "Basic",
-            "Complex",
-            "Hour",
-        ]
-        self.table.setHorizontalHeaderLabels(headers)
-        main_layout.addWidget(self.table)
-
-        self.resize(800, 400)
         self._rates: Dict[Tuple[str, str], Dict[str, float]] = {}
         self._name_to_code: Dict[str, str] = {}
 
-    def showEvent(self, event):  # pragma: no cover - GUI behaviour
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        file_layout = QHBoxLayout()
+        file_layout.setSpacing(8)
+
+        file_layout.addWidget(QLabel("File:"))
+        self.file_edit = QLineEdit()
+        self.file_edit.setPlaceholderText("Select Excel file...")
+        self.file_edit.editingFinished.connect(self._load)
+        file_layout.addWidget(self.file_edit, 1)
+
+        browse_btn = QPushButton("Browse")
+        browse_btn.setFixedWidth(70)
+        browse_btn.clicked.connect(self._browse)
+        file_layout.addWidget(browse_btn)
+
+        layout.addLayout(file_layout)
+
+        config_layout = QGridLayout()
+        config_layout.setSpacing(8)
+
+        config_layout.addWidget(QLabel("Currency:"), 0, 0)
+        self.currency_combo = QComboBox()
+        self.currency_combo.addItems(["USD", "EUR", "RUB", "CNY"])
+        self.currency_combo.setFixedWidth(80)
+        self.currency_combo.currentTextChanged.connect(self._load)
+        config_layout.addWidget(self.currency_combo, 0, 1)
+
+        config_layout.addWidget(QLabel("Type:"), 0, 2)
+        self.rate_combo = QComboBox()
+        self.rate_combo.addItems(["R1", "R2"])
+        self.rate_combo.setFixedWidth(60)
+        self.rate_combo.currentTextChanged.connect(self._load)
+        config_layout.addWidget(self.rate_combo, 0, 3)
+
+        config_layout.addWidget(QLabel("Apply:"), 0, 4)
+        self.apply_combo = QComboBox()
+        self.apply_combo.addItems(["Basic", "Complex"])
+        self.apply_combo.setFixedWidth(80)
+        config_layout.addWidget(self.apply_combo, 0, 5)
+
+        config_layout.setColumnStretch(6, 1)
+
+        self.status_label = QLabel("No file selected")
+        self.status_label.setAlignment(Qt.AlignRight)
+        config_layout.addWidget(self.status_label, 0, 7)
+
+        layout.addLayout(config_layout)
+
+        self.table = QTableWidget(0, 7)
+        headers = ["Source", "Target", "Excel Source", "Excel Target", "Basic", "Complex", "Hour"]
+        self.table.setHorizontalHeaderLabels(headers)
+
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.Fixed)
+        header.setSectionResizeMode(6, QHeaderView.Fixed)
+
+        self.table.setColumnWidth(0, 120)
+        self.table.setColumnWidth(1, 120)
+        self.table.setColumnWidth(4, 70)
+        self.table.setColumnWidth(5, 70)
+        self.table.setColumnWidth(6, 70)
+
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+
+        layout.addWidget(self.table, 1)
+
+    def _setup_styles(self) -> None:
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #ffffff;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 12px;
+            }
+            
+            QLabel {
+                color: #333333;
+                font-weight: 500;
+            }
+            
+            QLineEdit {
+                padding: 4px 8px;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                background-color: white;
+            }
+            
+            QLineEdit:focus {
+                border-color: #0078d4;
+            }
+            
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                background-color: white;
+            }
+            
+            QComboBox:focus {
+                border-color: #0078d4;
+            }
+            
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 4px solid #666666;
+                margin-right: 5px;
+            }
+            
+            QPushButton {
+                padding: 5px 12px;
+                border: 1px solid #0078d4;
+                border-radius: 3px;
+                background-color: #0078d4;
+                color: white;
+                font-weight: 500;
+            }
+            
+            QPushButton:hover {
+                background-color: #106ebe;
+                border-color: #106ebe;
+            }
+            
+            QPushButton:pressed {
+                background-color: #005a9e;
+            }
+            
+            QTableWidget {
+                gridline-color: #e1e1e1;
+                background-color: white;
+                alternate-background-color: #f8f8f8;
+                border: 1px solid #cccccc;
+                selection-background-color: #cce8ff;
+            }
+            
+            QTableWidget::item {
+                padding: 4px 6px;
+                border: none;
+            }
+            
+            QHeaderView::section {
+                background-color: #f0f0f0;
+                color: #333333;
+                padding: 6px 8px;
+                border: 1px solid #cccccc;
+                border-left: none;
+                font-weight: 600;
+            }
+            
+            QHeaderView::section:first {
+                border-left: 1px solid #cccccc;
+            }
+            
+            QTableWidget QComboBox {
+                border: none;
+                padding: 2px 4px;
+                margin: 1px;
+            }
+        """)
+
+    def showEvent(self, event):
         super().showEvent(event)
         if self.file_edit.text():
             self._load()
 
     def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select Excel", "", "Excel Files (*.xlsx)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Excel File",
+            "",
+            "Excel Files (*.xlsx *.xls)"
+        )
         if path:
             self.file_edit.setText(path)
             self._load()
@@ -95,17 +232,23 @@ class ExcelRatesDialog(QDialog):
     def _load(self) -> None:
         path = self.file_edit.text()
         if not path:
-            self.status_label.setText("No file selected")
+            self.status_label.setText("No file")
+            self.status_label.setStyleSheet("color: #666666;")
             self.table.setRowCount(0)
             return
+
         currency = self.currency_combo.currentText()
         rate_type = self.rate_combo.currentText()
+
         try:
             rates = rates_importer.load_rates_from_excel(path, currency, rate_type)
             self._rates = rates
-        except Exception as exc:  # pragma: no cover - GUI feedback
+            self.status_label.setText(f"Loaded {len(rates)} pairs")
+            self.status_label.setStyleSheet("color: #107c10;")
+        except Exception as exc:
             self.table.setRowCount(0)
-            self.status_label.setText(str(exc))
+            self.status_label.setText(f"Error: {str(exc)[:30]}...")
+            self.status_label.setStyleSheet("color: #d13438;")
             return
 
         self.table.clearSpans()
@@ -135,10 +278,15 @@ class ExcelRatesDialog(QDialog):
 
         self.table.setRowCount(len(matches))
         for row, match in enumerate(matches):
-            self.table.setItem(row, 0, QTableWidgetItem(match.gui_source))
-            self.table.setItem(row, 1, QTableWidgetItem(match.gui_target))
+            gui_src_item = QTableWidgetItem(match.gui_source)
+            gui_src_item.setFlags(gui_src_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 0, gui_src_item)
 
-            src_combo = QComboBox(self.table)
+            gui_tgt_item = QTableWidgetItem(match.gui_target)
+            gui_tgt_item.setFlags(gui_tgt_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 1, gui_tgt_item)
+
+            src_combo = QComboBox()
             src_combo.addItems(lang_names)
             src_combo.setCurrentText(match.excel_source)
             src_combo.currentTextChanged.connect(
@@ -146,7 +294,7 @@ class ExcelRatesDialog(QDialog):
             )
             self.table.setCellWidget(row, 2, src_combo)
 
-            tgt_combo = QComboBox(self.table)
+            tgt_combo = QComboBox()
             tgt_combo.addItems(lang_names)
             tgt_combo.setCurrentText(match.excel_target)
             tgt_combo.currentTextChanged.connect(
@@ -155,14 +303,21 @@ class ExcelRatesDialog(QDialog):
             self.table.setCellWidget(row, 3, tgt_combo)
 
             if match.rates:
-                self.table.setItem(row, 4, QTableWidgetItem(str(match.rates["basic"])))
-                self.table.setItem(row, 5, QTableWidgetItem(str(match.rates["complex"])))
-                self.table.setItem(row, 6, QTableWidgetItem(str(match.rates["hour"])))
+                basic_item = QTableWidgetItem(f"{match.rates['basic']:.2f}")
+                complex_item = QTableWidgetItem(f"{match.rates['complex']:.2f}")
+                hour_item = QTableWidgetItem(f"{match.rates['hour']:.2f}")
             else:
-                for col in range(4, 7):
-                    self.table.setItem(row, col, QTableWidgetItem(""))
+                basic_item = QTableWidgetItem("")
+                complex_item = QTableWidgetItem("")
+                hour_item = QTableWidgetItem("")
 
-        self.status_label.setText(f"Loaded {len(rates)} rate pairs")
+            basic_item.setFlags(basic_item.flags() & ~Qt.ItemIsEditable)
+            complex_item.setFlags(complex_item.flags() & ~Qt.ItemIsEditable)
+            hour_item.setFlags(hour_item.flags() & ~Qt.ItemIsEditable)
+
+            self.table.setItem(row, 4, basic_item)
+            self.table.setItem(row, 5, complex_item)
+            self.table.setItem(row, 6, hour_item)
 
     def _update_rate_from_row(self, row: int) -> None:
         if not self._rates:
@@ -174,18 +329,15 @@ class ExcelRatesDialog(QDialog):
         src_code = rates_importer._normalize_language(src_w.currentText())
         tgt_code = rates_importer._normalize_language(tgt_w.currentText())
         rate = self._rates.get((src_code, tgt_code))
-        for col in range(4, 7):
-            item = self.table.item(row, col)
-            if item is None:
-                item = QTableWidgetItem()
-                self.table.setItem(row, col, item)
+
         if rate:
-            self.table.item(row, 4).setText(str(rate["basic"]))
-            self.table.item(row, 5).setText(str(rate["complex"]))
-            self.table.item(row, 6).setText(str(rate["hour"]))
+            self.table.item(row, 4).setText(f"{rate['basic']:.2f}")
+            self.table.item(row, 5).setText(f"{rate['complex']:.2f}")
+            self.table.item(row, 6).setText(f"{rate['hour']:.2f}")
         else:
-            for col in range(4, 7):
-                self.table.item(row, col).setText("")
+            self.table.item(row, 4).setText("")
+            self.table.item(row, 5).setText("")
+            self.table.item(row, 6).setText("")
 
     def selected_rates(self) -> List[rates_importer.PairMatch]:
         """Return the current mapping as edited by the user."""
@@ -208,12 +360,12 @@ class ExcelRatesDialog(QDialog):
             complex_ = complex_item.text() if complex_item else ""
             hour = hour_item.text() if hour_item else ""
             rate = None
-            if basic or complex_ or hour:
+            if basic and complex_ and hour:
                 try:
                     rate = {
-                        "basic": float(basic or 0),
-                        "complex": float(complex_ or 0),
-                        "hour": float(hour or 0),
+                        "basic": float(basic),
+                        "complex": float(complex_),
+                        "hour": float(hour),
                     }
                 except ValueError:
                     rate = None
