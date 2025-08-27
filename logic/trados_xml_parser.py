@@ -101,7 +101,12 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
             print(f"  Analyzing language: '{lang_name}' (lowercase: '{lang_lower}')")
 
             # Китайский - более гибкая проверка
-            if any(word in lang_lower for word in ['chinese', 'китайский', 'zh']):
+            if (
+                'chinese' in lang_lower
+                or 'китайский' in lang_lower
+                or lang_lower == 'zh'
+                or lang_lower.startswith('zh-')
+            ):
                 print("  Detected Chinese language")
                 if any(word in lang_lower for word in
                        ['traditional', 'taiwan', 'hong kong', 'hk', 'tw', 'традиционный']):
@@ -115,7 +120,13 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'Chinese'
 
             # Португальский - более гибкая проверка
-            elif any(word in lang_lower for word in ['portuguese', 'português', 'португальский', 'pt']):
+            elif (
+                'portuguese' in lang_lower
+                or 'português' in lang_lower
+                or 'португальский' in lang_lower
+                or lang_lower == 'pt'
+                or lang_lower.startswith('pt-')
+            ):
                 print("  Detected Portuguese language")
                 if any(word in lang_lower for word in ['brazil', 'brasil', 'бразилия', 'br']):
                     print("  -> Brazil variant")
@@ -146,7 +157,13 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'EN'
 
             # Французский
-            elif any(word in lang_lower for word in ['french', 'français', 'французский', 'fr']):
+            elif (
+                'french' in lang_lower
+                or 'français' in lang_lower
+                or 'французский' in lang_lower
+                or lang_lower == 'fr'
+                or lang_lower.startswith('fr-')
+            ):
                 if any(word in lang_lower for word in ['canada', 'канада']):
                     return 'French (Canada)'
                 elif any(word in lang_lower for word in ['france', 'франция']):
@@ -155,7 +172,13 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'FR'
 
             # Испанский
-            elif any(word in lang_lower for word in ['spanish', 'español', 'испанский', 'es']):
+            elif (
+                'spanish' in lang_lower
+                or 'español' in lang_lower
+                or 'испанский' in lang_lower
+                or lang_lower == 'es'
+                or lang_lower.startswith('es-')
+            ):
                 if any(word in lang_lower for word in ['mexico', 'méxico', 'мексика']):
                     return 'Spanish (Mexico)'
                 elif any(word in lang_lower for word in ['spain', 'españa', 'испания']):
@@ -166,7 +189,13 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'ES'
 
             # Немецкий
-            elif any(word in lang_lower for word in ['german', 'deutsch', 'немецкий', 'de']):
+            elif (
+                'german' in lang_lower
+                or 'deutsch' in lang_lower
+                or 'немецкий' in lang_lower
+                or lang_lower == 'de'
+                or lang_lower.startswith('de-')
+            ):
                 if any(word in lang_lower for word in ['germany', 'deutschland', 'германия']):
                     return 'German (Germany)'
                 elif any(word in lang_lower for word in ['austria', 'österreich', 'австрия']):
@@ -192,7 +221,12 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
                     return 'Arabic'
 
             # Русский
-            elif any(word in lang_lower for word in ['russian', 'русский', 'ru']):
+            elif (
+                'russian' in lang_lower
+                or 'русский' in lang_lower
+                or lang_lower == 'ru'
+                or lang_lower.startswith('ru-')
+            ):
                 return 'RU'
 
             # Для всех остальных языков - пытаемся сохранить как есть или извлечь код
