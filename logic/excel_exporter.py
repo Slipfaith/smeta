@@ -609,7 +609,11 @@ class ExcelExporter:
     # ----------------------------- МАП КОЛОНОК -----------------------------
 
     def _header_map(
-        self, ws: Worksheet, headers_row: int, hdr_tokens: Dict[str, str] = HDR
+        self,
+        ws: Worksheet,
+        headers_row: int,
+        hdr_tokens: Dict[str, str] = HDR,
+        default_mapping: Optional[Dict[str, int]] = None,
     ) -> Dict[str, int]:
         mapping: Dict[str, int] = {}
         for c in range(1, ws.max_column + 1):
@@ -619,22 +623,25 @@ class ExcelExporter:
                 for key, tok in hdr_tokens.items():
                     if t == tok:
                         mapping[key] = c
-        if not mapping:
-            mapping = {
-                "param": 1,
-                "type": 2,
-                "unit": 3,
-                "qty": 4,
-                "rate": 5,
-                "total": 6,
-            }
-            self.logger.debug(
-                "Header tokens not found at row %d, using default mapping %s",
-                headers_row,
-                mapping,
-            )
-        else:
+        if default_mapping:
+            for k, v in default_mapping.items():
+                mapping.setdefault(k, v)
+        if mapping:
             self.logger.debug("Header map at row %d: %s", headers_row, mapping)
+            return mapping
+        mapping = {
+            "param": 1,
+            "type": 2,
+            "unit": 3,
+            "qty": 4,
+            "rate": 5,
+            "total": 6,
+        }
+        self.logger.debug(
+            "Header tokens not found at row %d, using default mapping %s",
+            headers_row,
+            mapping,
+        )
         return mapping
 
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
@@ -978,7 +985,8 @@ class ExcelExporter:
                 )
                 break
 
-        hmap = self._header_map(ws, t_headers_row, PS_HDR)
+        default_ps_map = {"param": 1, "unit": 2, "qty": 3, "rate": 4, "total": 5}
+        hmap = self._header_map(ws, t_headers_row, PS_HDR, default_ps_map)
         self.logger.debug("Header map for project setup: %s", hmap)
         # Заголовки колонок
         for c in range(1, ws.max_column + 1):
