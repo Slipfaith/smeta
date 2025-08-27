@@ -39,6 +39,7 @@ from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
 from gui.utils import shorten_locale
+from gui.rates_import_dialog import ExcelRatesDialog
 from logic.excel_exporter import ExcelExporter
 from logic.pdf_exporter import xlsx_to_pdf
 from logic.user_config import load_languages, add_language
@@ -207,6 +208,11 @@ class TranslationCostCalculator(QMainWindow):
         save_pdf_action = QAction("Сохранить PDF", self)
         save_pdf_action.triggered.connect(self.save_pdf)
         export_menu.addAction(save_pdf_action)
+
+        rates_menu = self.menuBar().addMenu("Импорт ставок")
+        import_rates_action = QAction("Импортировать из Excel", self)
+        import_rates_action.triggered.connect(self.import_rates_from_excel)
+        rates_menu.addAction(import_rates_action)
 
         pm_action = QAction("Проджект менеджер", self)
         pm_action.triggered.connect(self.show_pm_dialog)
@@ -745,6 +751,31 @@ class TranslationCostCalculator(QMainWindow):
         self.language_pairs.clear()
         self.pair_headers.clear()
         self.update_pairs_list()
+
+    def import_rates_from_excel(self) -> None:
+        if not self.language_pairs:
+            QMessageBox.warning(self, "Ошибка", "Сначала добавьте языковые пары")
+            return
+        pairs = []
+        pair_map = {}
+        for key in self.language_pairs:
+            parts = key.split(" → ")
+            if len(parts) != 2:
+                continue
+            src, tgt = parts
+            pairs.append((src, tgt))
+            pair_map[(src, tgt)] = key
+        dialog = ExcelRatesDialog(pairs, self)
+        dialog.exec()
+        for match in dialog.selected_rates():
+            if not match.rates:
+                continue
+            pair_key = pair_map.get((match.gui_source, match.gui_target))
+            if not pair_key:
+                continue
+            widget = self.language_pairs.get(pair_key)
+            if widget:
+                widget.set_basic_rate(match.rates.get("basic", 0))
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         try:
