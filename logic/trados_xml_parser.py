@@ -3,6 +3,9 @@ from typing import Dict, List, Tuple
 import xml.etree.ElementTree as ET
 import re
 
+import langcodes
+import pycountry
+
 from .service_config import ServiceConfig
 
 # Фиксированный порядок строк статистики
@@ -40,46 +43,63 @@ def _extract_languages_from_filename(filename: str) -> Tuple[str, str]:
 
 
 def _expand_language_code(code: str) -> str:
-    """Расширяет языковые коды до полных названий с региональными вариантами"""
+    """Преобразует языковой код в человекочитаемое название"""
     if not code:
         return ""
 
-    code_upper = code.upper()
-
-    # Специальные случаи с региональными вариантами
-    expansions = {
-        'EN-US': 'English (US)',
-        'EN-UK': 'English (UK)',
-        'EN-GB': 'English (UK)',
-        'EN-AU': 'English (Australia)',
-        'EN-CA': 'English (Canada)',
-        'PT-BR': 'Portuguese (Brazil)',
-        'PT-PT': 'Portuguese (Portugal)',
-        'ZH-CN': 'Chinese (Simplified)',
-        'ZH-TW': 'Chinese (Traditional)',
-        'ZH-HK': 'Chinese (Traditional)',
-        'FR-CA': 'French (Canada)',
-        'FR-FR': 'French (France)',
-        'ES-ES': 'Spanish (Spain)',
-        'ES-MX': 'Spanish (Mexico)',
-        'ES-AR': 'Spanish (Argentina)',
-        'DE-DE': 'German (Germany)',
-        'DE-AT': 'German (Austria)',
-        'DE-CH': 'German (Switzerland)',
-        'AR-SA': 'Arabic (Saudi Arabia)',
-        'AR-EG': 'Arabic (Egypt)',
-        'AR-AE': 'Arabic (UAE)',
-    }
-
-    if code_upper in expansions:
-        result = expansions[code_upper]
+    normalized = code.replace('_', '-')
+    try:
+        result = langcodes.Language.get(normalized).display_name('en')
         print(f"    Expanded {code} -> {result}")
         return result
+    except langcodes.LanguageTagError:
+        simple_code = _norm_lang(code)
+        print(f"    Normalized {code} -> {simple_code}")
+        return simple_code
 
-    # Для простых кодов возвращаем нормализованный код
-    simple_code = _norm_lang(code)
-    print(f"    Normalized {code} -> {simple_code}")
-    return simple_code
+
+def _normalize_language_name(name: str) -> str:
+    """Нормализует название или код языка с использованием langcodes и pycountry"""
+    if not name:
+        return ""
+
+    name = name.strip()
+
+    # Прямое использование кода, если он уже корректный
+    try:
+        return langcodes.Language.get(name).display_name('en')
+    except langcodes.LanguageTagError:
+        pass
+
+    try:
+        if '(' in name and ')' in name:
+            lang_part, region_part = name.split('(', 1)
+            lang_part = lang_part.strip()
+            region_part = region_part.strip(') ').strip()
+
+            # Особые варианты для китайского языка
+            if region_part.lower() in {'simplified', 'traditional'}:
+                code = 'zh-Hans' if region_part.lower() == 'simplified' else 'zh-Hant'
+            else:
+                lang = pycountry.languages.lookup(lang_part)
+                country = pycountry.countries.lookup(region_part)
+                code = f"{lang.alpha_2}-{country.alpha_2}"
+        else:
+            lang = pycountry.languages.lookup(name)
+            code = getattr(lang, 'alpha_2', '') or getattr(lang, 'alpha_3', '')
+
+        if code:
+            return langcodes.Language.get(code).display_name('en')
+    except LookupError:
+        try:
+            code = langcodes.find(name)
+            return langcodes.Language.get(code).display_name('en')
+        except Exception:
+            return ""
+    except langcodes.LanguageTagError:
+        return ""
+
+    return ""
 
 
 def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
@@ -88,175 +108,24 @@ def _extract_language_from_taskinfo(taskinfo: ET.Element) -> str:
 
     lang_element = taskinfo.find('language')
     if lang_element is not None:
-        # Пробуем разные атрибуты
-        lang_name = lang_element.get('name', '')
-        lcid = lang_element.get('lcid', '')
+        lang_name = lang_element.get('name', '').strip()
+        lcid = lang_element.get('lcid', '').strip()
 
         print(f"  Language element found: name='{lang_name}', lcid='{lcid}'")
 
+        normalized = _normalize_language_name(lang_name)
+        if normalized:
+            print(f"  -> Normalized language: '{normalized}'")
+            return normalized
+
+        normalized = _normalize_language_name(lcid)
+        if normalized:
+            print(f"  -> Normalized language from LCID: '{normalized}'")
+            return normalized
+
         if lang_name:
-            # Приводим к нижнему регистру для проверок
-            lang_lower = lang_name.lower()
-
-            print(f"  Analyzing language: '{lang_name}' (lowercase: '{lang_lower}')")
-
-            # Китайский - более гибкая проверка
-            if (
-                'chinese' in lang_lower
-                or 'китайский' in lang_lower
-                or lang_lower == 'zh'
-                or lang_lower.startswith('zh-')
-            ):
-                print("  Detected Chinese language")
-                if any(word in lang_lower for word in
-                       ['traditional', 'taiwan', 'hong kong', 'hk', 'tw', 'традиционный']):
-                    print("  -> Traditional variant")
-                    return 'Chinese (Traditional)'
-                elif any(word in lang_lower for word in ['simplified', 'china', 'prc', 'cn', 'упрощенный']):
-                    print("  -> Simplified variant")
-                    return 'Chinese (Simplified)'
-                else:
-                    print("  -> Generic Chinese")
-                    return 'Chinese'
-
-            # Португальский - более гибкая проверка
-            elif (
-                'portuguese' in lang_lower
-                or 'português' in lang_lower
-                or 'португальский' in lang_lower
-                or lang_lower == 'pt'
-                or lang_lower.startswith('pt-')
-            ):
-                print("  Detected Portuguese language")
-                if any(word in lang_lower for word in ['brazil', 'brasil', 'бразилия', 'br']):
-                    print("  -> Brazil variant")
-                    return 'Portuguese (Brazil)'
-                elif any(word in lang_lower for word in ['portugal', 'португалия']):
-                    print("  -> Portugal variant")
-                    return 'Portuguese (Portugal)'
-                else:
-                    print("  -> Generic Portuguese")
-                    return 'Portuguese'
-
-            # Английский
-            elif (
-                'english' in lang_lower
-                or 'английский' in lang_lower
-                or lang_lower == 'en'
-                or lang_lower.startswith('en-')
-            ):
-                if any(word in lang_lower for word in ['united states', 'us', 'usa', 'америка']):
-                    return 'English (US)'
-                elif any(word in lang_lower for word in ['united kingdom', 'uk', 'britain', 'великобритания']):
-                    return 'English (UK)'
-                elif any(word in lang_lower for word in ['australia', 'австралия']):
-                    return 'English (Australia)'
-                elif any(word in lang_lower for word in ['canada', 'канада']):
-                    return 'English (Canada)'
-                else:
-                    return 'EN'
-
-            # Французский
-            elif (
-                'french' in lang_lower
-                or 'français' in lang_lower
-                or 'французский' in lang_lower
-                or lang_lower == 'fr'
-                or lang_lower.startswith('fr-')
-            ):
-                if any(word in lang_lower for word in ['canada', 'канада']):
-                    return 'French (Canada)'
-                elif any(word in lang_lower for word in ['france', 'франция']):
-                    return 'French (France)'
-                else:
-                    return 'FR'
-
-            # Испанский
-            elif (
-                'spanish' in lang_lower
-                or 'español' in lang_lower
-                or 'испанский' in lang_lower
-                or lang_lower == 'es'
-                or lang_lower.startswith('es-')
-            ):
-                if any(word in lang_lower for word in ['mexico', 'méxico', 'мексика']):
-                    return 'Spanish (Mexico)'
-                elif any(word in lang_lower for word in ['spain', 'españa', 'испания']):
-                    return 'Spanish (Spain)'
-                elif any(word in lang_lower for word in ['argentina', 'аргентина']):
-                    return 'Spanish (Argentina)'
-                else:
-                    return 'ES'
-
-            # Немецкий
-            elif (
-                'german' in lang_lower
-                or 'deutsch' in lang_lower
-                or 'немецкий' in lang_lower
-                or lang_lower == 'de'
-                or lang_lower.startswith('de-')
-            ):
-                if any(word in lang_lower for word in ['germany', 'deutschland', 'германия']):
-                    return 'German (Germany)'
-                elif any(word in lang_lower for word in ['austria', 'österreich', 'австрия']):
-                    return 'German (Austria)'
-                elif any(word in lang_lower for word in ['switzerland', 'schweiz', 'швейцария']):
-                    return 'German (Switzerland)'
-                else:
-                    return 'DE'
-
-            # Арабский
-            elif (
-                lang_lower == 'ar'
-                or lang_lower.startswith('ar-')
-                or any(word in lang_lower for word in ['arabic', 'العربية', 'арабский'])
-            ):
-                if any(word in lang_lower for word in ['saudi', 'السعودية', 'саудовская']):
-                    return 'Arabic (Saudi Arabia)'
-                elif any(word in lang_lower for word in ['egypt', 'مصر', 'египет']):
-                    return 'Arabic (Egypt)'
-                elif any(word in lang_lower for word in ['uae', 'emirates', 'الإمارات', 'оаэ']):
-                    return 'Arabic (UAE)'
-                else:
-                    return 'Arabic'
-
-            # Русский
-            elif (
-                'russian' in lang_lower
-                or 'русский' in lang_lower
-                or lang_lower == 'ru'
-                or lang_lower.startswith('ru-')
-            ):
-                return 'RU'
-
-            # Для всех остальных языков - пытаемся сохранить как есть или извлечь код
-            else:
-                print(f"  Language not in predefined list, processing as generic: '{lang_name}'")
-
-                # Если название содержит информацию о регионе в скобках, сохраняем всё как есть
-                if '(' in lang_name and ')' in lang_name:
-                    print(f"  -> Keeping full name with region info: '{lang_name}'")
-                    return lang_name.strip()
-
-                # Если это название содержит региональные индикаторы, сохраняем
-                regional_indicators = ['brazil', 'portugal', 'traditional', 'simplified', 'canada', 'france',
-                                       'spain', 'mexico', 'germany', 'austria', 'switzerland', 'australia',
-                                       'uk', 'us', 'taiwan', 'china', 'hong kong']
-
-                if any(indicator in lang_lower for indicator in regional_indicators):
-                    print(f"  -> Keeping name with regional info: '{lang_name}'")
-                    return lang_name.strip()
-
-                # Для коротких названий (вероятно коды) возвращаем как есть в верхнем регистре
-                stripped_name = lang_name.strip()
-                if len(stripped_name) <= 3:
-                    result = stripped_name.upper()
-                    print(f"  -> Short code detected: '{result}'")
-                    return result
-
-                # Для остальных случаев возвращаем полное название без сокращения
-                print(f"  -> Returning full language name: '{stripped_name}'")
-                return stripped_name
+            print(f"  -> Returning raw language name: '{lang_name}'")
+            return lang_name
 
     print("  No language found in taskInfo")
     return ""
@@ -391,7 +260,11 @@ def parse_reports(paths: List[str], unit: str = "Words") -> Tuple[Dict[str, Dict
                 determined_source_lang = src_lang
                 determined_target_lang = tgt_lang
                 print(f"Language pair from filename: {src_lang} → {tgt_lang}")
-                if taskinfo_lang and len(tgt_lang) <= 3:
+                if (
+                    taskinfo_lang
+                    and len(tgt_lang) <= 3
+                    and len(taskinfo_lang) > len(tgt_lang)
+                ):
                     determined_target_lang = taskinfo_lang
                 pair_key = f"{determined_source_lang} → {determined_target_lang}"
             elif taskinfo_lang:
