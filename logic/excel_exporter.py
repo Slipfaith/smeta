@@ -80,6 +80,164 @@ ADD_HDR_TITLES = {
 }
 
 
+# ----------------------------- БЛОКИ РЕНДЕРИНГА -----------------------------
+
+
+class BlockRenderer:
+    """Базовый рендерер таблиц.
+
+    Подготовка данных реализуется в наследниках, а вставка в лист и
+    заполнение значений делегируется общему методу ``_render_block``
+    экспортера.
+    """
+
+    def __init__(
+        self,
+        exporter: "ExcelExporter",
+        start_ph: str,
+        end_ph: str,
+        hdr_tokens: Dict[str, str],
+        titles: Dict[str, str],
+    ) -> None:
+        self.exporter = exporter
+        self.start_ph = start_ph
+        self.end_ph = end_ph
+        self.hdr_tokens = hdr_tokens
+        self.titles = titles
+
+    def template_sheet(self, ws: Worksheet) -> Worksheet:  # pragma: no cover - simple
+        return ws
+
+    def header_title(self, data: Any) -> str:  # pragma: no cover - override
+        return ""
+
+    def prepare_items(self, data: Any) -> List[Dict[str, Any]]:  # pragma: no cover - override
+        raise NotImplementedError
+
+    def render(
+        self, ws: Worksheet, start_row: int, data: Any
+    ) -> Tuple[int, Optional[str]]:
+        template_ws = self.template_sheet(ws)
+        items = self.prepare_items(data)
+        title = self.header_title(data)
+        return self.exporter._render_block(
+            ws,
+            template_ws,
+            start_row,
+            self.start_ph,
+            self.end_ph,
+            self.hdr_tokens,
+            items,
+            self.titles,
+            title,
+        )
+
+
+class TranslationBlockRenderer(BlockRenderer):
+    def __init__(self, exporter: "ExcelExporter") -> None:
+        super().__init__(exporter, START_PH, END_PH, HDR, exporter.hdr_titles)
+
+    def template_sheet(self, ws: Worksheet) -> Worksheet:
+        wb = ws.parent
+        return wb["Languages"] if "Languages" in wb.sheetnames else ws
+
+    def header_title(self, pair: Dict[str, Any]) -> str:
+        return pair.get("pair_name") or pair.get("header_title") or ""
+
+    def prepare_items(self, pair: Dict[str, Any]) -> List[Dict[str, Any]]:
+        translation_rows = (pair.get("services") or {}).get("translation", [])
+        data_map: Dict[str, Dict[str, Any]] = {}
+        for row in translation_rows:
+            key = row.get("key") or row.get("name")
+            if not key:
+                continue
+            data_map[key] = row
+            lname = str(key).lower()
+            if "new" in lname or "нов" in lname:
+                data_map.setdefault("new", row)
+            elif "95" in lname:
+                data_map.setdefault("fuzzy_95_99", row)
+            elif "75" in lname:
+                data_map.setdefault("fuzzy_75_94", row)
+            elif "100" in lname:
+                data_map.setdefault("reps_100_30", row)
+
+        items: List[Dict[str, Any]] = []
+        for cfg in ServiceConfig.TRANSLATION_ROWS:
+            key = cfg.get("key")
+            src = data_map.get(key, {})
+            items.append(
+                {
+                    "parameter": tr(cfg.get("name"), self.exporter.lang),
+                    "unit": tr("Слово", self.exporter.lang),
+                    "volume": self.exporter._to_number(src.get("volume") or 0),
+                    "rate": self.exporter._to_number(src.get("rate") or 0),
+                    "multiplier": cfg.get("multiplier"),
+                    "is_base": bool(cfg.get("is_base")),
+                }
+            )
+        return items
+
+
+class ProjectSetupRenderer(BlockRenderer):
+    def __init__(self, exporter: "ExcelExporter") -> None:
+        super().__init__(exporter, PS_START_PH, PS_END_PH, PS_HDR, exporter.ps_hdr_titles)
+
+    def template_sheet(self, ws: Worksheet) -> Worksheet:
+        wb = ws.parent
+        if "Setupfee" in wb.sheetnames:
+            return wb["Setupfee"]
+        if "ProjectSetup" in wb.sheetnames:
+            return wb["ProjectSetup"]
+        return ws
+
+    def header_title(self, data: List[Dict[str, Any]]) -> str:
+        return tr("Запуск и управление проектом", self.exporter.lang)
+
+    def prepare_items(self, items_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for it in items_list:
+            items.append(
+                {
+                    "parameter": it.get("parameter", ""),
+                    "unit": tr("час", self.exporter.lang),
+                    "volume": self.exporter._to_number(it.get("volume", 0)),
+                    "rate": self.exporter._to_number(it.get("rate", 0)),
+                }
+            )
+        return items
+
+
+class AdditionalServicesRenderer(BlockRenderer):
+    def __init__(self, exporter: "ExcelExporter") -> None:
+        super().__init__(exporter, ADD_START_PH, ADD_END_PH, ADD_HDR, exporter.add_hdr_titles)
+
+    def template_sheet(self, ws: Worksheet) -> Worksheet:
+        wb = ws.parent
+        if "Addservice" in wb.sheetnames:
+            return wb["Addservice"]
+        if "AdditionalServices" in wb.sheetnames:
+            return wb["AdditionalServices"]
+        return ws
+
+    def header_title(self, block: Dict[str, Any]) -> str:
+        return tr(block.get("header_title", "Дополнительные услуги"), self.exporter.lang)
+
+    def prepare_items(self, block: Dict[str, Any]) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for it in block.get("rows", []):
+            unit = it.get("unit", "")
+            items.append(
+                {
+                    "parameter": it.get("parameter", ""),
+                    "unit": tr(unit, self.exporter.lang) if unit else "",
+                    "volume": self.exporter._to_number(it.get("volume", 0)),
+                    "rate": self.exporter._to_number(it.get("rate", 0)),
+                }
+            )
+        return items
+
+
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
 
@@ -646,6 +804,172 @@ class ExcelExporter:
 
     # ----------------------------- ОСНОВНОЙ РЕНДЕР -----------------------------
 
+    def _render_block(
+        self,
+        ws: Worksheet,
+        template_ws: Worksheet,
+        start_row: int,
+        start_ph: str,
+        end_ph: str,
+        hdr_tokens: Dict[str, str],
+        rows: List[Dict[str, Any]],
+        titles: Dict[str, str],
+        header_title: Optional[str] = None,
+    ) -> Tuple[int, Optional[str]]:
+        tpl_start = self._find_first(template_ws, start_ph)
+        if not tpl_start:
+            return start_row - 1, None
+        tpl_start_row, _ = tpl_start
+        tpl_end = self._find_below(template_ws, tpl_start_row, end_ph)
+        if not tpl_end:
+            return start_row - 1, None
+        tpl_end_row, _ = tpl_end
+
+        template_height = tpl_end_row - tpl_start_row + 1
+        headers_rel = 1
+        first_data_rel = 2
+        subtotal_rel = template_height - 1
+
+        self._insert_rows(ws, start_row, template_height)
+        self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
+
+        extra_start = self._find_first(ws, start_ph, start_row + template_height)
+        if extra_start:
+            extra_end = self._find_below(ws, extra_start[0], end_ph)
+            if extra_end:
+                ws.delete_rows(extra_start[0], extra_end[0] - extra_start[0] + 1)
+
+        block_top = start_row
+        t_headers_row = block_top + headers_rel
+        t_first_data = block_top + first_data_rel
+        t_subtotal_row = block_top + subtotal_rel
+
+        if header_title:
+            for c in range(1, ws.max_column + 1):
+                if ws.cell(block_top, c).value == start_ph:
+                    ws.cell(block_top, c, header_title)
+                    break
+
+        default_map = {k: i + 1 for i, k in enumerate(hdr_tokens.keys())}
+        hmap = self._header_map(ws, t_headers_row, hdr_tokens, default_map)
+        first_col = min(hmap.values())
+        last_col = max(hmap.values())
+
+        for c in range(first_col, last_col + 1):
+            v = ws.cell(t_headers_row, c).value
+            if isinstance(v, str) and v.strip() in titles:
+                ws.cell(t_headers_row, c, titles[v.strip()])
+
+        need = len(rows)
+        cur_cap = max(0, t_subtotal_row - t_first_data)
+        if need > cur_cap:
+            add = need - cur_cap
+            self._insert_rows(ws, t_subtotal_row, add)
+            tpl_row = t_first_data if cur_cap > 0 else t_subtotal_row - 1
+            merges_to_copy = [
+                m
+                for m in ws.merged_cells.ranges
+                if m.min_row == m.max_row == tpl_row
+                and first_col <= m.min_col
+                and m.max_col <= last_col
+            ]
+            for k in range(add):
+                dst = t_subtotal_row + k
+                for c in range(first_col, last_col + 1):
+                    self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
+                for m in merges_to_copy:
+                    sc, ec = m.min_col, m.max_col
+                    ref = f"{get_column_letter(sc)}{dst}:{get_column_letter(ec)}{dst}"
+                    ws.merge_cells(ref)
+            t_subtotal_row += add
+        elif need < cur_cap:
+            delete_count = cur_cap - need
+            if delete_count > 0:
+                ws.delete_rows(t_first_data + need, delete_count)
+                t_subtotal_row -= delete_count
+
+        for rr in range(t_first_data, t_subtotal_row):
+            for c in range(first_col, last_col + 1):
+                ws.cell(rr, c).value = None
+
+        for m in list(ws.merged_cells.ranges):
+            if (
+                m.min_row >= t_headers_row
+                and m.max_row < t_subtotal_row
+                and m.min_col >= first_col
+                and m.max_col <= last_col
+            ):
+                try:
+                    ws.unmerge_cells(str(m))
+                except Exception:
+                    pass
+
+        col_param = hmap.get("param", first_col)
+        col_unit = hmap.get("unit", col_param + 1)
+        col_qty = hmap.get("qty", col_unit + 1)
+        col_rate = hmap.get("rate", col_qty + 1)
+        col_total = hmap.get("total", col_rate + 1)
+
+        header_ref = f"{get_column_letter(first_col)}{block_top}:{get_column_letter(last_col)}{block_top}"
+        try:
+            ws.unmerge_cells(header_ref)
+        except Exception:
+            pass
+        ws.merge_cells(header_ref)
+        if header_title:
+            ws.cell(block_top, first_col, header_title)
+
+        r = t_first_data
+        row_numbers: List[int] = []
+        for it in rows:
+            row_numbers.append(r)
+            ws.cell(r, col_param, it.get("parameter", ""))
+            unit_cell = ws.cell(r, col_unit, it.get("unit", ""))
+            if it.get("unit"):
+                unit_cell.alignment = Alignment(horizontal="center", vertical="center")
+            qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
+            qty_cell.alignment = Alignment(horizontal="right", vertical="top")
+            qty_cell.number_format = "General"
+            r += 1
+
+        base_rate_cell = None
+        qtyL = get_column_letter(col_qty)
+        rateL = get_column_letter(col_rate)
+        totalL = get_column_letter(col_total)
+        for idx, it in enumerate(rows):
+            rr = row_numbers[idx]
+            if it.get("is_base"):
+                cell = ws.cell(rr, col_rate, self._to_number(it.get("rate", 0)))
+                base_rate_cell = f"{rateL}{rr}"
+            elif base_rate_cell and it.get("multiplier") is not None:
+                mult = self._to_number(it.get("multiplier"))
+                cell = ws.cell(rr, col_rate, f"={base_rate_cell}*{mult}")
+            else:
+                if isinstance(it.get("rate"), str) and it.get("rate", "").startswith("="):
+                    cell = ws.cell(rr, col_rate, it.get("rate"))
+                else:
+                    cell = ws.cell(rr, col_rate, self._to_number(it.get("rate", 0)))
+            self._apply_rate_format(cell)
+            total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
+            total_cell.number_format = self.total_fmt
+
+        for c in range(first_col, last_col + 1):
+            if ws.cell(t_subtotal_row, c).value == end_ph:
+                ws.cell(t_subtotal_row, c, self.subtotal_title)
+                break
+
+        if r == t_first_data:
+            subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
+        else:
+            subtotal_cell = ws.cell(
+                t_subtotal_row,
+                col_total,
+                f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
+            )
+        subtotal_cell.number_format = self.total_fmt
+
+        return t_subtotal_row, f"{totalL}{t_subtotal_row}"
+
     def _render_translation_blocks(
         self,
         ws: Worksheet,
@@ -667,264 +991,16 @@ class ExcelExporter:
             ),
         )
 
-        template_ws = (
-            ws.parent["Languages"] if "Languages" in ws.parent.sheetnames else ws
-        )
-        tpl_start = self._find_first(template_ws, START_PH)
-        if not tpl_start:
-            raise RuntimeError("В шаблоне не найден {{translation_table}}")
-        tpl_start_row, _ = tpl_start
-        tpl_end = self._find_below(template_ws, tpl_start_row, END_PH)
-        if not tpl_end:
-            raise RuntimeError(
-                "В шаблоне не найден {{subtotal_translation_table}} ниже {{translation_table}}"
-            )
-        tpl_end_row, _ = tpl_end
-
-        template_height = tpl_end_row - tpl_start_row + 1
-        headers_rel = 1
-        first_data_rel = 2
-        subtotal_rel = template_height - 1
-
-        subtot_cells: List[str] = []
+        renderer = TranslationBlockRenderer(self)
         current_row = start_row
-
+        subtot_cells: List[str] = []
         for pair in pairs:
-            self.logger.debug("Rendering translation block '%s'", pair.get("pair_name"))
-            self._insert_rows(ws, current_row, template_height)
-            self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
-
-            block_top = current_row
-            t_headers_row = block_top + headers_rel
-            t_first_data = block_top + first_data_rel
-            t_subtotal_row = block_top + subtotal_rel
-
-            # Заголовок блока (заменяем плейсхолдер)
-            for c in range(1, ws.max_column + 1):
-                if ws.cell(block_top, c).value == START_PH:
-                    ws.cell(
-                        block_top,
-                        c,
-                        pair.get("pair_name") or pair.get("header_title") or "",
-                    )
-                    break
-
-            hmap = self._header_map(ws, t_headers_row)
-            self.logger.debug(
-                "Header map for translation block '%s': %s",
-                pair.get("pair_name"),
-                hmap,
-            )
-            # Заголовки колонок (заменяем плейсхолдеры на русские названия)
-            for c in range(1, ws.max_column + 1):
-                v = ws.cell(t_headers_row, c).value
-                if isinstance(v, str) and v.strip() in self.hdr_titles:
-                    ws.cell(t_headers_row, c, self.hdr_titles[v.strip()])
-
-            first_col = min(hmap.values())
-            last_col = max(hmap.values())
-
-            # Подготовка данных: фиксированные 4 строки статистики
-            translation_rows = (pair.get("services") or {}).get("translation", [])
-            data_map: Dict[str, Dict[str, Any]] = {}
-            for row in translation_rows:
-                key = row.get("key") or row.get("name")
-                if not key:
-                    continue
-                data_map[key] = row
-                lname = str(key).lower()
-                if "new" in lname or "нов" in lname:
-                    data_map.setdefault("new", row)
-                elif "95" in lname:
-                    data_map.setdefault("fuzzy_95_99", row)
-                elif "75" in lname:
-                    data_map.setdefault("fuzzy_75_94", row)
-                elif "100" in lname:
-                    data_map.setdefault("reps_100_30", row)
-                self.logger.debug(
-                    "  mapped '%s' -> %s",
-                    key,
-                    {k: v for k, v in row.items() if k in ("volume", "rate")},
-                )
-
-            items: List[Dict[str, Any]] = []
-            for cfg in ServiceConfig.TRANSLATION_ROWS:
-                key = cfg.get("key")
-                src_row = data_map.get(key, {})
-                items.append(
-                    {
-                        "parameter": tr(cfg.get("name"), self.lang),
-                        "volume": self._to_number(src_row.get("volume") or 0),
-                        "rate": self._to_number(src_row.get("rate") or 0),
-                        "multiplier": cfg.get("multiplier"),
-                        "is_base": bool(cfg.get("is_base")),
-                    }
-                )
-            self.logger.debug(
-                "Items prepared for '%s': %s", pair.get("pair_name"), items
-            )
-
-            # Подгонка количества строк данных
-            cur_cap = max(0, t_subtotal_row - t_first_data)
-            need = len(items)
-
-            if need > cur_cap:
-                add = need - cur_cap
-                self._insert_rows(ws, t_subtotal_row, add)
-                # Копируем стиль строки данных
-                if t_first_data < t_subtotal_row:
-                    tpl_row = t_first_data
-                else:
-                    tpl_row = t_subtotal_row - 1
-                for k in range(add):
-                    dst = t_subtotal_row + k
-                    for c in range(1, ws.max_column + 1):
-                        self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
-                t_subtotal_row += add
-                self.logger.debug(
-                    "  inserted %d row(s) at %d", add, t_subtotal_row - add
-                )
-            elif need < cur_cap:
-                delete_count = cur_cap - need
-                for _ in range(delete_count):
-                    ws.delete_rows(t_subtotal_row - 1)
-                    t_subtotal_row -= 1
-                if delete_count:
-                    self.logger.debug(
-                        "  deleted %d extra row(s) before %d",
-                        delete_count,
-                        t_subtotal_row,
-                    )
-
-            # Очистка всех строк данных
-            for rr in range(t_first_data, t_subtotal_row):
-                for c in range(first_col, last_col + 1):
-                    ws.cell(rr, c).value = None
-
-            # Заполнение данными
-            col_param = hmap.get("param", 1)
-            col_type = hmap.get("type", 2)
-            col_unit = hmap.get("unit", 3)
-            col_qty = hmap.get("qty", 4)
-            col_rate = hmap.get("rate", 5)
-            col_total = hmap.get("total", 6)
-
-            r = t_first_data
-            row_numbers: List[int] = []
-            for it in items:
-                row_numbers.append(r)
-                self.logger.debug(
-                    "Writing translation row %d: parameter=%s volume=%s rate=%s",
-                    r,
-                    it.get("parameter"),
-                    it.get("volume"),
-                    it.get("rate"),
-                )
-                ws.cell(r, col_param, it["parameter"])
-                ws.cell(r, col_type, "")
-                unit_cell = ws.cell(r, col_unit, tr("Слово", self.lang))
-                unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-                qty_cell = ws.cell(r, col_qty, self._to_number(it["volume"]))
-                qty_cell.alignment = Alignment(horizontal="right", vertical="top")
-                qty_cell.number_format = "General"
-                self.logger.debug(
-                    "  cells: %s%d='%s', %s%d='%s', %s%d=%s",
-                    get_column_letter(col_param),
-                    r,
-                    it["parameter"],
-                    get_column_letter(col_unit),
-                    r,
-                    tr("Слово", self.lang),
-                    get_column_letter(col_qty),
-                    r,
-                    it["volume"],
-                )
-                r += 1
-
-            base_idx = next(
-                (idx for idx, it in enumerate(items) if it.get("is_base")), None
-            )
-            base_rate_cell = None
-            if base_idx is not None and base_idx < len(row_numbers):
-                base_rate_cell = f"{get_column_letter(col_rate)}{row_numbers[base_idx]}"
-
-            qtyL = get_column_letter(col_qty)
-            rateL = get_column_letter(col_rate)
-            for idx, it in enumerate(items):
-                rr = row_numbers[idx]
-                if it.get("is_base"):
-                    cell = ws.cell(rr, col_rate, self._to_number(it["rate"]))
-                    self.logger.debug(
-                        "  rate base %s%d=%s",
-                        get_column_letter(col_rate),
-                        rr,
-                        it["rate"],
-                    )
-                elif base_rate_cell and it.get("multiplier") is not None:
-                    multiplier = self._to_number(it["multiplier"])
-                    cell = ws.cell(
-                        rr, col_rate, f"={base_rate_cell}*{multiplier}"
-                    )
-                    self.logger.debug(
-                        "  rate formula %s%d=%s*%s",
-                        get_column_letter(col_rate),
-                        rr,
-                        base_rate_cell,
-                        multiplier,
-                    )
-                else:
-                    cell = ws.cell(rr, col_rate, self._to_number(it["rate"]))
-                    self.logger.debug(
-                        "  rate %s%d=%s", get_column_letter(col_rate), rr, it["rate"]
-                    )
-                self._apply_rate_format(cell)
-                total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
-                total_cell.number_format = self.total_fmt
-                self.logger.debug(
-                    "  total formula %s%d=%s%d*%s%d",
-                    get_column_letter(col_total),
-                    rr,
-                    qtyL,
-                    rr,
-                    rateL,
-                    rr,
-                )
-
-            # Субтотал (заменяем плейсхолдер и ставим формулу)
-            for c in range(1, ws.max_column + 1):
-                if ws.cell(t_subtotal_row, c).value == END_PH:
-                    ws.cell(t_subtotal_row, c, self.subtotal_title)
-                    break
-
-            totalL = get_column_letter(col_total)
-            if r == t_first_data:
-                subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
-            else:
-                subtotal_cell = ws.cell(
-                    t_subtotal_row,
-                    col_total,
-                    f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
-                )
-            subtotal_cell.number_format = self.total_fmt
-
-            subtot_cells.append(f"{totalL}{t_subtotal_row}")
-            self.logger.debug(
-                "Subtotal for '%s' stored in %s",
-                pair.get("pair_name"),
-                f"{totalL}{t_subtotal_row}",
-            )
-
-            # Переходим к следующему блоку
-            current_row = t_subtotal_row + 1
+            last_row, cell = renderer.render(ws, current_row, pair)
+            if cell:
+                subtot_cells.append(cell)
+            current_row = last_row + 1
             if progress_callback:
                 progress_callback(pair.get("pair_name", ""))
-        # Если на листе остался оригинальный шаблонный блок с плейсхолдерами,
-        # удаляем его, чтобы в результате не было дублей таблиц.
-        extra_start = self._find_first(ws, START_PH, start_row)
-        if extra_start:
-            extra_end = self._find_below(ws, extra_start[0], END_PH)
-            if extra_end:
-                ws.delete_rows(extra_start[0], extra_end[0] - extra_start[0] + 1)
 
         return current_row - 1, subtot_cells
 
@@ -934,164 +1010,9 @@ class ExcelExporter:
         items: List[Dict[str, Any]] = project_data.get("project_setup", [])
         if not items:
             return start_row - 1, None
-
-        template_ws = (
-            ws.parent["Setupfee"]
-            if "Setupfee" in ws.parent.sheetnames
-            else (
-                ws.parent["ProjectSetup"]
-                if "ProjectSetup" in ws.parent.sheetnames
-                else ws
-            )
-        )
-        tpl_start = self._find_first(template_ws, PS_START_PH)
-        if not tpl_start:
-            return start_row - 1, None
-        tpl_start_row, _ = tpl_start
-        tpl_end = self._find_below(template_ws, tpl_start_row, PS_END_PH)
-        if not tpl_end:
-            raise RuntimeError(
-                "В шаблоне не найден {{subtotal_project_setup}} ниже {{project_setup}}"
-            )
-        tpl_end_row, _ = tpl_end
-
-        template_height = tpl_end_row - tpl_start_row + 1
-        headers_rel = 1
-        first_data_rel = 2
-        subtotal_rel = template_height - 1
-
-        self._insert_rows(ws, start_row, template_height)
-        self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, start_row)
-        # После вставки проверяем, не остался ли на листе исходный шаблонный
-        # блок с плейсхолдерами, и при обнаружении удаляем его.
-        ps_tail = self._find_first(ws, PS_START_PH, start_row + template_height)
-        if ps_tail:
-            ps_tail_end = self._find_below(ws, ps_tail[0], PS_END_PH)
-            if ps_tail_end:
-                ws.delete_rows(ps_tail[0], ps_tail_end[0] - ps_tail[0] + 1)
-
-        block_top = start_row
-        t_headers_row = block_top + headers_rel
-        t_first_data = block_top + first_data_rel
-        t_subtotal_row = block_top + subtotal_rel
-
-        # Заголовок блока
-        for c in range(1, ws.max_column + 1):
-            if ws.cell(block_top, c).value == PS_START_PH:
-                ws.cell(
-                    block_top,
-                    c,
-                    tr("Запуск и управление проектом", self.lang),
-                )
-                break
-
-        default_ps_map = {"param": 1, "unit": 2, "qty": 3, "rate": 4, "total": 5}
-        hmap = self._header_map(ws, t_headers_row, PS_HDR, default_ps_map)
-        self.logger.debug("Header map for project setup: %s", hmap)
-        first_col = min(hmap.values())
-        last_col = max(hmap.values())
-        # Заголовки колонок
-        for c in range(1, ws.max_column + 1):
-            v = ws.cell(t_headers_row, c).value
-            if isinstance(v, str) and v.strip() in self.ps_hdr_titles:
-                ws.cell(t_headers_row, c, self.ps_hdr_titles[v.strip()])
-
-        need = len(items)
-        cur_cap = max(0, t_subtotal_row - t_first_data)
-        if need > cur_cap:
-            add = need - cur_cap
-            self._insert_rows(ws, t_subtotal_row, add)
-            tpl_row = (
-                t_first_data if t_first_data < t_subtotal_row else t_subtotal_row - 1
-            )
-            for k in range(add):
-                dst = t_subtotal_row + k
-                for c in range(1, ws.max_column + 1):
-                    self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
-            t_subtotal_row += add
-        elif need < cur_cap:
-            delete_count = cur_cap - need
-            if delete_count > 0:
-                ws.delete_rows(t_first_data + need, delete_count)
-                t_subtotal_row -= delete_count
-
-        # очистка строк
-        for rr in range(t_first_data, t_subtotal_row):
-            for c in range(1, ws.max_column + 1):
-                ws.cell(rr, c).value = None
-
-        # Remove merged cells inside the table body
-        for m in list(ws.merged_cells.ranges):
-            if (
-                m.min_row >= t_headers_row
-                and m.max_row < t_subtotal_row
-                and m.min_col >= first_col
-                and m.max_col <= last_col
-            ):
-                try:
-                    ws.unmerge_cells(str(m))
-                except Exception:
-                    pass
-
-        col_param = hmap.get("param", 1)
-        col_unit = hmap.get("unit", 2)
-        col_qty = hmap.get("qty", 3)
-        col_rate = hmap.get("rate", 4)
-        col_total = hmap.get("total", 5)
-
-        # Ensure header is merged across the table width
-        ref = f"{get_column_letter(first_col)}{block_top}:{get_column_letter(last_col)}{block_top}"
-        try:
-            ws.unmerge_cells(ref)
-        except Exception:
-            pass
-        ws.merge_cells(ref)
-        ws.cell(block_top, first_col, tr("Запуск и управление проектом", self.lang))
-
-        self.logger.debug("Rendering project setup table with %d items", len(items))
-        r = t_first_data
-        for it in items:
-            self.logger.debug(
-                "Project setup row %d: parameter=%s volume=%s rate=%s",
-                r,
-                it.get("parameter"),
-                it.get("volume"),
-                it.get("rate"),
-            )
-            ws.cell(r, col_param, it.get("parameter", ""))
-            unit_cell = ws.cell(r, col_unit, tr("час", self.lang))
-            unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-            qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
-            qty_cell.alignment = Alignment(horizontal="right", vertical="top")
-            qty_cell.number_format = "General"
-            rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
-            self._apply_rate_format(rate_cell)
-            qtyL = get_column_letter(col_qty)
-            rateL = get_column_letter(col_rate)
-            total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
-            total_cell.number_format = self.total_fmt
-            r += 1
-
-        for c in range(1, ws.max_column + 1):
-            if ws.cell(t_subtotal_row, c).value == PS_END_PH:
-                ws.cell(t_subtotal_row, c, self.subtotal_title)
-                break
-
-        totalL = get_column_letter(col_total)
-        if r == t_first_data:
-            subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
-        else:
-            subtotal_cell = ws.cell(
-                t_subtotal_row,
-                col_total,
-                f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
-            )
-        subtotal_cell.number_format = self.total_fmt
-        self.logger.debug(
-            "Project setup subtotal stored in %s", f"{totalL}{t_subtotal_row}"
-        )
-
-        return t_subtotal_row, f"{totalL}{t_subtotal_row}"
+        renderer = ProjectSetupRenderer(self)
+        last_row, cell = renderer.render(ws, start_row, items)
+        return last_row, cell
 
     def _render_additional_services_tables(
         self,
@@ -1103,166 +1024,16 @@ class ExcelExporter:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
             return start_row - 1, []
-        self.logger.debug("Rendering %d additional services block(s)", len(blocks))
-
-        template_ws = (
-            ws.parent["Addservice"]
-            if "Addservice" in ws.parent.sheetnames
-            else (
-                ws.parent["AdditionalServices"]
-                if "AdditionalServices" in ws.parent.sheetnames
-                else ws
-            )
-        )
-        tpl_start = self._find_first(template_ws, ADD_START_PH)
-        if not tpl_start:
-            return start_row - 1, []
-        tpl_start_row, _ = tpl_start
-        tpl_end = self._find_below(template_ws, tpl_start_row, ADD_END_PH)
-        if not tpl_end:
-            return start_row - 1, []
-        tpl_end_row, _ = tpl_end
-        template_height = tpl_end_row - tpl_start_row + 1
-
-        subtot_cells: List[str] = []
+        renderer = AdditionalServicesRenderer(self)
         current_row = start_row
-
+        subtot_cells: List[str] = []
         for block in blocks:
-            self._insert_rows(ws, current_row, template_height)
-            self._copy_block(ws, template_ws, tpl_start_row, tpl_end_row, current_row)
-
-            headers_row = current_row + 1
-            first_data_row = current_row + 2
-            subtotal_row = current_row + template_height - 1
-
-            hmap = self._header_map(ws, headers_row, ADD_HDR)
-            first_col = min(hmap.values())
-            last_col = max(hmap.values())
-
-            for c in range(first_col, last_col + 1):
-                letter = get_column_letter(c)
-                tpl_width = template_ws.column_dimensions[letter].width
-                if tpl_width is not None:
-                    ws.column_dimensions[letter].width = tpl_width
-
-            header_title = block.get("header_title", "Дополнительные услуги")
-            self.logger.debug(
-                "Rendering additional services block '%s' with %d rows",
-                header_title,
-                len(block.get("rows", [])),
-            )
-            header_ref = f"{get_column_letter(first_col)}{current_row}:{get_column_letter(last_col)}{current_row}"
-            try:
-                ws.unmerge_cells(header_ref)
-            except Exception:
-                pass
-            ws.merge_cells(header_ref)
-            ws.cell(current_row, first_col, tr(header_title, self.lang))
-
-            for c in range(first_col, last_col + 1):
-                v = ws.cell(headers_row, c).value
-                if isinstance(v, str) and v.strip() in self.add_hdr_titles:
-                    ws.cell(headers_row, c, self.add_hdr_titles[v.strip()])
-
-            items: List[Dict[str, Any]] = block.get("rows", [])
-
-            need = len(items)
-            cur_cap = max(0, subtotal_row - first_data_row)
-            if need > cur_cap:
-                add = need - cur_cap
-                self._insert_rows(ws, subtotal_row, add)
-                tpl_row = first_data_row if cur_cap > 0 else subtotal_row - 1
-                merges_to_copy = [
-                    m
-                    for m in ws.merged_cells.ranges
-                    if m.min_row == m.max_row == tpl_row
-                    and first_col <= m.min_col
-                    and m.max_col <= last_col
-                ]
-                for k in range(add):
-                    dst = subtotal_row + k
-                    for c in range(first_col, last_col + 1):
-                        self._copy_style(ws.cell(tpl_row, c), ws.cell(dst, c))
-                    for m in merges_to_copy:
-                        sc, ec = m.min_col, m.max_col
-                        ref = (
-                            f"{get_column_letter(sc)}{dst}:{get_column_letter(ec)}{dst}"
-                        )
-                        ws.merge_cells(ref)
-                subtotal_row += add
-            elif need < cur_cap:
-                delete_count = cur_cap - need
-                for _ in range(delete_count):
-                    ws.delete_rows(subtotal_row - 1)
-                    subtotal_row -= 1
-
-            for r in range(first_data_row, subtotal_row):
-                for c in range(first_col, last_col + 1):
-                    ws.cell(r, c).value = None
-
-            col_param = hmap["param"]
-            col_unit = hmap["unit"]
-            col_qty = hmap["qty"]
-            col_rate = hmap["rate"]
-            col_total = hmap["total"]
-
-            r = first_data_row
-            for it in items:
-                self.logger.debug(
-                    "Additional service row %d: parameter=%s unit=%s volume=%s rate=%s",
-                    r,
-                    it.get("parameter"),
-                    it.get("unit"),
-                    it.get("volume"),
-                    it.get("rate"),
-                )
-                ws.cell(r, col_param, it.get("parameter", ""))
-                unit_cell = ws.cell(r, col_unit, tr(it.get("unit", ""), self.lang))
-                unit_cell.alignment = Alignment(horizontal="center", vertical="center")
-                qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
-                qty_cell.alignment = Alignment(horizontal="right", vertical="top")
-                qty_cell.number_format = "General"
-                rate_cell = ws.cell(r, col_rate, self._to_number(it.get("rate", 0)))
-                self._apply_rate_format(rate_cell)
-                qtyL = get_column_letter(col_qty)
-                rateL = get_column_letter(col_rate)
-                total_cell = ws.cell(r, col_total, f"={qtyL}{r}*{rateL}{r}")
-                total_cell.number_format = self.total_fmt
-                r += 1
-
-            for c in range(first_col, last_col + 1):
-                if ws.cell(subtotal_row, c).value == ADD_END_PH:
-                    ws.cell(subtotal_row, c, self.subtotal_title)
-                    break
-
-            totalL = get_column_letter(col_total)
-            if r == first_data_row:
-                subtotal_cell = ws.cell(subtotal_row, col_total, 0)
-            else:
-                subtotal_cell = ws.cell(
-                    subtotal_row,
-                    col_total,
-                    f"=SUM({totalL}{first_data_row}:{totalL}{r - 1})",
-                )
-            subtotal_cell.number_format = self.total_fmt
-            subtot_cells.append(f"{totalL}{subtotal_row}")
-            self.logger.debug(
-                "Subtotal for '%s' stored in %s",
-                header_title,
-                f"{totalL}{subtotal_row}",
-            )
-
-            current_row = subtotal_row + 1
+            last_row, cell = renderer.render(ws, current_row, block)
+            if cell:
+                subtot_cells.append(cell)
+            current_row = last_row + 1
             if progress_callback:
-                progress_callback(header_title)
-        # Если на листе остался невостребованный блок шаблона с плейсхолдерами,
-        # удаляем его, чтобы таблица не дублировалась в конце.
-        add_tail = self._find_first(ws, ADD_START_PH, start_row)
-        if add_tail:
-            add_tail_end = self._find_below(ws, add_tail[0], ADD_END_PH)
-            if add_tail_end:
-                ws.delete_rows(add_tail[0], add_tail_end[0] - add_tail[0] + 1)
-
+                progress_callback(block.get("header_title", ""))
         return current_row - 1, subtot_cells
 
     # ----------------------------- ТЕКСТОВЫЕ ПЛЕЙСХОЛДЕРЫ -----------------------------
