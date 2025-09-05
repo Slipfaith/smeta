@@ -2,7 +2,7 @@ from typing import Dict, List, Any, Union
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton, QMenu, QStyle
+    QHeaderView, QSizePolicy, QHBoxLayout, QMenu
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -18,6 +18,7 @@ class LanguagePairWidget(QWidget):
     """Виджет для одной языковой пары (только Перевод)"""
 
     remove_requested = Signal()
+    subtotal_changed = Signal(float)
 
     def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
@@ -29,6 +30,7 @@ class LanguagePairWidget(QWidget):
         # резерв для восстановления исходных значений объёмов/ставок
         self._backup_volumes = []
         self._backup_rates = []
+        self._subtotal = 0.0
         self.setup_ui()
 
     # ---------------- UI ----------------
@@ -40,21 +42,13 @@ class LanguagePairWidget(QWidget):
         self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
         header.addWidget(self.title_label)
         header.addStretch()
-        remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        remove_btn.setFlat(True)
-        remove_btn.setMaximumWidth(24)
-        remove_btn.setToolTip("Удалить")
-        remove_btn.setStyleSheet("background-color: transparent; border: none;")
-        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-        header.addWidget(remove_btn)
         layout.addLayout(header)
 
         self.services_layout = QVBoxLayout()
 
         # Только Перевод
         self.translation_group = self.create_service_group("Перевод", ServiceConfig.TRANSLATION_ROWS)
+        self.translation_group.toggled.connect(lambda _: self.subtotal_changed.emit(self.get_subtotal()))
         self.services_layout.addWidget(self.translation_group)
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
@@ -372,6 +366,8 @@ class LanguagePairWidget(QWidget):
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
                 lbl.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+            self._subtotal = subtotal
+            self.subtotal_changed.emit(self.get_subtotal())
 
             # после любых изменений гарантируем отсутствие локального скролла
             self._fit_table_height(table)
@@ -383,6 +379,9 @@ class LanguagePairWidget(QWidget):
         """Публичный хук для внешнего кода: раскрыть таблицы по высоте ещё раз."""
         if hasattr(self.translation_group, "table"):
             self._fit_table_height(self.translation_group.table)
+
+    def get_subtotal(self) -> float:
+        return self._subtotal if self.translation_group.isChecked() else 0.0
 
     # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
