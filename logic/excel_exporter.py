@@ -488,14 +488,19 @@ class ExcelExporter:
             self._fix_trailing_zeroes(wb)
 
             self.logger.info("Saving workbook to %s", output_path)
-            wb.save(output_path)
+            # Обновляем прогресс до вызова save(), иначе во время долгого
+            # восстановления изображений пользователю кажется, что файл всё ещё
+            # сохраняется.
             step("Сохранение файла")
+            wb.save(output_path)
 
             # openpyxl may drop images embedded in the template.  After saving the
             # workbook we re-open it via the COM Excel API and copy pictures from
-            # the original template so that logos are preserved.
-            self._restore_images_via_com(output_path)
+            # the original template so that logos are preserved.  Показываем
+            # отдельный шаг до запуска длительной операции, чтобы интерфейс сразу
+            # уведомил пользователя, что сохранение завершено.
             step("Восстановление изображений")
+            self._restore_images_via_com(output_path)
 
             if progress_callback:
                 progress_callback(100, "Готово")
