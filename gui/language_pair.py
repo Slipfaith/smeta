@@ -11,7 +11,7 @@ import copy
 
 from logic.service_config import ServiceConfig
 from logic.translation_config import tr
-from .utils import format_rate, _to_float
+from .utils import format_rate, _to_float, format_amount
 
 
 class LanguagePairWidget(QWidget):
@@ -357,7 +357,7 @@ class LanguagePairWidget(QWidget):
                 total = volume * rate
                 if table.item(row, 3):
                     table.blockSignals(True)
-                    table.item(row, 3).setText(f"{total:.2f}")
+                    table.item(row, 3).setText(format_amount(total, self.lang))
                     table.blockSignals(False)
                 subtotal += total
 
@@ -365,7 +365,9 @@ class LanguagePairWidget(QWidget):
             parent_group: QGroupBox = self.translation_group
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
-                lbl.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+                lbl.setText(
+                    f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+                )
             self._subtotal = subtotal
             self.subtotal_changed.emit(self.get_subtotal())
 
@@ -437,7 +439,7 @@ class LanguagePairWidget(QWidget):
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
                 sep = "." if self.lang == "en" else None
                 table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
-                table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
+                table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
             rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
             if rows[row].get("is_base"):

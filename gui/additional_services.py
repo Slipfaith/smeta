@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
 )
-from .utils import format_rate, _to_float
+from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
 
 
@@ -130,9 +130,11 @@ class AdditionalServiceTable(QWidget):
                 item = QTableWidgetItem()
                 item.setFlags(Qt.ItemIsEnabled)
                 self.table.setItem(r, 4, item)
-            item.setText(f"{total:.2f}")
+            item.setText(format_amount(total, self.lang))
 
-        self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+        self.subtotal_label.setText(
+            f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+        )
         self._subtotal = subtotal
         self.subtotal_changed.emit(subtotal)
 
