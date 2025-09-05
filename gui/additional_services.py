@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (
     QMenu,
     QHBoxLayout,
     QPushButton,
+    QStyle,
 )
 from .utils import format_rate, _to_float
-from .icons import get_icon
 from logic.translation_config import tr
 
 
@@ -38,7 +38,7 @@ class AdditionalServiceTable(QWidget):
         self.header_edit = QLineEdit(tr(title, self.lang))
         header.addWidget(self.header_edit)
         remove_btn = QPushButton()
-        remove_btn.setIcon(get_icon("remove"))
+        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
         remove_btn.setFlat(True)
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить таблицу")
