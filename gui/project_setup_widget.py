@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
+    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Signal
 from .utils import format_rate, _to_float
@@ -13,12 +13,14 @@ class ProjectSetupWidget(QWidget):
     """Table for project setup and management costs."""
 
     remove_requested = Signal()
+    subtotal_changed = Signal(float)
 
     def __init__(self, initial_volume: float = 0.0, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
         self.lang = lang
+        self._subtotal = 0.0
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
@@ -28,15 +30,6 @@ class ProjectSetupWidget(QWidget):
         self.title_label = QLabel()
         header.addWidget(self.title_label)
         header.addStretch()
-        remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        remove_btn.setFlat(True)
-        remove_btn.setMaximumWidth(24)
-        remove_btn.setToolTip("Удалить")
-        remove_btn.setStyleSheet("background-color: transparent; border: none;")
-        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-        header.addWidget(remove_btn)
         layout.addLayout(header)
 
         group = QGroupBox()
@@ -210,11 +203,16 @@ class ProjectSetupWidget(QWidget):
                 self.table.blockSignals(False)
                 subtotal += total
             self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+            self._subtotal = subtotal
+            self.subtotal_changed.emit(subtotal)
             self._fit_table_height(self.table)
         except Exception:
             pass
 
     # ---------- accessors ----------
+    def get_subtotal(self) -> float:
+        return self._subtotal
+
     def get_data(self) -> List[Dict[str, Any]]:
         data: List[Dict[str, Any]] = []
         for row in range(self.table.rowCount()):

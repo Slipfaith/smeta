@@ -11,8 +11,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QMenu,
     QHBoxLayout,
-    QPushButton,
-    QStyle,
 )
 from .utils import format_rate, _to_float
 from logic.translation_config import tr
@@ -22,12 +20,14 @@ class AdditionalServiceTable(QWidget):
     """One editable table of additional services."""
 
     remove_requested = Signal()
+    subtotal_changed = Signal(float)
 
     def __init__(self, title: str = "Дополнительные услуги", currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru") -> None:
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
         self.lang = lang
+        self._subtotal = 0.0
         self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
@@ -37,15 +37,7 @@ class AdditionalServiceTable(QWidget):
         header = QHBoxLayout()
         self.header_edit = QLineEdit(tr(title, self.lang))
         header.addWidget(self.header_edit)
-        remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        remove_btn.setFlat(True)
-        remove_btn.setMaximumWidth(24)
-        remove_btn.setToolTip("Удалить таблицу")
-        remove_btn.setStyleSheet("background-color: transparent; border: none;")
-        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-        header.addWidget(remove_btn)
+        header.addStretch()
         layout.addLayout(header)
 
         self.table = QTableWidget(1, 5)
@@ -140,10 +132,15 @@ class AdditionalServiceTable(QWidget):
             item.setText(f"{total:.2f}")
 
         self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+        self._subtotal = subtotal
+        self.subtotal_changed.emit(subtotal)
 
     def _text(self, row: int, col: int) -> str:
         item = self.table.item(row, col)
         return item.text() if item else "0"
+
+    def get_subtotal(self) -> float:
+        return self._subtotal
 
     # --------------------------------------------------------------- data i/o
     def get_data(self) -> Dict:
@@ -205,12 +202,15 @@ class AdditionalServiceTable(QWidget):
 class AdditionalServicesWidget(QWidget):
     """Container managing multiple additional service tables."""
 
+    subtotal_changed = Signal(float)
+
     def __init__(self, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru") -> None:
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
         self.lang = lang
         self.tables: List[AdditionalServiceTable] = []
+        self._subtotal = 0.0
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -228,15 +228,18 @@ class AdditionalServicesWidget(QWidget):
     def add_table(self, data: Dict = None) -> None:
         table = AdditionalServiceTable(currency_symbol=self.currency_symbol, currency_code=self.currency_code, lang=self.lang)
         table.remove_requested.connect(lambda t=table: self.remove_table(t))
+        table.subtotal_changed.connect(self._emit_subtotal)
         self.tables.append(table)
         self.tables_layout.addWidget(table)
         if data:
             table.load_data(data)
+        self._emit_subtotal()
 
     def remove_table(self, table: AdditionalServiceTable) -> None:
         if table in self.tables and len(self.tables) > 1:
             self.tables.remove(table)
             table.setParent(None)
+            self._emit_subtotal()
 
     # --------------------------------------------------------------- data i/o
     def get_data(self) -> List[Dict]:
@@ -262,10 +265,20 @@ class AdditionalServicesWidget(QWidget):
         self.currency_code = code
         for tbl in self.tables:
             tbl.set_currency(symbol, code)
+        self._emit_subtotal()
 
     def set_language(self, lang: str) -> None:
         self.lang = lang
         self.add_btn.setText(tr("Добавить таблицу", lang))
         for tbl in self.tables:
             tbl.set_language(lang)
+        self._emit_subtotal()
+
+    def _emit_subtotal(self) -> None:
+        total = sum(tbl.get_subtotal() for tbl in self.tables)
+        self._subtotal = total
+        self.subtotal_changed.emit(total)
+
+    def get_subtotal(self) -> float:
+        return self._subtotal
 
