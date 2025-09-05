@@ -2,10 +2,11 @@ from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
+    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton
 )
 from PySide6.QtCore import Qt, Signal
 from .utils import format_rate, _to_float
+from .icons import get_icon
 from logic.translation_config import tr
 
 
@@ -29,7 +30,7 @@ class ProjectSetupWidget(QWidget):
         header.addWidget(self.title_label)
         header.addStretch()
         remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        remove_btn.setIcon(get_icon("remove"))
         remove_btn.setFlat(True)
         remove_btn.setMaximumWidth(24)
         remove_btn.setToolTip("Удалить")
