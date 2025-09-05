@@ -38,7 +38,7 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
-from gui.utils import shorten_locale
+from gui.utils import shorten_locale, format_amount
 from gui.rates_import_dialog import ExcelRatesDialog
 from logic.excel_exporter import ExcelExporter
 from logic.pdf_exporter import xlsx_to_pdf
@@ -272,7 +272,7 @@ class TranslationCostCalculator(QMainWindow):
         self.vat_spin.setDecimals(2)
         self.vat_spin.setRange(0, 100)
         self.vat_spin.setValue(20.0)
-        self.vat_spin.valueChanged.connect(lambda _: self.update_total())
+        self.vat_spin.valueChanged.connect(self.update_total)
         p.addWidget(self.vat_spin)
         project_group.setLayout(p)
         lay.addWidget(project_group)
@@ -471,9 +471,7 @@ class TranslationCostCalculator(QMainWindow):
         self.project_setup_widget.remove_requested.connect(
             self.remove_project_setup_widget
         )
-        self.project_setup_widget.subtotal_changed.connect(
-            lambda _: self.update_total()
-        )
+        self.project_setup_widget.subtotal_changed.connect(self.update_total)
         self.pairs_layout.addWidget(self.project_setup_widget)
         self.project_setup_fee_spin.valueChanged.connect(
             self.update_project_setup_volume_from_spin
@@ -517,9 +515,7 @@ class TranslationCostCalculator(QMainWindow):
             self.currency_combo.currentText(),
             lang="ru" if self.lang_display_ru else "en",
         )
-        self.additional_services_widget.subtotal_changed.connect(
-            lambda _: self.update_total()
-        )
+        self.additional_services_widget.subtotal_changed.connect(self.update_total)
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
@@ -603,7 +599,7 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_widget = None
         self.update_total()
 
-    def update_total(self):
+    def update_total(self, *_):
         total = 0.0
         if getattr(self, "project_setup_widget", None):
             total += self.project_setup_widget.get_subtotal()
@@ -619,12 +615,12 @@ class TranslationCostCalculator(QMainWindow):
             vat_amount = total * vat_rate
             total_with_vat = total + vat_amount
             self.total_label.setText(
-                f"{tr('Итого', lang)}: {total_with_vat:.2f} {self.currency_symbol} {tr('с НДС', lang)}. "
-                f"{tr('НДС', lang)}: {vat_amount:.2f} {self.currency_symbol}"
+                f"{tr('Итого', lang)}: {format_amount(total_with_vat, lang)} {self.currency_symbol} {tr('с НДС', lang)}. "
+                f"{tr('НДС', lang)}: {format_amount(vat_amount, lang)} {self.currency_symbol}"
             )
         else:
             self.total_label.setText(
-                f"{tr('Итого', lang)}: {total:.2f} {self.currency_symbol}"
+                f"{tr('Итого', lang)}: {format_amount(total, lang)} {self.currency_symbol}"
             )
 
     def handle_add_language(self):
@@ -699,7 +695,7 @@ class TranslationCostCalculator(QMainWindow):
         widget.remove_requested.connect(
             lambda pk=pair_key: self.remove_language_pair(pk)
         )
-        widget.subtotal_changed.connect(lambda _: self.update_total())
+        widget.subtotal_changed.connect(self.update_total)
         self.language_pairs[pair_key] = widget
         if self.only_new_repeats_mode:
             widget.set_only_new_and_repeats_mode(True)

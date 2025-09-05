@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Signal
-from .utils import format_rate, _to_float
+from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
 
 
@@ -199,10 +199,12 @@ class ProjectSetupWidget(QWidget):
                     total_item.setFlags(Qt.ItemIsEnabled)
                     self.table.setItem(row, 3, total_item)
                 self.table.blockSignals(True)
-                total_item.setText(f"{total:.2f}")
+                total_item.setText(format_amount(total, self.lang))
                 self.table.blockSignals(False)
                 subtotal += total
-            self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+            self.subtotal_label.setText(
+                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+            )
             self._subtotal = subtotal
             self.subtotal_changed.emit(subtotal)
             self._fit_table_height(self.table)
@@ -235,7 +237,9 @@ class ProjectSetupWidget(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
             sep = "." if self.lang == "en" else None
             self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0), sep)))
-            total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
+            total_item = QTableWidgetItem(
+                format_amount(row_data.get('total', 0), self.lang)
+            )
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
             self._set_row_deleted(i, False)
