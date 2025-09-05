@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QMenu,
     QHBoxLayout,
+    QPushButton,
 )
 from .utils import format_rate, _to_float
 from logic.translation_config import tr
