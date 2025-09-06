@@ -61,7 +61,7 @@ class LanguagePairWidget(QWidget):
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(tr(service_name, self.lang))
         group.setCheckable(True)
-        group.setChecked(False)
+        group.setChecked(True)
 
         vbox = QVBoxLayout()
 
