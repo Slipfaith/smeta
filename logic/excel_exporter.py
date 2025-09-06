@@ -729,6 +729,7 @@ class ExcelExporter:
             out_wb.Save()
         except Exception as e:  # pragma: no cover - Windows only
             self.logger.debug("COM image restoration skipped: %s", e)
+            self._restore_images_via_openpyxl(output_path)
         finally:  # pragma: no cover - ensure COM objects are closed
             try:
                 tpl_wb.Close(False)
@@ -747,6 +748,41 @@ class ExcelExporter:
                     pass
             try:
                 excel.Quit()
+            except Exception:
+                pass
+
+    def _restore_images_via_openpyxl(self, output_path: str) -> None:
+        """Fallback image restoration using openpyxl.
+
+        Copies pictures from the template workbook to the generated file
+        when COM automation is unavailable. Images retain their original
+        anchors and sizes.
+        """
+        tpl_wb = out_wb = None
+        try:
+            tpl_wb = load_workbook(self.template_path)
+            out_wb = load_workbook(output_path)
+            tpl_ws = (
+                tpl_wb["Quotation"] if "Quotation" in tpl_wb.sheetnames else tpl_wb.active
+            )
+            out_ws = (
+                out_wb["Quotation"] if "Quotation" in out_wb.sheetnames else out_wb.active
+            )
+            out_ws._images = []
+            for img in getattr(tpl_ws, "_images", []):
+                new_img = XLImage(img._data())
+                new_img.anchor = deepcopy(getattr(img, "anchor", None))
+                out_ws.add_image(new_img)
+            out_wb.save(output_path)
+        except Exception as e:
+            self.logger.debug("openpyxl image restoration failed: %s", e)
+        finally:
+            try:
+                tpl_wb.close()
+            except Exception:
+                pass
+            try:
+                out_wb.close()
             except Exception:
                 pass
 
