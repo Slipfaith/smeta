@@ -657,11 +657,12 @@ class ExcelExporter:
             if anchor is None:
                 continue
             if isinstance(anchor, TwoCellAnchor):
-                start_row = anchor.from_.row + 1
+                from_attr = "from_" if hasattr(anchor, "from_") else "_from"
+                start_row = getattr(anchor, from_attr).row + 1
                 end_row = anchor.to.row + 1
                 if src_start <= start_row and end_row <= src_end:
                     new_anchor = deepcopy(anchor)
-                    new_anchor.from_.row += delta
+                    getattr(new_anchor, from_attr).row += delta
                     new_anchor.to.row += delta
                     new_img = Image(img._data())
                     new_img.anchor = new_anchor
@@ -704,8 +705,9 @@ class ExcelExporter:
             if anchor is None:
                 continue
             if isinstance(anchor, TwoCellAnchor):
-                if anchor.from_.row >= idx - 1:
-                    anchor.from_.row += amount
+                from_attr = "from_" if hasattr(anchor, "from_") else "_from"
+                if getattr(anchor, from_attr).row >= idx - 1:
+                    getattr(anchor, from_attr).row += amount
                     anchor.to.row += amount
             elif isinstance(anchor, OneCellAnchor):
                 if anchor._from.row >= idx - 1:

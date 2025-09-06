@@ -3,3 +3,4 @@ pycountry
 Babel
 psutil
 openpyxl
+Pillow
