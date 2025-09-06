@@ -400,7 +400,25 @@ class ExcelExporter:
         output_path: str,
         fit_to_page: bool = False,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        restore_images: bool = False,
     ) -> bool:
+        """Export project data to an Excel file.
+
+        Parameters
+        ----------
+        project_data: Dict[str, Any]
+            Исходные данные проекта.
+        output_path: str
+            Путь к итоговому файлу.
+        fit_to_page: bool, optional
+            Подгонять ли лист под страницу при печати.
+        progress_callback: Callable[[int, str], None], optional
+            Функция для обновления прогресса.
+        restore_images: bool, optional
+            Если ``True``, после сохранения файл будет повторно открыт через COM,
+            чтобы восстановить изображения, которые может потерять openpyxl.
+            По умолчанию отключено для ускорения экспорта.
+        """
         try:
             self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
@@ -408,7 +426,7 @@ class ExcelExporter:
 
             pairs_count = len(project_data.get("language_pairs", []))
             add_count = len(project_data.get("additional_services", []))
-            total_steps = 7 + pairs_count + add_count
+            total_steps = (7 if restore_images else 6) + pairs_count + add_count
             progress = 0
 
             def step(message: str = "") -> None:
@@ -494,13 +512,15 @@ class ExcelExporter:
             step("Сохранение файла")
             wb.save(output_path)
 
-            # openpyxl may drop images embedded in the template.  After saving the
-            # workbook we re-open it via the COM Excel API and copy pictures from
-            # the original template so that logos are preserved.  Показываем
-            # отдельный шаг до запуска длительной операции, чтобы интерфейс сразу
-            # уведомил пользователя, что сохранение завершено.
-            step("Восстановление изображений")
-            self._restore_images_via_com(output_path)
+            if restore_images:
+                # openpyxl may drop images embedded in the template.  After saving
+                # the workbook we re-open it via the COM Excel API and copy
+                # pictures from the original template so that logos are preserved.
+                # Показываем отдельный шаг до запуска длительной операции, чтобы
+                # интерфейс сразу уведомил пользователя, что сохранение
+                # завершено.
+                step("Восстановление изображений")
+                self._restore_images_via_com(output_path)
 
             if progress_callback:
                 progress_callback(100, "Готово")
