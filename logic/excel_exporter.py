@@ -400,7 +400,7 @@ class ExcelExporter:
         output_path: str,
         fit_to_page: bool = False,
         progress_callback: Optional[Callable[[int, str], None]] = None,
-        restore_images: bool = False,
+        restore_images: bool = True,
     ) -> bool:
         """Export project data to an Excel file.
 
@@ -417,7 +417,8 @@ class ExcelExporter:
         restore_images: bool, optional
             Если ``True``, после сохранения файл будет повторно открыт через COM,
             чтобы восстановить изображения, которые может потерять openpyxl.
-            По умолчанию отключено для ускорения экспорта.
+            По умолчанию включено, поскольку логотипы и другие картинки
+            должны сохраняться в итоговом файле.
         """
         try:
             self.logger.info("Starting export to %s", output_path)
