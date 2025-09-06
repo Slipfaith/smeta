@@ -883,6 +883,7 @@ class TranslationCostCalculator(QMainWindow):
                     widget.remove_requested.connect(
                         lambda pk=pair_key: self.remove_language_pair(pk)
                     )
+                    widget.subtotal_changed.connect(self.update_total)
                     self.language_pairs[pair_key] = widget
                     self.pairs_layout.insertWidget(
                         self.pairs_layout.count() - 1, widget
@@ -969,6 +970,7 @@ class TranslationCostCalculator(QMainWindow):
             self.language_pairs = dict(sorted_items)
 
             self.update_pairs_list()
+            self.update_total()
 
             result_msg = f"Обработка завершена!\n\n"
             if added_pairs > 0:
@@ -1172,6 +1174,7 @@ class TranslationCostCalculator(QMainWindow):
             widget.remove_requested.connect(
                 lambda pk=pair_key: self.remove_language_pair(pk)
             )
+            widget.subtotal_changed.connect(self.update_total)
             self.language_pairs[pair_key] = widget
             self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
             self.pair_headers[pair_key] = header_title
@@ -1215,3 +1218,5 @@ class TranslationCostCalculator(QMainWindow):
         additional = project_data.get("additional_services")
         if additional is not None:
             self.additional_services_widget.load_data(additional)
+
+        self.update_total()
