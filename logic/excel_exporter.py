@@ -11,7 +11,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
 from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
-from openpyxl.drawing.image import Image as XLImage
+from openpyxl.drawing.image import Image
 
 from .service_config import ServiceConfig
 from .translation_config import tr
@@ -400,7 +400,6 @@ class ExcelExporter:
         output_path: str,
         fit_to_page: bool = False,
         progress_callback: Optional[Callable[[int, str], None]] = None,
-        restore_images: bool = True,
     ) -> bool:
         """Export project data to an Excel file.
 
@@ -414,11 +413,6 @@ class ExcelExporter:
             Подгонять ли лист под страницу при печати.
         progress_callback: Callable[[int, str], None], optional
             Функция для обновления прогресса.
-        restore_images: bool, optional
-            Если ``True``, после сохранения файл будет повторно открыт через COM,
-            чтобы восстановить изображения, которые может потерять openpyxl.
-            По умолчанию включено, поскольку логотипы и другие картинки
-            должны сохраняться в итоговом файле.
         """
         try:
             self.logger.info("Starting export to %s", output_path)
@@ -427,7 +421,7 @@ class ExcelExporter:
 
             pairs_count = len(project_data.get("language_pairs", []))
             add_count = len(project_data.get("additional_services", []))
-            total_steps = (7 if restore_images else 6) + pairs_count + add_count
+            total_steps = 7 + pairs_count + add_count
             progress = 0
 
             def step(message: str = "") -> None:
@@ -506,22 +500,14 @@ class ExcelExporter:
 
             self._fix_trailing_zeroes(wb)
 
+            step("Добавление логотипа")
+            template = project_data.get("legal_entity")
+            if template:
+                self._insert_logo(quotation_ws, template)
+
             self.logger.info("Saving workbook to %s", output_path)
-            # Обновляем прогресс до вызова save(), иначе во время долгого
-            # восстановления изображений пользователю кажется, что файл всё ещё
-            # сохраняется.
             step("Сохранение файла")
             wb.save(output_path)
-
-            if restore_images:
-                # openpyxl may drop images embedded in the template.  After saving
-                # the workbook we re-open it via the COM Excel API and copy
-                # pictures from the original template so that logos are preserved.
-                # Показываем отдельный шаг до запуска длительной операции, чтобы
-                # интерфейс сразу уведомил пользователя, что сохранение
-                # завершено.
-                step("Восстановление изображений")
-                self._restore_images_via_com(output_path)
 
             if progress_callback:
                 progress_callback(100, "Готово")
@@ -677,7 +663,7 @@ class ExcelExporter:
                     new_anchor = deepcopy(anchor)
                     new_anchor.from_.row += delta
                     new_anchor.to.row += delta
-                    new_img = XLImage(img._data())
+                    new_img = Image(img._data())
                     new_img.anchor = new_anchor
                     dst_ws.add_image(new_img)
             elif isinstance(anchor, OneCellAnchor):
@@ -685,127 +671,31 @@ class ExcelExporter:
                 if src_start <= row <= src_end:
                     new_anchor = deepcopy(anchor)
                     new_anchor._from.row += delta
-                    new_img = XLImage(img._data())
+                    new_img = Image(img._data())
                     new_img.anchor = new_anchor
                     dst_ws.add_image(new_img)
 
-    def _restore_images_via_com(self, output_path: str) -> None:
-        """Re-open the saved workbook and copy images from the template via COM.
+    def _insert_logo(self, ws: Worksheet, template: str) -> None:
+        """Insert company logo for the specified template into the worksheet.
 
-        This step is required on Windows because openpyxl does not preserve
-        embedded pictures (such as company logos) when saving the workbook.  The
-        method uses ``win32com.client`` to copy every picture from the template's
-        ``Quotation`` sheet to the corresponding sheet in the generated file,
-        keeping their positions and sizes intact.
+        Parameters
+        ----------
+        ws: Worksheet
+            Лист Excel, на который вставляется логотип.
+        template: str
+            Код шаблона, соответствующий имени файла логотипа.
         """
-        excel = tpl_wb = out_wb = None
-        orig_decimal = orig_thousands = orig_use_sys = None
-        custom_sep = None
+        logo_path = os.path.join(
+            os.path.dirname(__file__), "..", "templates", "logos", f"{template}.png"
+        )
+        if not os.path.exists(logo_path):
+            self.logger.debug("Logo not found for template %s: %s", template, logo_path)
+            return
         try:
-            import win32com.client  # type: ignore
-
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-
-            lang_lc = self.lang.lower()
-            if lang_lc.startswith("en"):
-                custom_sep = (".", ",")
-            elif lang_lc.startswith("ru"):
-                custom_sep = (",", " ")
-
-            if custom_sep is not None:
-                try:
-                    orig_decimal = excel.DecimalSeparator
-                    orig_thousands = excel.ThousandsSeparator
-                    orig_use_sys = excel.UseSystemSeparators
-                    excel.DecimalSeparator, excel.ThousandsSeparator = custom_sep
-                    excel.UseSystemSeparators = False
-                except Exception:
-                    pass
-
-            tpl_path = os.path.abspath(self.template_path)
-            out_path = os.path.abspath(output_path)
-
-            tpl_wb = excel.Workbooks.Open(tpl_path)
-            out_wb = excel.Workbooks.Open(out_path)
-            tpl_ws = tpl_wb.Worksheets("Quotation")
-            out_ws = out_wb.Worksheets("Quotation")
-
-            # remove any existing shapes to avoid duplicates
-            while out_ws.Shapes.Count > 0:
-                out_ws.Shapes(1).Delete()
-
-            for shape in tpl_ws.Shapes:
-                # 13 corresponds to msoPicture
-                if int(getattr(shape, "Type", 0)) == 13:
-                    shape.Copy()
-                    out_ws.Paste()
-                    pasted = out_ws.Shapes(out_ws.Shapes.Count)
-                    pasted.Left = shape.Left
-                    pasted.Top = shape.Top
-                    pasted.Width = shape.Width
-                    pasted.Height = shape.Height
-
-            out_wb.Save()
-        except Exception as e:  # pragma: no cover - Windows only
-            self.logger.debug("COM image restoration skipped: %s", e)
-            self._restore_images_via_openpyxl(output_path)
-        finally:  # pragma: no cover - ensure COM objects are closed
-            try:
-                tpl_wb.Close(False)
-            except Exception:
-                pass
-            try:
-                out_wb.Close(True)
-            except Exception:
-                pass
-            if excel is not None and custom_sep is not None and orig_use_sys is not None:
-                try:
-                    excel.DecimalSeparator = orig_decimal
-                    excel.ThousandsSeparator = orig_thousands
-                    excel.UseSystemSeparators = orig_use_sys
-                except Exception:
-                    pass
-            try:
-                excel.Quit()
-            except Exception:
-                pass
-
-    def _restore_images_via_openpyxl(self, output_path: str) -> None:
-        """Fallback image restoration using openpyxl.
-
-        Copies pictures from the template workbook to the generated file
-        when COM automation is unavailable. Images retain their original
-        anchors and sizes.
-        """
-        tpl_wb = out_wb = None
-        try:
-            tpl_wb = load_workbook(self.template_path)
-            out_wb = load_workbook(output_path)
-            tpl_ws = (
-                tpl_wb["Quotation"] if "Quotation" in tpl_wb.sheetnames else tpl_wb.active
-            )
-            out_ws = (
-                out_wb["Quotation"] if "Quotation" in out_wb.sheetnames else out_wb.active
-            )
-            out_ws._images = []
-            for img in getattr(tpl_ws, "_images", []):
-                new_img = XLImage(img._data())
-                new_img.anchor = deepcopy(getattr(img, "anchor", None))
-                out_ws.add_image(new_img)
-            out_wb.save(output_path)
+            img = Image(logo_path)
+            ws.add_image(img, "A1")
         except Exception as e:
-            self.logger.debug("openpyxl image restoration failed: %s", e)
-        finally:
-            try:
-                tpl_wb.close()
-            except Exception:
-                pass
-            try:
-                out_wb.close()
-            except Exception:
-                pass
+            self.logger.debug("Failed to insert logo %s: %s", logo_path, e)
 
     def _shift_images(self, ws: Worksheet, idx: int, amount: int) -> None:
         """Сдвигает изображения, расположенные на листе, если были вставлены строки."""
