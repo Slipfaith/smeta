@@ -40,6 +40,10 @@ TRANSLATIONS = {
         "ru": "Перевод, повторы и 100% совпадения (30%)",
         "en": "Translation, repetitions and 100% matches (30%)"
     },
+    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения": {
+        "ru": "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+        "en": "Drag and drop Trados XML report files here for automatic filling",
+    },
     "НДС": {"ru": "НДС", "en": "VAT"},
     "с НДС": {"ru": "с НДС", "en": "incl. VAT"},
 }
