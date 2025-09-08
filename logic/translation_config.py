@@ -39,7 +39,9 @@ TRANSLATIONS = {
     "Перевод, повторы и 100% совпадения (30%)": {
         "ru": "Перевод, повторы и 100% совпадения (30%)",
         "en": "Translation, repetitions and 100% matches (30%)"
-    }
+    },
+    "НДС": {"ru": "НДС", "en": "VAT"},
+    "с НДС": {"ru": "с НДС", "en": "incl. VAT"},
 }
 
 def tr(text: str, lang: str) -> str:

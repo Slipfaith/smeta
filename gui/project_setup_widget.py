@@ -2,10 +2,10 @@ from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout, QPushButton, QStyle
+    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Signal
-from .utils import format_rate, _to_float
+from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
 
 
@@ -13,12 +13,14 @@ class ProjectSetupWidget(QWidget):
     """Table for project setup and management costs."""
 
     remove_requested = Signal()
+    subtotal_changed = Signal(float)
 
     def __init__(self, initial_volume: float = 0.0, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
         self.currency_symbol = currency_symbol
         self.currency_code = currency_code
         self.lang = lang
+        self._subtotal = 0.0
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
@@ -28,15 +30,6 @@ class ProjectSetupWidget(QWidget):
         self.title_label = QLabel()
         header.addWidget(self.title_label)
         header.addStretch()
-        remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        remove_btn.setFlat(True)
-        remove_btn.setMaximumWidth(24)
-        remove_btn.setToolTip("Удалить")
-        remove_btn.setStyleSheet("background-color: transparent; border: none;")
-        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-        header.addWidget(remove_btn)
         layout.addLayout(header)
 
         group = QGroupBox()
@@ -46,7 +39,7 @@ class ProjectSetupWidget(QWidget):
         self.table = QTableWidget(1, 4)
         self.table.setHorizontalHeaderLabels([
             tr("Названия работ", self.lang),
-            tr("Час", self.lang),
+            tr("Объем", self.lang),
             f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
             f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
@@ -206,15 +199,22 @@ class ProjectSetupWidget(QWidget):
                     total_item.setFlags(Qt.ItemIsEnabled)
                     self.table.setItem(row, 3, total_item)
                 self.table.blockSignals(True)
-                total_item.setText(f"{total:.2f}")
+                total_item.setText(format_amount(total, self.lang))
                 self.table.blockSignals(False)
                 subtotal += total
-            self.subtotal_label.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+            self.subtotal_label.setText(
+                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+            )
+            self._subtotal = subtotal
+            self.subtotal_changed.emit(subtotal)
             self._fit_table_height(self.table)
         except Exception:
             pass
 
     # ---------- accessors ----------
+    def get_subtotal(self) -> float:
+        return self._subtotal
+
     def get_data(self) -> List[Dict[str, Any]]:
         data: List[Dict[str, Any]] = []
         for row in range(self.table.rowCount()):
@@ -237,7 +237,9 @@ class ProjectSetupWidget(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get("volume", 0))))
             sep = "." if self.lang == "en" else None
             self.table.setItem(i, 2, QTableWidgetItem(format_rate(row_data.get('rate', 0), sep)))
-            total_item = QTableWidgetItem(f"{row_data.get('total', 0):.2f}")
+            total_item = QTableWidgetItem(
+                format_amount(row_data.get('total', 0), self.lang)
+            )
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(i, 3, total_item)
             self._set_row_deleted(i, False)
@@ -250,7 +252,7 @@ class ProjectSetupWidget(QWidget):
         self.currency_code = code
         self.table.setHorizontalHeaderLabels([
             tr("Названия работ", self.lang),
-            tr("Ед-ца", self.lang),
+            tr("Объем", self.lang),
             f"{tr('Ставка', self.lang)} ({symbol})",
             f"{tr('Сумма', self.lang)} ({symbol})",
         ])

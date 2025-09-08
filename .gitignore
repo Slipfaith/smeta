@@ -38,6 +38,7 @@ settings.json
 *.xlsx
 *.md
 *.json
+*.png
 
 # System
 .DS_Store

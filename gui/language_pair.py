@@ -2,7 +2,7 @@ from typing import Dict, List, Any, Union
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy, QHBoxLayout, QPushButton, QMenu, QStyle
+    QHeaderView, QSizePolicy, QHBoxLayout, QMenu
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -11,13 +11,14 @@ import copy
 
 from logic.service_config import ServiceConfig
 from logic.translation_config import tr
-from .utils import format_rate, _to_float
+from .utils import format_rate, _to_float, format_amount
 
 
 class LanguagePairWidget(QWidget):
     """Виджет для одной языковой пары (только Перевод)"""
 
     remove_requested = Signal()
+    subtotal_changed = Signal(float)
 
     def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
@@ -29,6 +30,7 @@ class LanguagePairWidget(QWidget):
         # резерв для восстановления исходных значений объёмов/ставок
         self._backup_volumes = []
         self._backup_rates = []
+        self._subtotal = 0.0
         self.setup_ui()
 
     # ---------------- UI ----------------
@@ -40,21 +42,13 @@ class LanguagePairWidget(QWidget):
         self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
         header.addWidget(self.title_label)
         header.addStretch()
-        remove_btn = QPushButton()
-        remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        remove_btn.setFlat(True)
-        remove_btn.setMaximumWidth(24)
-        remove_btn.setToolTip("Удалить")
-        remove_btn.setStyleSheet("background-color: transparent; border: none;")
-        remove_btn.setContextMenuPolicy(Qt.NoContextMenu)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-        header.addWidget(remove_btn)
         layout.addLayout(header)
 
         self.services_layout = QVBoxLayout()
 
         # Только Перевод
         self.translation_group = self.create_service_group("Перевод", ServiceConfig.TRANSLATION_ROWS)
+        self.translation_group.toggled.connect(lambda _: self.subtotal_changed.emit(self.get_subtotal()))
         self.services_layout.addWidget(self.translation_group)
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
@@ -67,7 +61,7 @@ class LanguagePairWidget(QWidget):
     def create_service_group(self, service_name: str, rows: List[Dict]) -> QGroupBox:
         group = QGroupBox(tr(service_name, self.lang))
         group.setCheckable(True)
-        group.setChecked(False)
+        group.setChecked(True)
 
         vbox = QVBoxLayout()
 
@@ -363,7 +357,7 @@ class LanguagePairWidget(QWidget):
                 total = volume * rate
                 if table.item(row, 3):
                     table.blockSignals(True)
-                    table.item(row, 3).setText(f"{total:.2f}")
+                    table.item(row, 3).setText(format_amount(total, self.lang))
                     table.blockSignals(False)
                 subtotal += total
 
@@ -371,7 +365,11 @@ class LanguagePairWidget(QWidget):
             parent_group: QGroupBox = self.translation_group
             lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
             if lbl:
-                lbl.setText(f"{tr('Промежуточная сумма', self.lang)}: {subtotal:.2f} {self.currency_symbol}")
+                lbl.setText(
+                    f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+                )
+            self._subtotal = subtotal
+            self.subtotal_changed.emit(self.get_subtotal())
 
             # после любых изменений гарантируем отсутствие локального скролла
             self._fit_table_height(table)
@@ -383,6 +381,9 @@ class LanguagePairWidget(QWidget):
         """Публичный хук для внешнего кода: раскрыть таблицы по высоте ещё раз."""
         if hasattr(self.translation_group, "table"):
             self._fit_table_height(self.translation_group.table)
+
+    def get_subtotal(self) -> float:
+        return self._subtotal if self.translation_group.isChecked() else 0.0
 
     # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
@@ -438,7 +439,7 @@ class LanguagePairWidget(QWidget):
                 table.item(row, 1).setText(str(row_data.get("volume", 0)))
                 sep = "." if self.lang == "en" else None
                 table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
-                table.item(row, 3).setText(f"{row_data.get('total', 0):.2f}")
+                table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
             rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
             if rows[row].get("is_base"):

@@ -39,6 +39,14 @@ def format_rate(value: Union[int, float, str], sep: str | None = None) -> str:
     return text
 
 
+def format_amount(value: float, lang: str) -> str:
+    """Format monetary values with locale-aware separators."""
+    if lang == "en":
+        return f"{value:,.2f}"
+    # Russian: space for thousands and comma for decimals
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
 def _to_float(value: str) -> float:
     """Safely convert string to float."""
     try:
