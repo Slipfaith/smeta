@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 
 from logic.progress import Progress
 
@@ -195,30 +195,48 @@ class TranslationCostCalculator(QMainWindow):
         self.resize(1000, 650)
         self.update_title()
 
-        project_menu = self.menuBar().addMenu("Проект")
-        save_action = QAction("Сохранить проект", self)
-        save_action.triggered.connect(self.save_project)
-        project_menu.addAction(save_action)
-        load_action = QAction("Загрузить проект", self)
-        load_action.triggered.connect(self.load_project)
-        project_menu.addAction(load_action)
+        lang = "ru" if self.lang_display_ru else "en"
 
-        export_menu = self.menuBar().addMenu("Экспорт")
-        save_excel_action = QAction("Сохранить Excel", self)
-        save_excel_action.triggered.connect(self.save_excel)
-        export_menu.addAction(save_excel_action)
-        save_pdf_action = QAction("Сохранить PDF", self)
-        save_pdf_action.triggered.connect(self.save_pdf)
-        export_menu.addAction(save_pdf_action)
+        self.project_menu = self.menuBar().addMenu(tr("Проект", lang))
+        self.save_action = QAction(tr("Сохранить проект", lang), self)
+        self.save_action.triggered.connect(self.save_project)
+        self.project_menu.addAction(self.save_action)
+        self.load_action = QAction(tr("Загрузить проект", lang), self)
+        self.load_action.triggered.connect(self.load_project)
+        self.project_menu.addAction(self.load_action)
 
-        rates_menu = self.menuBar().addMenu("Импорт ставок")
-        import_rates_action = QAction("Импортировать из Excel", self)
-        import_rates_action.triggered.connect(self.import_rates_from_excel)
-        rates_menu.addAction(import_rates_action)
+        self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
+        self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
+        self.save_excel_action.triggered.connect(self.save_excel)
+        self.export_menu.addAction(self.save_excel_action)
+        self.save_pdf_action = QAction(tr("Сохранить PDF", lang), self)
+        self.save_pdf_action.triggered.connect(self.save_pdf)
+        self.export_menu.addAction(self.save_pdf_action)
 
-        pm_action = QAction("Проджект менеджер", self)
-        pm_action.triggered.connect(self.show_pm_dialog)
-        self.menuBar().addAction(pm_action)
+        self.rates_menu = self.menuBar().addMenu(tr("Импорт ставок", lang))
+        self.import_rates_action = QAction(tr("Импортировать из Excel", lang), self)
+        self.import_rates_action.triggered.connect(self.import_rates_from_excel)
+        self.rates_menu.addAction(self.import_rates_action)
+
+        self.pm_action = QAction(tr("Проджект менеджер", lang), self)
+        self.pm_action.triggered.connect(self.show_pm_dialog)
+        self.menuBar().addAction(self.pm_action)
+
+        self.language_menu = self.menuBar().addMenu(tr("Язык", lang))
+        self.lang_action_group = QActionGroup(self)
+        self.lang_ru_action = QAction(tr("Русский", lang), self)
+        self.lang_en_action = QAction(tr("Английский", lang), self)
+        self.lang_ru_action.setCheckable(True)
+        self.lang_en_action.setCheckable(True)
+        self.lang_action_group.addAction(self.lang_ru_action)
+        self.lang_action_group.addAction(self.lang_en_action)
+        self.language_menu.addAction(self.lang_ru_action)
+        self.language_menu.addAction(self.lang_en_action)
+        self.lang_ru_action.setChecked(self.lang_display_ru)
+        self.lang_en_action.setChecked(not self.lang_display_ru)
+        self.lang_ru_action.triggered.connect(lambda: self.set_app_language("ru"))
+        self.lang_en_action.triggered.connect(lambda: self.set_app_language("en"))
+        self.update_menu_texts()
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -405,6 +423,9 @@ class TranslationCostCalculator(QMainWindow):
             combo.setCurrentIndex(-1)
             combo.setEditText(prev_text)
 
+    def set_app_language(self, lang: str):
+        self.lang_mode_slider.setValue(1 if lang == "ru" else 0)
+
     def on_lang_mode_changed(self, value: int):
         self.lang_display_ru = value == 1
         self.populate_lang_combo(self.source_lang_combo)
@@ -426,6 +447,24 @@ class TranslationCostCalculator(QMainWindow):
         self.update_pairs_list()
         self.tabs.setTabText(0, tr("Языковые пары", lang))
         self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
+        self.lang_ru_action.setChecked(self.lang_display_ru)
+        self.lang_en_action.setChecked(not self.lang_display_ru)
+        self.update_menu_texts()
+
+    def update_menu_texts(self):
+        lang = "ru" if self.lang_display_ru else "en"
+        self.project_menu.setTitle(tr("Проект", lang))
+        self.save_action.setText(tr("Сохранить проект", lang))
+        self.load_action.setText(tr("Загрузить проект", lang))
+        self.export_menu.setTitle(tr("Экспорт", lang))
+        self.save_excel_action.setText(tr("Сохранить Excel", lang))
+        self.save_pdf_action.setText(tr("Сохранить PDF", lang))
+        self.rates_menu.setTitle(tr("Импорт ставок", lang))
+        self.import_rates_action.setText(tr("Импортировать из Excel", lang))
+        self.pm_action.setText(tr("Проджект менеджер", lang))
+        self.language_menu.setTitle(tr("Язык", lang))
+        self.lang_ru_action.setText(tr("Русский", lang))
+        self.lang_en_action.setText(tr("Английский", lang))
 
     def on_currency_changed(self, code: str):
         self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
