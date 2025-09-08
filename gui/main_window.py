@@ -414,8 +414,13 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_widget.set_language(lang)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_language(lang)
-        self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
-        self.pairs_group.setTitle(tr("Языковые пары", lang))
+        if getattr(self, "drop_hint_label", None):
+            self.drop_hint_label.setText(
+                tr(
+                    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                    lang,
+                )
+            )
         for pair_key, widget in self.language_pairs.items():
             widget.set_language(lang)
             display_name = self._display_pair_name(pair_key)
@@ -481,7 +486,10 @@ class TranslationCostCalculator(QMainWindow):
         )
 
         self.drop_hint_label = QLabel(
-            "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения"
+            tr(
+                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                "ru" if self.lang_display_ru else "en",
+            )
         )
         self.drop_hint_label.setStyleSheet(
             """
