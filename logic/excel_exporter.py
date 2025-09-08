@@ -1032,6 +1032,7 @@ class ExcelExporter:
             "{{project_name}}": project_data.get("project_name", ""),
             "{{client}}": project_data.get("client_name", ""),
             "{{client_name}}": project_data.get("contact_person", ""),
+            "{{client_email}}": project_data.get("email", ""),
             "{{PM_name}}": project_data.get("pm_name", ""),
             "{{PM_email}}": project_data.get("pm_email", ""),
             "{{Entity}}": project_data.get(

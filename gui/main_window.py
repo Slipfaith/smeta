@@ -254,7 +254,7 @@ class TranslationCostCalculator(QMainWindow):
         p.addWidget(QLabel("Контактное лицо:"))
         self.contact_person_edit = QLineEdit()
         p.addWidget(self.contact_person_edit)
-        p.addWidget(QLabel("E-mail:"))
+        p.addWidget(QLabel("Email:"))
         self.email_edit = QLineEdit()
         p.addWidget(self.email_edit)
         p.addWidget(QLabel("Юрлицо:"))
