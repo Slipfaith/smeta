@@ -91,6 +91,10 @@ TRANSLATIONS = {
     "Не удалось сохранить язык в конфиг.": {"ru": "Не удалось сохранить язык в конфиг.", "en": "Failed to save language to config."},
     "Выберите/введите оба языка": {"ru": "Выберите/введите оба языка", "en": "Select/enter both languages"},
     "Такая языковая пара уже существует": {"ru": "Такая языковая пара уже существует", "en": "This language pair already exists"},
+    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения": {
+        "ru": "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+        "en": "Drag Trados XML report files here for automatic filling",
+    },
 }
 
 def tr(text: str, lang: str) -> str:

@@ -449,16 +449,6 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_language(lang)
 
-        # left panel translations
-        self.project_group.setTitle(tr("Информация о проекте", lang))
-        self.project_name_label.setText(tr("Название проекта", lang) + ":")
-        self.client_name_label.setText(tr("Название клиента", lang) + ":")
-        self.contact_person_label.setText(tr("Контактное лицо", lang) + ":")
-        self.email_label.setText(tr("Email", lang) + ":")
-        self.legal_entity_label.setText(tr("Юрлицо", lang) + ":")
-        self.currency_label.setText(tr("Валюта", lang) + ":")
-        self.vat_label.setText(tr("НДС, %", lang) + ":")
-
         self.language_names_label.setText(tr("Названия языков", lang) + ":")
         self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
         self.current_pairs_label.setText(tr("Текущие пары", lang) + ":")
@@ -472,13 +462,14 @@ class TranslationCostCalculator(QMainWindow):
         self.new_lang_en.setPlaceholderText(tr("Lithuanian", "en"))
 
         self.pairs_group.setTitle(tr("Языковые пары", lang))
-        self.only_new_repeats_btn.setText(
-            tr("Показать 4 строки", lang)
-            if self.only_new_repeats_mode
-            else tr("Только новые слова и повторы", lang)
-        )
         self.tabs.setTabText(0, tr("Языковые пары", lang))
         self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
+        self.drop_hint_label.setText(
+            tr(
+                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                lang,
+            )
+        )
         for pair_key, widget in self.language_pairs.items():
             widget.set_language(lang)
             display_name = self._display_pair_name(pair_key)
@@ -487,9 +478,6 @@ class TranslationCostCalculator(QMainWindow):
             lang_info = self._find_language_by_key(right_key)
             self.pair_headers[pair_key] = lang_info[lang]
         self.update_pairs_list()
-        self.lang_ru_action.setChecked(self.lang_display_ru)
-        self.lang_en_action.setChecked(not self.lang_display_ru)
-        self.update_menu_texts()
 
     def update_menu_texts(self):
         lang = "ru" if self.lang_display_ru else "en"
@@ -527,6 +515,7 @@ class TranslationCostCalculator(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout()
         self.tabs = QTabWidget()
+        lang = "ru" if self.lang_display_ru else "en"
 
         self.pairs_scroll = QScrollArea()
         self.pairs_scroll.setWidgetResizable(True)
@@ -538,7 +527,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout.setSpacing(12)
 
         self.only_new_repeats_btn = QPushButton(
-            tr("Только новые слова и повторы", "ru" if self.lang_display_ru else "en")
+            tr("Только новые слова и повторы", "ru")
         )
         self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
@@ -547,7 +536,7 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_fee_spin.value(),
             self.currency_symbol,
             self.currency_combo.currentText(),
-            lang="ru" if self.lang_display_ru else "en",
+            lang=lang,
         )
         self.project_setup_widget.remove_requested.connect(
             self.remove_project_setup_widget
@@ -562,7 +551,10 @@ class TranslationCostCalculator(QMainWindow):
         )
 
         self.drop_hint_label = QLabel(
-            "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения"
+            tr(
+                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                lang,
+            )
         )
         self.drop_hint_label.setStyleSheet(
             """
@@ -634,11 +626,12 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = not self.only_new_repeats_mode
         for w in self.language_pairs.values():
             w.set_only_new_and_repeats_mode(self.only_new_repeats_mode)
-        lang = "ru" if self.lang_display_ru else "en"
         if self.only_new_repeats_mode:
-            self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
+            self.only_new_repeats_btn.setText(tr("Показать 4 строки", "ru"))
         else:
-            self.only_new_repeats_btn.setText(tr("Только новые слова и повторы", lang))
+            self.only_new_repeats_btn.setText(
+                tr("Только новые слова и повторы", "ru")
+            )
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
