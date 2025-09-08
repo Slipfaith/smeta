@@ -42,6 +42,21 @@ TRANSLATIONS = {
     },
     "НДС": {"ru": "НДС", "en": "VAT"},
     "с НДС": {"ru": "с НДС", "en": "incl. VAT"},
+    "Проект": {"ru": "Проект", "en": "Project"},
+    "Сохранить проект": {"ru": "Сохранить проект", "en": "Save project"},
+    "Загрузить проект": {"ru": "Загрузить проект", "en": "Load project"},
+    "Экспорт": {"ru": "Экспорт", "en": "Export"},
+    "Сохранить Excel": {"ru": "Сохранить Excel", "en": "Save Excel"},
+    "Сохранить PDF": {"ru": "Сохранить PDF", "en": "Save PDF"},
+    "Импорт ставок": {"ru": "Импорт ставок", "en": "Import rates"},
+    "Импортировать из Excel": {
+        "ru": "Импортировать из Excel",
+        "en": "Import from Excel",
+    },
+    "Проджект менеджер": {"ru": "Проджект менеджер", "en": "Project manager"},
+    "Язык": {"ru": "Язык", "en": "Language"},
+    "Русский": {"ru": "Русский", "en": "Russian"},
+    "Английский": {"ru": "Английский", "en": "English"},
 }
 
 def tr(text: str, lang: str) -> str:
