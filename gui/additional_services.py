@@ -195,6 +195,17 @@ class AdditionalServiceTable(QWidget):
         ])
         self.update_sums()
 
+    def convert_rates(self, multiplier: float) -> None:
+        """Multiply all rate values by *multiplier* and update totals."""
+        for r in range(self.table.rowCount()):
+            item = self.table.item(r, 3)
+            if item is None:
+                continue
+            rate = _to_float(item.text())
+            sep = '.' if self.lang == 'en' else ','
+            item.setText(format_rate(rate * multiplier, sep))
+        self.update_sums()
+
     def set_language(self, lang: str) -> None:
         self.lang = lang
         self.header_edit.setText(tr("Дополнительные услуги", lang))
@@ -268,6 +279,12 @@ class AdditionalServicesWidget(QWidget):
         self.currency_code = code
         for tbl in self.tables:
             tbl.set_currency(symbol, code)
+        self._emit_subtotal()
+
+    def convert_rates(self, multiplier: float) -> None:
+        """Multiply all rate values by *multiplier* across all tables."""
+        for tbl in self.tables:
+            tbl.convert_rates(multiplier)
         self._emit_subtotal()
 
     def set_language(self, lang: str) -> None:

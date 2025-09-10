@@ -147,20 +147,28 @@ class TranslationBlockRenderer(BlockRenderer):
     def prepare_items(self, pair: Dict[str, Any]) -> List[Dict[str, Any]]:
         translation_rows = (pair.get("services") or {}).get("translation", [])
         data_map: Dict[str, Dict[str, Any]] = {}
+        extras: List[Dict[str, Any]] = []
+        default_keys = {cfg.get("key") for cfg in ServiceConfig.TRANSLATION_ROWS}
         for row in translation_rows:
             key = row.get("key") or row.get("name")
-            if not key:
-                continue
-            data_map[key] = row
-            lname = str(key).lower()
+            lname = str(key).lower() if key else ""
             if "new" in lname or "нов" in lname:
-                data_map.setdefault("new", row)
+                std_key = "new"
             elif "95" in lname:
-                data_map.setdefault("fuzzy_95_99", row)
+                std_key = "fuzzy_95_99"
             elif "75" in lname:
-                data_map.setdefault("fuzzy_75_94", row)
+                std_key = "fuzzy_75_94"
             elif "100" in lname:
-                data_map.setdefault("reps_100_30", row)
+                std_key = "reps_100_30"
+            else:
+                std_key = key
+            if std_key in default_keys:
+                if std_key in data_map:
+                    extras.append(row)
+                else:
+                    data_map[std_key] = row
+            else:
+                extras.append(row)
 
         items: List[Dict[str, Any]] = []
         for cfg in ServiceConfig.TRANSLATION_ROWS:
@@ -168,14 +176,29 @@ class TranslationBlockRenderer(BlockRenderer):
             src = data_map.get(key, {})
             items.append(
                 {
-                    "parameter": tr(cfg.get("name"), self.exporter.lang),
+                    "parameter": src.get("parameter")
+                    or tr(cfg.get("name"), self.exporter.lang),
                     "unit": tr("Слово", self.exporter.lang),
                     "volume": self.exporter._to_number(src.get("volume") or 0),
                     "rate": self.exporter._to_number(src.get("rate") or 0),
-                    "multiplier": cfg.get("multiplier"),
-                    "is_base": bool(cfg.get("is_base")),
+                    "multiplier": src.get("multiplier", cfg.get("multiplier")),
+                    "is_base": bool(src.get("is_base", cfg.get("is_base"))),
                 }
             )
+
+        for row in extras:
+            items.append(
+                {
+                    "parameter": row.get("parameter")
+                    or tr(row.get("name"), self.exporter.lang),
+                    "unit": tr("Слово", self.exporter.lang),
+                    "volume": self.exporter._to_number(row.get("volume") or 0),
+                    "rate": self.exporter._to_number(row.get("rate") or 0),
+                    "multiplier": row.get("multiplier"),
+                    "is_base": bool(row.get("is_base")),
+                }
+            )
+
         return items
 
 
@@ -275,6 +298,31 @@ class ExcelExporter:
         if self.currency == "USD":
             return f'"{sym}"#,##0.{"0"*decimals}'
         return f'#,##0.{"0"*decimals} "{sym}"'
+
+    def _replace_currency_formats(self, wb: Workbook) -> None:
+        """Replace dollar signs in cell number formats with the current symbol.
+
+        Excel stores some currency formats using the ``[$...-...]`` syntax. A
+        naive string replacement could break such patterns and lead to a broken
+        workbook that Excel tries to recover.  Here we first substitute the
+        whole bracketed expression with the current currency symbol wrapped in
+        quotes and only then replace any remaining ``$`` characters.
+        """
+        if self.currency == "USD":
+            return
+
+        bracket_re = re.compile(r"\[\$[^-]*-[^\]]*\]")
+
+        for ws in wb.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    fmt = cell.number_format
+                    if not isinstance(fmt, str) or "$" not in fmt:
+                        continue
+                    fmt = bracket_re.sub(f'"{self.currency_symbol}"', fmt)
+                    if "$" in fmt:
+                        fmt = fmt.replace("$", self.currency_symbol)
+                    cell.number_format = fmt
 
     def _to_number(self, value: Any) -> Any:
         if isinstance(value, str):
@@ -435,6 +483,7 @@ class ExcelExporter:
                 progress_callback(0, "Загрузка шаблона")
 
             wb = load_workbook(self.template_path)
+            self._replace_currency_formats(wb)
             step("Шаблон загружен")
 
             quotation_ws = (
