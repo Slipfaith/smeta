@@ -1,8 +1,17 @@
 from typing import Dict, List, Any, Union
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem, QLabel,
-    QHeaderView, QSizePolicy, QHBoxLayout, QMenu
+    QWidget,
+    QVBoxLayout,
+    QGroupBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QLabel,
+    QLineEdit,
+    QHeaderView,
+    QSizePolicy,
+    QHBoxLayout,
+    QMenu,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -19,6 +28,7 @@ class LanguagePairWidget(QWidget):
 
     remove_requested = Signal()
     subtotal_changed = Signal(float)
+    name_changed = Signal(str)
 
     def __init__(self, pair_name: str, currency_symbol: str = "₽", currency_code: str = "RUB", lang: str = "ru"):
         super().__init__()
@@ -40,7 +50,10 @@ class LanguagePairWidget(QWidget):
         header = QHBoxLayout()
         self.title_label = QLabel()
         self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.title_edit = QLineEdit()
+        self.title_edit.editingFinished.connect(self._on_title_edit)
         header.addWidget(self.title_label)
+        header.addWidget(self.title_edit)
         header.addStretch()
         layout.addLayout(header)
 
@@ -287,7 +300,8 @@ class LanguagePairWidget(QWidget):
 
     def set_language(self, lang: str):
         self.lang = lang
-        self.title_label.setText(f"{tr('Языковая пара', lang)}: {self.pair_name}")
+        self.title_label.setText(f"{tr('Языковая пара', lang)}:")
+        self.title_edit.setText(self.pair_name)
         group = self.translation_group
         group.setTitle(tr("Перевод", lang))
         table: QTableWidget = group.table
@@ -306,7 +320,13 @@ class LanguagePairWidget(QWidget):
 
     def set_pair_name(self, name: str):
         self.pair_name = name
-        self.title_label.setText(f"{tr('Языковая пара', self.lang)}: {name}")
+        self.title_edit.setText(name)
+
+    def _on_title_edit(self):
+        new_name = self.title_edit.text().strip()
+        if new_name:
+            self.pair_name = new_name
+            self.name_changed.emit(new_name)
 
     def update_rates_and_sums(self, table: QTableWidget, rows: List[Dict], base_rate_row: int):
         try:
