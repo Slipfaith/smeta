@@ -51,10 +51,10 @@ class LanguagePairWidget(QWidget):
         self.title_label = QLabel()
         self.title_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.title_edit = QLineEdit()
+        self.title_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.title_edit.editingFinished.connect(self._on_title_edit)
         header.addWidget(self.title_label)
-        header.addWidget(self.title_edit)
-        header.addStretch()
+        header.addWidget(self.title_edit, 1)
         layout.addLayout(header)
 
         self.services_layout = QVBoxLayout()
