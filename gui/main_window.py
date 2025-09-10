@@ -175,7 +175,8 @@ class TranslationCostCalculator(QMainWindow):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
         self.pair_headers: Dict[str, str] = {}
-        self.lang_display_ru: bool = True
+        self.lang_display_ru: bool = True  # Controls language for quotation/Excel
+        self.gui_lang: str = "ru"  # Controls application GUI language
         self._languages: List[Dict[str, str]] = load_languages()
         self.pm_managers, self.pm_last_index = load_pm_history()
         if 0 <= self.pm_last_index < len(self.pm_managers):
@@ -199,7 +200,7 @@ class TranslationCostCalculator(QMainWindow):
         self.resize(1000, 650)
         self.update_title()
 
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
 
         self.project_menu = self.menuBar().addMenu(tr("Проект", lang))
         self.save_action = QAction(tr("Сохранить проект", lang), self)
@@ -239,8 +240,8 @@ class TranslationCostCalculator(QMainWindow):
         self.lang_action_group.addAction(self.lang_en_action)
         self.language_menu.addAction(self.lang_ru_action)
         self.language_menu.addAction(self.lang_en_action)
-        self.lang_ru_action.setChecked(self.lang_display_ru)
-        self.lang_en_action.setChecked(not self.lang_display_ru)
+        self.lang_ru_action.setChecked(self.gui_lang == "ru")
+        self.lang_en_action.setChecked(self.gui_lang != "ru")
         self.lang_ru_action.triggered.connect(lambda: self.set_app_language("ru"))
         self.lang_en_action.triggered.connect(lambda: self.set_app_language("en"))
         self.update_menu_texts()
@@ -267,7 +268,7 @@ class TranslationCostCalculator(QMainWindow):
         lay = QVBoxLayout()
         lay.setSpacing(12)
 
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
 
         self.project_group = QGroupBox(tr("Информация о проекте", lang))
         p = QVBoxLayout()
@@ -458,22 +459,18 @@ class TranslationCostCalculator(QMainWindow):
             combo.setEditText(prev_text)
 
     def set_app_language(self, lang: str):
-        """Change application language via menu action."""
-        self.lang_mode_slider.blockSignals(True)
-        self.lang_mode_slider.setValue(1 if lang == "ru" else 0)
-        self.lang_mode_slider.blockSignals(False)
-        self.lang_display_ru = lang == "ru"
-        self._update_language_names(lang)
+        """Change application GUI language via menu action."""
+        self.gui_lang = lang
         self._update_gui_language(lang)
+        self.lang_ru_action.setChecked(lang == "ru")
+        self.lang_en_action.setChecked(lang == "en")
 
     def on_lang_mode_changed(self, value: int):
         """Handle slider changes – update language pair names everywhere."""
         lang = "ru" if value == 1 else "en"
         self.lang_display_ru = value == 1
         self._update_language_names(lang)
-        self._update_gui_language(lang)
-        self.lang_ru_action.setChecked(self.lang_display_ru)
-        self.lang_en_action.setChecked(not self.lang_display_ru)
+        self.update_total()
 
     def _update_language_names(self, lang: str):
         """Update language names in GUI widgets and Excel headers."""
@@ -540,7 +537,7 @@ class TranslationCostCalculator(QMainWindow):
         self.update_menu_texts()
 
     def update_menu_texts(self):
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         self.project_menu.setTitle(tr("Проект", lang))
         self.save_action.setText(tr("Сохранить проект", lang))
         self.load_action.setText(tr("Загрузить проект", lang))
@@ -577,7 +574,7 @@ class TranslationCostCalculator(QMainWindow):
         """Convert all rates from USD to RUB using user-provided rate."""
         if self.currency_combo.currentText() != "USD":
             return
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         rate, ok = QInputDialog.getDouble(
             self,
             tr("Курс USD", lang),
@@ -612,7 +609,8 @@ class TranslationCostCalculator(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout()
         self.tabs = QTabWidget()
-        lang = "ru" if self.lang_display_ru else "en"
+        gui_lang = self.gui_lang
+        est_lang = "ru" if self.lang_display_ru else "en"
 
         self.pairs_scroll = QScrollArea()
         self.pairs_scroll.setWidgetResizable(True)
@@ -624,7 +622,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout.setSpacing(12)
 
         self.only_new_repeats_btn = QPushButton(
-            tr("Только новые слова и повторы", lang)
+            tr("Только новые слова и повторы", gui_lang)
         )
         self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
@@ -633,7 +631,7 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_fee_spin.value(),
             self.currency_symbol,
             self.currency_combo.currentText(),
-            lang=lang,
+            lang=est_lang,
         )
         self.project_setup_widget.remove_requested.connect(
             self.remove_project_setup_widget
@@ -650,7 +648,7 @@ class TranslationCostCalculator(QMainWindow):
         self.drop_hint_label = QLabel(
             tr(
                 "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
-                lang,
+                gui_lang,
             )
         )
         self.drop_hint_label.setStyleSheet(
@@ -678,18 +676,18 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_scroll.setAcceptDrops(True)
         self.setup_drag_drop()
 
-        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", lang))
+        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", gui_lang))
 
         self.additional_services_widget = AdditionalServicesWidget(
             self.currency_symbol,
             self.currency_combo.currentText(),
-            lang=lang,
+            lang=est_lang,
         )
         self.additional_services_widget.subtotal_changed.connect(self.update_total)
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
-        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", lang))
+        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", gui_lang))
 
         lay.addWidget(self.tabs)
 
@@ -712,7 +710,7 @@ class TranslationCostCalculator(QMainWindow):
         drop_area.setWidget(self.pairs_container_widget)
 
         self.tabs.removeTab(0)
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         self.tabs.insertTab(0, drop_area, tr("Языковые пары", lang))
         self.pairs_scroll = drop_area
 
@@ -728,7 +726,7 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = not self.only_new_repeats_mode
         for w in self.language_pairs.values():
             w.set_only_new_and_repeats_mode(self.only_new_repeats_mode)
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         if self.only_new_repeats_mode:
             self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
         else:
@@ -747,7 +745,7 @@ class TranslationCostCalculator(QMainWindow):
             self.setWindowTitle("RateApp")
 
     def show_pm_dialog(self):
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         dlg = ProjectManagerDialog(self.pm_managers, self.pm_last_index, lang, self)
         if dlg.exec():
             self.pm_managers, self.pm_last_index = dlg.result()
@@ -807,7 +805,7 @@ class TranslationCostCalculator(QMainWindow):
         en = (self.new_lang_en.text() or "").strip()
 
         if not (ru or en):
-            lang = "ru" if self.lang_display_ru else "en"
+            lang = self.gui_lang
             QMessageBox.warning(
                 self,
                 tr("Ошибка", lang),
@@ -816,7 +814,7 @@ class TranslationCostCalculator(QMainWindow):
             return
 
         if add_language(en, ru):
-            lang = "ru" if self.lang_display_ru else "en"
+            lang = self.gui_lang
             QMessageBox.information(
                 self, tr("Готово", lang), tr("Язык сохранён в конфиг.", lang)
             )
@@ -826,7 +824,7 @@ class TranslationCostCalculator(QMainWindow):
             self.new_lang_ru.clear()
             self.new_lang_en.clear()
         else:
-            lang = "ru" if self.lang_display_ru else "en"
+            lang = self.gui_lang
             QMessageBox.critical(
                 self, tr("Ошибка", lang), tr("Не удалось сохранить язык в конфиг.", lang)
             )
@@ -849,7 +847,7 @@ class TranslationCostCalculator(QMainWindow):
         src = self._parse_combo(self.source_lang_combo)
         tgt = self._parse_combo(self.target_lang_combo)
         if not src["text"] or not tgt["text"]:
-            lang = "ru" if self.lang_display_ru else "en"
+            lang = self.gui_lang
             QMessageBox.warning(
                 self, tr("Ошибка", lang), tr("Выберите/введите оба языка", lang)
             )
@@ -865,7 +863,7 @@ class TranslationCostCalculator(QMainWindow):
         display_name = f"{src['text']} - {tgt['text']}"
 
         if pair_key in self.language_pairs:
-            lang = "ru" if self.lang_display_ru else "en"
+            lang = self.gui_lang
             QMessageBox.warning(
                 self, tr("Ошибка", lang), tr("Такая языковая пара уже существует", lang)
             )
@@ -969,7 +967,7 @@ class TranslationCostCalculator(QMainWindow):
             )
         )
         pair_count = len(self.language_pairs)
-        lang = "ru" if self.lang_display_ru else "en"
+        lang = self.gui_lang
         self.language_pairs_count_label.setText(
             f"{tr('Загружено языковых пар', lang)}: {pair_count}"
         )
@@ -1028,13 +1026,13 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_combo.setCurrentIndex(0)
         self.vat_spin.setValue(20.0)
 
-        lang = "ru" if self.lang_display_ru else "en"
+        est_lang = "ru" if self.lang_display_ru else "en"
         self.project_setup_fee_spin.setValue(0.5)
         if getattr(self, "project_setup_widget", None):
             self.project_setup_widget.load_data(
                 [
                     {
-                        "parameter": tr("Запуск и управление проектом", lang),
+                        "parameter": tr("Запуск и управление проектом", est_lang),
                         "volume": self.project_setup_fee_spin.value(),
                         "rate": 0.0,
                         "total": 0.0,
@@ -1049,7 +1047,7 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = False
         if getattr(self, "only_new_repeats_btn", None):
             self.only_new_repeats_btn.setText(
-                tr("Только новые слова и повторы", lang)
+                tr("Только новые слова и повторы", self.gui_lang)
             )
 
         self.update_total()
@@ -1289,8 +1287,9 @@ class TranslationCostCalculator(QMainWindow):
         return data
 
     def save_excel(self):
-        lang = "ru" if self.lang_display_ru else "en"
+        export_lang = "ru" if self.lang_display_ru else "en"
         if not self.get_selected_legal_entity():
+            lang = self.gui_lang
             QMessageBox.warning(
                 self,
                 tr("Предупреждение", lang),
@@ -1325,7 +1324,7 @@ class TranslationCostCalculator(QMainWindow):
         exporter = ExcelExporter(
             template_path,
             currency=self.currency_combo.currentText(),
-            lang="ru" if self.lang_display_ru else "en",
+            lang=export_lang,
         )
         with Progress(parent=self) as progress:
             success = exporter.export_to_excel(
@@ -1337,8 +1336,9 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
 
     def save_pdf(self):
-        lang = "ru" if self.lang_display_ru else "en"
+        export_lang = "ru" if self.lang_display_ru else "en"
         if not self.get_selected_legal_entity():
+            lang = self.gui_lang
             QMessageBox.warning(
                 self,
                 tr("Предупреждение", lang),
@@ -1366,7 +1366,7 @@ class TranslationCostCalculator(QMainWindow):
         exporter = ExcelExporter(
             template_path,
             currency=currency,
-            lang="ru" if self.lang_display_ru else "en",
+            lang=export_lang,
         )
         with Progress(parent=self) as progress:
             def on_excel_progress(percent: int, message: str) -> None:
