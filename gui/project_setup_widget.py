@@ -266,14 +266,3 @@ class ProjectSetupWidget(QWidget):
         if item:
             item.setText(tr("Запуск и управление проектом", lang))
         self.update_sums()
-
-    def reset(self) -> None:
-        """Reset the table to its initial empty state."""
-        self.load_data([
-            {
-                "parameter": tr("Запуск и управление проектом", self.lang),
-                "volume": 0.0,
-                "rate": 0.0,
-                "total": 0.0,
-            }
-        ])

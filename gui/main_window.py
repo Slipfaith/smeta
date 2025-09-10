@@ -195,34 +195,30 @@ class TranslationCostCalculator(QMainWindow):
         self.resize(1000, 650)
         self.update_title()
 
-        lang = "ru" if self.lang_display_ru else "en"
-        self.project_menu = self.menuBar().addMenu(tr("Проект", lang))
-        self.save_action = QAction(tr("Сохранить проект", lang), self)
-        self.save_action.triggered.connect(self.save_project)
-        self.project_menu.addAction(self.save_action)
-        self.load_action = QAction(tr("Загрузить проект", lang), self)
-        self.load_action.triggered.connect(self.load_project)
-        self.project_menu.addAction(self.load_action)
-        self.clear_all_action = QAction(tr("Очистить", lang), self)
-        self.clear_all_action.triggered.connect(self.clear_all)
-        self.project_menu.addAction(self.clear_all_action)
+        project_menu = self.menuBar().addMenu("Проект")
+        save_action = QAction("Сохранить проект", self)
+        save_action.triggered.connect(self.save_project)
+        project_menu.addAction(save_action)
+        load_action = QAction("Загрузить проект", self)
+        load_action.triggered.connect(self.load_project)
+        project_menu.addAction(load_action)
 
-        self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
-        self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
-        self.save_excel_action.triggered.connect(self.save_excel)
-        self.export_menu.addAction(self.save_excel_action)
-        self.save_pdf_action = QAction(tr("Сохранить PDF", lang), self)
-        self.save_pdf_action.triggered.connect(self.save_pdf)
-        self.export_menu.addAction(self.save_pdf_action)
+        export_menu = self.menuBar().addMenu("Экспорт")
+        save_excel_action = QAction("Сохранить Excel", self)
+        save_excel_action.triggered.connect(self.save_excel)
+        export_menu.addAction(save_excel_action)
+        save_pdf_action = QAction("Сохранить PDF", self)
+        save_pdf_action.triggered.connect(self.save_pdf)
+        export_menu.addAction(save_pdf_action)
 
-        self.rates_menu = self.menuBar().addMenu(tr("Импорт ставок", lang))
-        self.import_rates_action = QAction(tr("Импортировать из Excel", lang), self)
-        self.import_rates_action.triggered.connect(self.import_rates_from_excel)
-        self.rates_menu.addAction(self.import_rates_action)
+        rates_menu = self.menuBar().addMenu("Импорт ставок")
+        import_rates_action = QAction("Импортировать из Excel", self)
+        import_rates_action.triggered.connect(self.import_rates_from_excel)
+        rates_menu.addAction(import_rates_action)
 
-        self.pm_action = QAction(tr("Проджект менеджер", lang), self)
-        self.pm_action.triggered.connect(self.show_pm_dialog)
-        self.menuBar().addAction(self.pm_action)
+        pm_action = QAction("Проджект менеджер", self)
+        pm_action.triggered.connect(self.show_pm_dialog)
+        self.menuBar().addAction(pm_action)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -245,58 +241,49 @@ class TranslationCostCalculator(QMainWindow):
         container = QWidget()
         lay = QVBoxLayout()
         lay.setSpacing(12)
-        lang = "ru" if self.lang_display_ru else "en"
 
-        self.project_group = QGroupBox(tr("Информация о проекте", lang))
+        project_group = QGroupBox("Информация о проекте")
         p = QVBoxLayout()
         p.setSpacing(8)
-        self.project_name_label = QLabel(tr("Название проекта:", lang))
-        p.addWidget(self.project_name_label)
+        p.addWidget(QLabel("Название проекта:"))
         self.project_name_edit = QLineEdit()
         p.addWidget(self.project_name_edit)
-        self.client_name_label = QLabel(tr("Название клиента:", lang))
-        p.addWidget(self.client_name_label)
+        p.addWidget(QLabel("Название клиента:"))
         self.client_name_edit = QLineEdit()
         p.addWidget(self.client_name_edit)
-        self.contact_person_label = QLabel(tr("Контактное лицо:", lang))
-        p.addWidget(self.contact_person_label)
+        p.addWidget(QLabel("Контактное лицо:"))
         self.contact_person_edit = QLineEdit()
         p.addWidget(self.contact_person_edit)
-        self.email_label = QLabel(tr("Email:", lang))
-        p.addWidget(self.email_label)
+        p.addWidget(QLabel("Email:"))
         self.email_edit = QLineEdit()
         p.addWidget(self.email_edit)
-        self.legal_entity_label = QLabel(tr("Юрлицо:", lang))
-        p.addWidget(self.legal_entity_label)
+        p.addWidget(QLabel("Юрлицо:"))
         self.legal_entity_combo = QComboBox()
         self.legal_entity_combo.addItems(self.legal_entities.keys())
         self.legal_entity_combo.currentTextChanged.connect(self.on_legal_entity_changed)
         p.addWidget(self.legal_entity_combo)
-        self.currency_label = QLabel(tr("Валюта:", lang))
-        p.addWidget(self.currency_label)
+        p.addWidget(QLabel("Валюта:"))
         self.currency_combo = QComboBox()
         self.currency_combo.addItems(["RUB", "EUR", "USD"])
         self.currency_combo.currentTextChanged.connect(self.on_currency_changed)
         p.addWidget(self.currency_combo)
-        self.vat_label = QLabel(tr("НДС, %:", lang))
-        p.addWidget(self.vat_label)
+        p.addWidget(QLabel("НДС, %:"))
         self.vat_spin = QDoubleSpinBox()
         self.vat_spin.setDecimals(2)
         self.vat_spin.setRange(0, 100)
         self.vat_spin.setValue(20.0)
         self.vat_spin.valueChanged.connect(self.update_total)
         p.addWidget(self.vat_spin)
-        self.project_group.setLayout(p)
-        lay.addWidget(self.project_group)
+        project_group.setLayout(p)
+        lay.addWidget(project_group)
         self.on_legal_entity_changed(self.legal_entity_combo.currentText())
 
-        self.pairs_group = QGroupBox(tr("Языковые пары", lang))
+        self.pairs_group = QGroupBox(tr("Языковые пары", "ru"))
         pg = QVBoxLayout()
         pg.setSpacing(8)
 
         mode = QHBoxLayout()
-        self.lang_names_label = QLabel(tr("Названия языков:", lang))
-        mode.addWidget(self.lang_names_label)
+        mode.addWidget(QLabel("Названия языков:"))
         mode.addStretch(1)
         mode.addWidget(QLabel("EN"))
         self.lang_mode_slider = QSlider(Qt.Horizontal)
@@ -318,31 +305,28 @@ class TranslationCostCalculator(QMainWindow):
         add_pair.addWidget(self.target_lang_combo)
         pg.addLayout(add_pair)
 
-        self.add_pair_btn = QPushButton(tr("Добавить языковую пару", lang))
+        self.add_pair_btn = QPushButton("Добавить языковую пару")
         self.add_pair_btn.clicked.connect(self.add_language_pair)
         pg.addWidget(self.add_pair_btn)
 
-        self.current_pairs_label = QLabel(tr("Текущие пары:", lang))
-        pg.addWidget(self.current_pairs_label)
+        pg.addWidget(QLabel("Текущие пары:"))
         self.pairs_list = QTextEdit()
         self.pairs_list.setMaximumHeight(100)
         self.pairs_list.setReadOnly(True)
         pg.addWidget(self.pairs_list)
 
         info_layout = QHBoxLayout()
-        self.language_pairs_count_label = QLabel(
-            f"{tr('Загружено языковых пар:', lang)} 0"
-        )
+        self.language_pairs_count_label = QLabel("Загружено языковых пар: 0")
         info_layout.addWidget(self.language_pairs_count_label)
         info_layout.addStretch()
-        self.clear_pairs_btn = QPushButton(tr("Очистить", lang))
+        self.clear_pairs_btn = QPushButton("Очистить")
         self.clear_pairs_btn.clicked.connect(self.clear_language_pairs)
         info_layout.addWidget(self.clear_pairs_btn)
         pg.addLayout(info_layout)
 
         setup_layout = QHBoxLayout()
         self.project_setup_label = QLabel(
-            tr("Запуск и управление проектом", lang) + ":"
+            tr("Запуск и управление проектом", "ru") + ":"
         )
         setup_layout.addWidget(self.project_setup_label)
         self.project_setup_fee_spin = QDoubleSpinBox()
@@ -354,28 +338,26 @@ class TranslationCostCalculator(QMainWindow):
         setup_layout.addStretch()
         pg.addLayout(setup_layout)
 
-        self.add_lang_group = QGroupBox(tr("Добавить язык в справочник", lang))
+        add_lang_group = QGroupBox("Добавить язык в справочник")
         lg = QVBoxLayout()
         lg.setSpacing(8)
         r1 = QHBoxLayout()
-        self.add_lang_ru_label = QLabel(tr("Название RU:", lang))
-        r1.addWidget(self.add_lang_ru_label)
+        r1.addWidget(QLabel("Название RU:"))
         self.new_lang_ru = QLineEdit()
         self.new_lang_ru.setPlaceholderText("Персидский")
         r1.addWidget(self.new_lang_ru)
         lg.addLayout(r1)
         r2 = QHBoxLayout()
-        self.add_lang_en_label = QLabel(tr("Название EN:", lang))
-        r2.addWidget(self.add_lang_en_label)
+        r2.addWidget(QLabel("Название EN:"))
         self.new_lang_en = QLineEdit()
         self.new_lang_en.setPlaceholderText("Persian")
         r2.addWidget(self.new_lang_en)
         lg.addLayout(r2)
-        self.btn_add_lang = QPushButton(tr("Добавить язык", lang))
+        self.btn_add_lang = QPushButton("Добавить язык")
         self.btn_add_lang.clicked.connect(self.handle_add_language)
         lg.addWidget(self.btn_add_lang)
-        self.add_lang_group.setLayout(lg)
-        pg.addWidget(self.add_lang_group)
+        add_lang_group.setLayout(lg)
+        pg.addWidget(add_lang_group)
 
         self.pairs_group.setLayout(pg)
         lay.addWidget(self.pairs_group)
@@ -432,6 +414,8 @@ class TranslationCostCalculator(QMainWindow):
             self.project_setup_widget.set_language(lang)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_language(lang)
+        self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
+        self.pairs_group.setTitle(tr("Языковые пары", lang))
         for pair_key, widget in self.language_pairs.items():
             widget.set_language(lang)
             display_name = self._display_pair_name(pair_key)
@@ -440,53 +424,6 @@ class TranslationCostCalculator(QMainWindow):
             lang_info = self._find_language_by_key(right_key)
             self.pair_headers[pair_key] = lang_info[lang]
         self.update_pairs_list()
-        self.update_texts()
-
-    def update_texts(self):
-        lang = "ru" if self.lang_display_ru else "en"
-        self.project_menu.setTitle(tr("Проект", lang))
-        self.save_action.setText(tr("Сохранить проект", lang))
-        self.load_action.setText(tr("Загрузить проект", lang))
-        self.clear_all_action.setText(tr("Очистить", lang))
-        self.export_menu.setTitle(tr("Экспорт", lang))
-        self.save_excel_action.setText(tr("Сохранить Excel", lang))
-        self.save_pdf_action.setText(tr("Сохранить PDF", lang))
-        self.rates_menu.setTitle(tr("Импорт ставок", lang))
-        self.import_rates_action.setText(tr("Импортировать из Excel", lang))
-        self.pm_action.setText(tr("Проджект менеджер", lang))
-        self.project_group.setTitle(tr("Информация о проекте", lang))
-        self.project_name_label.setText(tr("Название проекта:", lang))
-        self.client_name_label.setText(tr("Название клиента:", lang))
-        self.contact_person_label.setText(tr("Контактное лицо:", lang))
-        self.email_label.setText(tr("Email:", lang))
-        self.legal_entity_label.setText(tr("Юрлицо:", lang))
-        self.currency_label.setText(tr("Валюта:", lang))
-        self.vat_label.setText(tr("НДС, %:", lang))
-        self.pairs_group.setTitle(tr("Языковые пары", lang))
-        self.lang_names_label.setText(tr("Названия языков:", lang))
-        self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
-        self.current_pairs_label.setText(tr("Текущие пары:", lang))
-        pair_count = len(self.language_pairs)
-        self.language_pairs_count_label.setText(
-            f"{tr('Загружено языковых пар:', lang)} {pair_count}"
-        )
-        self.clear_pairs_btn.setText(tr("Очистить", lang))
-        self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
-        self.add_lang_group.setTitle(tr("Добавить язык в справочник", lang))
-        self.add_lang_ru_label.setText(tr("Название RU:", lang))
-        self.add_lang_en_label.setText(tr("Название EN:", lang))
-        self.btn_add_lang.setText(tr("Добавить язык", lang))
-        self.only_new_repeats_btn.setText(
-            tr("Показать 4 строки", lang)
-            if self.only_new_repeats_mode
-            else tr("Только новые слова и повторы", lang)
-        )
-        self.drop_hint_label.setText(
-            tr(
-                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
-                lang,
-            )
-        )
         self.tabs.setTabText(0, tr("Языковые пары", lang))
         self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
 
@@ -511,7 +448,6 @@ class TranslationCostCalculator(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout()
         self.tabs = QTabWidget()
-        lang = "ru" if self.lang_display_ru else "en"
 
         self.pairs_scroll = QScrollArea()
         self.pairs_scroll.setWidgetResizable(True)
@@ -522,7 +458,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout = QVBoxLayout()
         self.pairs_layout.setSpacing(12)
 
-        self.only_new_repeats_btn = QPushButton(tr("Только новые слова и повторы", lang))
+        self.only_new_repeats_btn = QPushButton("Только новые слова и повторы")
         self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
 
@@ -545,10 +481,7 @@ class TranslationCostCalculator(QMainWindow):
         )
 
         self.drop_hint_label = QLabel(
-            tr(
-                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
-                lang,
-            )
+            "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения"
         )
         self.drop_hint_label.setStyleSheet(
             """
@@ -575,7 +508,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_scroll.setAcceptDrops(True)
         self.setup_drag_drop()
 
-        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", lang))
+        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", "ru"))
 
         self.additional_services_widget = AdditionalServicesWidget(
             self.currency_symbol,
@@ -586,7 +519,7 @@ class TranslationCostCalculator(QMainWindow):
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
-        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", lang))
+        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", "ru"))
 
         lay.addWidget(self.tabs)
 
@@ -605,8 +538,7 @@ class TranslationCostCalculator(QMainWindow):
         drop_area.setWidget(self.pairs_container_widget)
 
         self.tabs.removeTab(0)
-        lang = "ru" if self.lang_display_ru else "en"
-        self.tabs.insertTab(0, drop_area, tr("Языковые пары", lang))
+        self.tabs.insertTab(0, drop_area, tr("Языковые пары", "ru"))
         self.pairs_scroll = drop_area
 
     def _hide_drop_hint(self):
@@ -621,11 +553,10 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = not self.only_new_repeats_mode
         for w in self.language_pairs.values():
             w.set_only_new_and_repeats_mode(self.only_new_repeats_mode)
-        lang = "ru" if self.lang_display_ru else "en"
         if self.only_new_repeats_mode:
-            self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
+            self.only_new_repeats_btn.setText("Показать 4 строки")
         else:
-            self.only_new_repeats_btn.setText(tr("Только новые слова и повторы", lang))
+            self.only_new_repeats_btn.setText("Только новые слова и повторы")
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -839,10 +770,7 @@ class TranslationCostCalculator(QMainWindow):
             )
         )
         pair_count = len(self.language_pairs)
-        lang = "ru" if self.lang_display_ru else "en"
-        self.language_pairs_count_label.setText(
-            f"{tr('Загружено языковых пар:', lang)} {pair_count}"
-        )
+        self.language_pairs_count_label.setText(f"Загружено языковых пар: {pair_count}")
         auto_fee = max(0.5, round((pair_count + 1) / 4 * 4) / 4)
         self.project_setup_fee_spin.blockSignals(True)
         self.project_setup_fee_spin.setValue(auto_fee)
@@ -863,27 +791,6 @@ class TranslationCostCalculator(QMainWindow):
         self.language_pairs.clear()
         self.pair_headers.clear()
         self.update_pairs_list()
-        self.update_total()
-
-    def clear_all(self):
-        """Clear all project data and reset to defaults."""
-        self.project_name_edit.clear()
-        self.client_name_edit.clear()
-        self.contact_person_edit.clear()
-        self.email_edit.clear()
-        self.legal_entity_combo.setCurrentIndex(0)
-        self.currency_combo.setCurrentIndex(0)
-        self.vat_spin.setValue(20.0)
-        self.on_legal_entity_changed(self.legal_entity_combo.currentText())
-        self.clear_language_pairs()
-        if getattr(self, "project_setup_widget", None):
-            self.project_setup_widget.reset()
-            self.update_project_setup_volume_from_spin(self.project_setup_fee_spin.value())
-        if getattr(self, "additional_services_widget", None):
-            self.additional_services_widget.load_data([])
-        self.only_new_repeats_mode = False
-        lang = "ru" if self.lang_display_ru else "en"
-        self.only_new_repeats_btn.setText(tr("Только новые слова и повторы", lang))
         self.update_total()
 
     def import_rates_from_excel(self) -> None:
