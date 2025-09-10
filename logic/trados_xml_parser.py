@@ -38,8 +38,38 @@ def _load_languages_csv() -> None:
 
                 display_en = f"{lang_en} ({country_en})" if country_en else lang_en
 
+                # Попытка использовать русские названия из CSV
+                lang_ru_final = lang_ru if re.search("[А-Яа-я]", lang_ru) else ""
+                country_ru_final = (
+                    country_ru if re.search("[А-Яа-я]", country_ru) else ""
+                )
+
+                # Если перевода нет, пытаемся получить его через langcodes
+                if not lang_ru_final:
+                    try:
+                        lang_code = code or langcodes.find(lang_en)
+                        lang_ru_final = langcodes.Language.get(lang_code).language_name('ru')
+                    except Exception:
+                        lang_ru_final = lang_en
+
+                if not country_ru_final and code and "-" in code:
+                    try:
+                        country_ru_final = langcodes.Language.get(code).territory_name('ru')
+                    except Exception:
+                        country_ru_final = country_en
+
+                display_ru = (
+                    f"{lang_ru_final} ({country_ru_final})"
+                    if country_ru_final
+                    else lang_ru_final
+                )
+
+                display = display_ru or display_en
+                if display:
+                    display = display[0].upper() + display[1:]
+
                 if code:
-                    LANGUAGE_CODE_MAP[code] = display_en
+                    LANGUAGE_CODE_MAP[code] = display
 
                 for key in filter(
                     None,
@@ -47,12 +77,13 @@ def _load_languages_csv() -> None:
                         lang_en.lower(),
                         display_en.lower(),
                         lang_ru.lower(),
+                        display_ru.lower(),
                         f"{lang_ru.lower()} ({country_ru.lower()})"
                         if lang_ru and country_ru
                         else None,
                     ],
                 ):
-                    LANGUAGE_NAME_MAP[key] = display_en
+                    LANGUAGE_NAME_MAP[key] = display
     except FileNotFoundError:
         # Файл со списком языков отсутствует — будем использовать только стандартные методы
         pass
@@ -101,7 +132,7 @@ def _extract_languages_from_filename(filename: str) -> Tuple[str, str]:
 
 
 def _expand_language_code(code: str) -> str:
-    """Преобразует языковой код в человекочитаемое название"""
+    """Преобразует языковой код в человекочитаемое название (на русском)."""
     if not code:
         return ""
     normalized = code.replace('_', '-')
@@ -112,7 +143,7 @@ def _expand_language_code(code: str) -> str:
         return csv_name
 
     try:
-        result = langcodes.Language.get(normalized).display_name('en')
+        result = langcodes.Language.get(normalized).display_name('ru')
         print(f"    Expanded {code} -> {result}")
         return result
     except langcodes.LanguageTagError:
@@ -122,7 +153,7 @@ def _expand_language_code(code: str) -> str:
 
 
 def _normalize_language_name(name: str) -> str:
-    """Нормализует название или код языка с использованием langcodes и pycountry"""
+    """Нормализует название или код языка и возвращает его на русском."""
     if not name:
         return ""
 
@@ -135,7 +166,7 @@ def _normalize_language_name(name: str) -> str:
 
     # Прямое использование кода, если он уже корректный
     try:
-        return langcodes.Language.get(name).display_name('en')
+        return langcodes.Language.get(name).display_name('ru')
     except langcodes.LanguageTagError:
         pass
 
@@ -157,11 +188,11 @@ def _normalize_language_name(name: str) -> str:
             code = getattr(lang, 'alpha_2', '') or getattr(lang, 'alpha_3', '')
 
         if code:
-            return langcodes.Language.get(code).display_name('en')
+            return langcodes.Language.get(code).display_name('ru')
     except LookupError:
         try:
             code = langcodes.find(name)
-            return langcodes.Language.get(code).display_name('en')
+            return langcodes.Language.get(code).display_name('ru')
         except Exception:
             return ""
     except langcodes.LanguageTagError:
