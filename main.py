@@ -1,5 +1,6 @@
 import sys
-from pathlib import Path
+
+from resource_utils import resource_path
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
@@ -10,7 +11,7 @@ from logic.excel_process import close_excel_processes
 def main() -> int:
     app = QApplication(sys.argv)
 
-    icon_path = Path(__file__).resolve().parent / "rateapp.ico"
+    icon_path = resource_path("rateapp.ico")
     icon = QIcon(str(icon_path))
     app.setWindowIcon(icon)
 

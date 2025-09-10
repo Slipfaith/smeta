@@ -12,16 +12,15 @@ from openpyxl.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from openpyxl.drawing.image import Image
+from resource_utils import resource_path
 
 from .service_config import ServiceConfig
 from .translation_config import tr
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
-# Шаблон теперь ищем относительно корня проекта, чтобы код работал на любой машине
-DEFAULT_TEMPLATE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "templates", "шаблон.modern.xlsx"
-)
+# Шаблон теперь ищем относительно корня проекта или временной папки PyInstaller
+DEFAULT_TEMPLATE_PATH = resource_path("templates/шаблон.modern.xlsx")
 
 START_PH = "{{translation_table}}"
 END_PH = "{{subtotal_translation_table}}"
@@ -735,9 +734,7 @@ class ExcelExporter:
         template: str
             Код шаблона, соответствующий имени файла логотипа.
         """
-        logo_path = os.path.join(
-            os.path.dirname(__file__), "..", "templates", "logos", f"{template}.png"
-        )
+        logo_path = resource_path(f"templates/logos/{template}.png")
         if not os.path.exists(logo_path):
             self.logger.debug("Logo not found for template %s: %s", template, logo_path)
             return
