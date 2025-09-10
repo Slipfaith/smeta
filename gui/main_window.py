@@ -476,9 +476,12 @@ class TranslationCostCalculator(QMainWindow):
             widget.set_language(lang)
             display_name = self._display_pair_name(pair_key)
             widget.set_pair_name(display_name)
-            right_key = pair_key.split(" → ")[1]
-            lang_info = self._find_language_by_key(right_key)
-            self.pair_headers[pair_key] = lang_info[lang]
+            if " → " in pair_key:
+                right_key = pair_key.split(" → ")[1]
+                lang_info = self._find_language_by_key(right_key)
+                self.pair_headers[pair_key] = lang_info[lang]
+            else:
+                self.pair_headers[pair_key] = pair_key
         self.update_pairs_list()
 
     def _update_gui_language(self, lang: str):
@@ -920,6 +923,8 @@ class TranslationCostCalculator(QMainWindow):
             return {"en": key, "ru": key}
 
     def _display_pair_name(self, pair_key: str) -> str:
+        if " → " not in pair_key:
+            return pair_key
         left_key, right_key = pair_key.split(" → ")
         left = self._find_language_by_key(left_key)
         right = self._find_language_by_key(right_key)
