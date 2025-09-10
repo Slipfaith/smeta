@@ -5,6 +5,9 @@ import re
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 
+import csv
+from pathlib import Path
+
 import langcodes
 import pycountry
 
@@ -55,6 +58,53 @@ from logic.project_io import (
 )
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
+
+# Mapping of language names (RU/EN, with optional regions) to both
+# English and Russian display forms. Loaded from languages/languages.csv.
+CSV_LANGUAGE_MAP: Dict[str, Dict[str, str]] = {}
+
+
+def _load_csv_language_map() -> None:
+    csv_path = Path(__file__).resolve().parents[1] / "languages" / "languages.csv"
+    try:
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            for row in reader:
+                code = row.get("Код", "").strip()
+                lang_en = row.get("Язык (EN)", "").strip()
+                country_en = row.get("Страна (EN)", "").strip()
+                lang_ru = row.get("Язык (RU)", "").strip()
+                country_ru = row.get("Страна (RU)", "").strip()
+
+                if not (lang_en or lang_ru):
+                    continue
+
+                display_en = f"{lang_en} ({country_en})" if country_en else lang_en
+
+                if not re.search("[А-Яа-я]", lang_ru):
+                    try:
+                        lang_code = code or langcodes.find(lang_en)
+                        lang_ru = langcodes.Language.get(lang_code).language_name("ru")
+                    except Exception:
+                        lang_ru = lang_en
+
+                if not country_ru and code and "-" in code:
+                    try:
+                        country_ru = langcodes.Language.get(code).territory_name("ru")
+                    except Exception:
+                        country_ru = country_en
+
+                display_ru = f"{lang_ru} ({country_ru})" if country_ru else lang_ru
+
+                if display_en:
+                    CSV_LANGUAGE_MAP[display_en.lower()] = {"en": display_en, "ru": display_ru}
+                if display_ru:
+                    CSV_LANGUAGE_MAP[display_ru.lower()] = {"en": display_en, "ru": display_ru}
+    except FileNotFoundError:
+        pass
+
+
+_load_csv_language_map()
 
 
 class DropArea(QScrollArea):
@@ -908,8 +958,11 @@ class TranslationCostCalculator(QMainWindow):
         return parts[1] if len(parts) > 1 else parts[0]
 
     def _find_language_by_key(self, key: str) -> Dict[str, str]:
+        norm = key.strip().lower()
+        if norm in CSV_LANGUAGE_MAP:
+            return CSV_LANGUAGE_MAP[norm]
         for lang in self._languages:
-            if key.lower() == lang["en"].lower() or key.lower() == lang["ru"].lower():
+            if norm == lang["en"].lower() or norm == lang["ru"].lower():
                 return lang
 
         try:
