@@ -292,7 +292,7 @@ class TranslationCostCalculator(QMainWindow):
         p.addWidget(self.legal_entity_label)
         self.legal_entity_combo = QComboBox()
         # Placeholder that indicates no legal entity selected yet
-        self.legal_entity_placeholder = tr("Выбери юрлицо", lang)
+        self.legal_entity_placeholder = tr("Выберите юрлицо", lang)
         self.legal_entity_combo.addItem(self.legal_entity_placeholder)
         self.legal_entity_combo.addItems(self.legal_entities.keys())
         self.legal_entity_combo.setCurrentIndex(0)
@@ -471,6 +471,9 @@ class TranslationCostCalculator(QMainWindow):
         lang = "ru" if value == 1 else "en"
         self.lang_display_ru = value == 1
         self._update_language_names(lang)
+        self._update_gui_language(lang)
+        self.lang_ru_action.setChecked(self.lang_display_ru)
+        self.lang_en_action.setChecked(not self.lang_display_ru)
 
     def _update_language_names(self, lang: str):
         """Update language names in GUI widgets and Excel headers."""
@@ -500,6 +503,9 @@ class TranslationCostCalculator(QMainWindow):
         self.contact_person_label.setText(tr("Контактное лицо", lang) + ":")
         self.email_label.setText(tr("Email", lang) + ":")
         self.legal_entity_label.setText(tr("Юрлицо", lang) + ":")
+        self.legal_entity_placeholder = tr("Выберите юрлицо", lang)
+        if self.legal_entity_combo.count() > 0:
+            self.legal_entity_combo.setItemText(0, self.legal_entity_placeholder)
         self.currency_label.setText(tr("Валюта", lang) + ":")
         self.convert_btn.setText(tr("Конвертировать в рубли", lang))
         self.vat_label.setText(tr("НДС, %", lang) + ":")
@@ -1283,6 +1289,14 @@ class TranslationCostCalculator(QMainWindow):
         return data
 
     def save_excel(self):
+        lang = "ru" if self.lang_display_ru else "en"
+        if not self.get_selected_legal_entity():
+            QMessageBox.warning(
+                self,
+                tr("Предупреждение", lang),
+                tr("Выберите юрлицо", lang),
+            )
+            return
         if not self.client_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название клиента")
             return
@@ -1323,6 +1337,14 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
 
     def save_pdf(self):
+        lang = "ru" if self.lang_display_ru else "en"
+        if not self.get_selected_legal_entity():
+            QMessageBox.warning(
+                self,
+                tr("Предупреждение", lang),
+                tr("Выберите юрлицо", lang),
+            )
+            return
         if not self.project_name_edit.text().strip():
             QMessageBox.warning(self, "Ошибка", "Введите название проекта")
             return
