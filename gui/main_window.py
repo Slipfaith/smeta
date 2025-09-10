@@ -857,9 +857,12 @@ class TranslationCostCalculator(QMainWindow):
             lang="ru" if self.lang_display_ru else "en",
         )
         widget.remove_requested.connect(
-            lambda pk=pair_key: self.remove_language_pair(pk)
+            lambda w=widget: self._on_widget_remove_requested(w)
         )
         widget.subtotal_changed.connect(self.update_total)
+        widget.name_changed.connect(
+            lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
+        )
         self.language_pairs[pair_key] = widget
         if self.only_new_repeats_mode:
             widget.set_only_new_and_repeats_mode(True)
@@ -926,7 +929,7 @@ class TranslationCostCalculator(QMainWindow):
     def update_pairs_list(self):
         self.pairs_list.setText(
             "\n".join(
-                f"{w.pair_name}   [заголовок: {self.pair_headers.get(key, w.pair_name)}]"
+                w.pair_name
                 for key, w in sorted(
                     self.language_pairs.items(),
                     key=lambda kv: self._pair_sort_key(kv[0]),
@@ -943,6 +946,29 @@ class TranslationCostCalculator(QMainWindow):
         self.project_setup_fee_spin.setValue(auto_fee)
         self.project_setup_fee_spin.blockSignals(False)
         self.update_project_setup_volume_from_spin(auto_fee)
+
+    def _on_widget_remove_requested(self, widget: LanguagePairWidget):
+        for key, w in list(self.language_pairs.items()):
+            if w is widget:
+                self.remove_language_pair(key)
+                break
+
+    def on_pair_name_changed(self, widget: LanguagePairWidget, new_name: str):
+        for key, w in list(self.language_pairs.items()):
+            if w is widget:
+                if (
+                    new_name in self.language_pairs
+                    and self.language_pairs[new_name] is not widget
+                ):
+                    # revert to old name if duplicate
+                    widget.set_pair_name(key)
+                    return
+                header_title = self.pair_headers.pop(key, widget.pair_name)
+                self.language_pairs.pop(key)
+                self.language_pairs[new_name] = widget
+                self.pair_headers[new_name] = header_title
+                break
+        self.update_pairs_list()
 
     def remove_language_pair(self, pair_key: str):
         widget = self.language_pairs.pop(pair_key, None)
@@ -1084,9 +1110,12 @@ class TranslationCostCalculator(QMainWindow):
                         lang="ru" if self.lang_display_ru else "en",
                     )
                     widget.remove_requested.connect(
-                        lambda pk=pair_key: self.remove_language_pair(pk)
+                        lambda w=widget: self._on_widget_remove_requested(w)
                     )
                     widget.subtotal_changed.connect(self.update_total)
+                    widget.name_changed.connect(
+                        lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
+                    )
                     self.language_pairs[pair_key] = widget
                     self.pairs_layout.insertWidget(
                         self.pairs_layout.count() - 1, widget
@@ -1375,9 +1404,12 @@ class TranslationCostCalculator(QMainWindow):
                 pair_key, self.currency_symbol, self.currency_combo.currentText()
             )
             widget.remove_requested.connect(
-                lambda pk=pair_key: self.remove_language_pair(pk)
+                lambda w=widget: self._on_widget_remove_requested(w)
             )
             widget.subtotal_changed.connect(self.update_total)
+            widget.name_changed.connect(
+                lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
+            )
             self.language_pairs[pair_key] = widget
             self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
             self.pair_headers[pair_key] = header_title
