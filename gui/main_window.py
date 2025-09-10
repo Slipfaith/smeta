@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QSlider,
     QDoubleSpinBox,
+    QInputDialog,
     QApplication,
 )
 from PySide6.QtCore import Qt
@@ -293,6 +294,9 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_combo.addItems(["RUB", "EUR", "USD"])
         self.currency_combo.currentTextChanged.connect(self.on_currency_changed)
         p.addWidget(self.currency_combo)
+        self.convert_btn = QPushButton(tr("Конвертировать в рубли", lang))
+        self.convert_btn.clicked.connect(self.convert_to_rub)
+        p.addWidget(self.convert_btn)
         self.vat_label = QLabel(tr("НДС, %", lang) + ":")
         p.addWidget(self.vat_label)
         self.vat_spin = QDoubleSpinBox()
@@ -502,6 +506,31 @@ class TranslationCostCalculator(QMainWindow):
             w.set_currency(self.currency_symbol, code)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_currency(self.currency_symbol, code)
+
+    def convert_to_rub(self):
+        """Convert all rates from USD to RUB using user-provided rate."""
+        if self.currency_combo.currentText() != "USD":
+            return
+        lang = "ru" if self.lang_display_ru else "en"
+        rate, ok = QInputDialog.getDouble(
+            self,
+            tr("Курс USD", lang),
+            tr("1 USD в рублях", lang),
+            0.0,
+            0.0,
+            1000000.0,
+            4,
+        )
+        if not ok or rate <= 0:
+            return
+        if getattr(self, "project_setup_widget", None):
+            self.project_setup_widget.convert_rates(rate)
+        for w in self.language_pairs.values():
+            w.convert_rates(rate)
+        if getattr(self, "additional_services_widget", None):
+            self.additional_services_widget.convert_rates(rate)
+        self.currency_combo.setCurrentText("RUB")
+        self.update_total()
 
     def on_legal_entity_changed(self, entity: str):
         is_art = entity == "Арт"
