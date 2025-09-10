@@ -1360,6 +1360,21 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Добавьте хотя бы одну услугу")
             return
 
+        if any(r.get("rate", 0) == 0 for r in project_data.get("project_setup", [])):
+            lang = self.gui_lang
+            msg = tr("Ставка для \"{0}\" равна 0. Продолжить?", lang).format(
+                tr("Запуск и управление проектом", lang)
+            )
+            reply = QMessageBox.question(
+                self,
+                tr("Предупреждение", lang),
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
+
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
         currency = self.currency_combo.currentText()
@@ -1405,6 +1420,20 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Введите название клиента")
             return
         project_data = self.collect_project_data()
+        if any(r.get("rate", 0) == 0 for r in project_data.get("project_setup", [])):
+            lang = self.gui_lang
+            msg = tr("Ставка для \"{0}\" равна 0. Продолжить?", lang).format(
+                tr("Запуск и управление проектом", lang)
+            )
+            reply = QMessageBox.question(
+                self,
+                tr("Предупреждение", lang),
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
         currency = self.currency_combo.currentText()
