@@ -308,6 +308,7 @@ class TranslationCostCalculator(QMainWindow):
         self.project_group.setLayout(p)
         lay.addWidget(self.project_group)
         self.on_legal_entity_changed(self.legal_entity_combo.currentText())
+        self.on_currency_changed(self.currency_combo.currentText())
 
         self.pairs_group = QGroupBox(tr("Языковые пары", lang))
         pg = QVBoxLayout()
@@ -506,6 +507,8 @@ class TranslationCostCalculator(QMainWindow):
             w.set_currency(self.currency_symbol, code)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_currency(self.currency_symbol, code)
+        if getattr(self, "convert_btn", None):
+            self.convert_btn.setEnabled(code == "USD")
 
     def convert_to_rub(self):
         """Convert all rates from USD to RUB using user-provided rate."""

@@ -277,15 +277,29 @@ class ExcelExporter:
         return f'#,##0.{"0"*decimals} "{sym}"'
 
     def _replace_currency_formats(self, wb: Workbook) -> None:
-        """Replace dollar signs in cell number formats with the current symbol."""
+        """Replace dollar signs in cell number formats with the current symbol.
+
+        Excel stores some currency formats using the ``[$...-...]`` syntax. A
+        naive string replacement could break such patterns and lead to a broken
+        workbook that Excel tries to recover.  Here we first substitute the
+        whole bracketed expression with the current currency symbol wrapped in
+        quotes and only then replace any remaining ``$`` characters.
+        """
         if self.currency == "USD":
             return
+
+        bracket_re = re.compile(r"\[\$[^-]*-[^\]]*\]")
+
         for ws in wb.worksheets:
             for row in ws.iter_rows():
                 for cell in row:
                     fmt = cell.number_format
-                    if isinstance(fmt, str) and "$" in fmt:
-                        cell.number_format = fmt.replace("$", self.currency_symbol)
+                    if not isinstance(fmt, str) or "$" not in fmt:
+                        continue
+                    fmt = bracket_re.sub(f'"{self.currency_symbol}"', fmt)
+                    if "$" in fmt:
+                        fmt = fmt.replace("$", self.currency_symbol)
+                    cell.number_format = fmt
 
     def _to_number(self, value: Any) -> Any:
         if isinstance(value, str):
