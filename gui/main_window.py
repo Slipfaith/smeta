@@ -187,6 +187,9 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
         self.excel_dialog = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
+        # Create the total label early so slots triggered during initialization
+        # (e.g. vat spin value changes) can safely update it.
+        self.total_label = QLabel()
         self.setup_ui()
         self.setup_style()
 
@@ -684,9 +687,13 @@ class TranslationCostCalculator(QMainWindow):
 
         lay.addWidget(self.tabs)
 
-        self.total_label = QLabel()
+        # ``total_label`` is created in ``__init__`` so that early signal
+        # emissions can reference it without raising ``AttributeError``. Here we
+        # simply style it and add it to the layout.
         self.total_label.setAlignment(Qt.AlignRight)
-        self.total_label.setStyleSheet("font-weight: bold; font-size: 14px; padding: 6px; color: #333;")
+        self.total_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px; padding: 6px; color: #333;"
+        )
         lay.addWidget(self.total_label)
 
         w.setLayout(lay)
