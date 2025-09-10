@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 import xml.etree.ElementTree as ET
 import re
+import csv
+from pathlib import Path
 
 import langcodes
 import pycountry
@@ -10,6 +12,62 @@ from .service_config import ServiceConfig
 
 # Фиксированный порядок строк статистики
 ROW_NAMES = ServiceConfig.ROW_NAMES
+
+
+# ====== Загрузка таблицы языков ======
+
+LANGUAGE_CODE_MAP: Dict[str, str] = {}
+LANGUAGE_NAME_MAP: Dict[str, str] = {}
+
+
+def _load_languages_csv() -> None:
+    """Загружает сопоставление кодов языков из languages/languages.csv."""
+    csv_path = Path(__file__).resolve().parents[1] / "languages" / "languages.csv"
+    try:
+        with open(csv_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            for row in reader:
+                code = row.get("Код", "").strip().lower()
+                lang_en = row.get("Язык (EN)", "").strip()
+                country_en = row.get("Страна (EN)", "").strip()
+                lang_ru = row.get("Язык (RU)", "").strip()
+                country_ru = row.get("Страна (RU)", "").strip()
+
+                if not lang_en:
+                    continue
+
+                display_en = f"{lang_en} ({country_en})" if country_en else lang_en
+
+                if code:
+                    LANGUAGE_CODE_MAP[code] = display_en
+
+                for key in filter(
+                    None,
+                    [
+                        lang_en.lower(),
+                        display_en.lower(),
+                        lang_ru.lower(),
+                        f"{lang_ru.lower()} ({country_ru.lower()})"
+                        if lang_ru and country_ru
+                        else None,
+                    ],
+                ):
+                    LANGUAGE_NAME_MAP[key] = display_en
+    except FileNotFoundError:
+        # Файл со списком языков отсутствует — будем использовать только стандартные методы
+        pass
+
+
+_load_languages_csv()
+
+
+def _lookup_language(value: str) -> str:
+    """Возвращает название языка из CSV по коду или имени."""
+    if not value:
+        return ""
+    norm = value.strip().lower()
+    code_key = norm.replace("_", "-")
+    return LANGUAGE_CODE_MAP.get(code_key) or LANGUAGE_NAME_MAP.get(norm, "")
 
 
 def _norm_lang(code: str) -> str:
@@ -46,8 +104,13 @@ def _expand_language_code(code: str) -> str:
     """Преобразует языковой код в человекочитаемое название"""
     if not code:
         return ""
-
     normalized = code.replace('_', '-')
+
+    csv_name = _lookup_language(normalized)
+    if csv_name:
+        print(f"    Expanded {code} -> {csv_name} (csv)")
+        return csv_name
+
     try:
         result = langcodes.Language.get(normalized).display_name('en')
         print(f"    Expanded {code} -> {result}")
@@ -64,6 +127,11 @@ def _normalize_language_name(name: str) -> str:
         return ""
 
     name = name.strip()
+
+    csv_name = _lookup_language(name)
+    if csv_name:
+        print(f"  -> Normalized using CSV: '{csv_name}'")
+        return csv_name
 
     # Прямое использование кода, если он уже корректный
     try:
