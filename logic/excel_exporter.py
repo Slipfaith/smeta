@@ -147,12 +147,12 @@ class TranslationBlockRenderer(BlockRenderer):
     def prepare_items(self, pair: Dict[str, Any]) -> List[Dict[str, Any]]:
         translation_rows = (pair.get("services") or {}).get("translation", [])
         data_map: Dict[str, Dict[str, Any]] = {}
+        extras: List[Dict[str, Any]] = []
         for row in translation_rows:
             key = row.get("key") or row.get("name")
-            if not key:
-                continue
-            data_map[key] = row
-            lname = str(key).lower()
+            if key:
+                data_map[key] = row
+            lname = str(key).lower() if key else ""
             if "new" in lname or "нов" in lname:
                 data_map.setdefault("new", row)
             elif "95" in lname:
@@ -161,6 +161,10 @@ class TranslationBlockRenderer(BlockRenderer):
                 data_map.setdefault("fuzzy_75_94", row)
             elif "100" in lname:
                 data_map.setdefault("reps_100_30", row)
+            elif key:
+                extras.append(row)
+            else:
+                extras.append(row)
 
         items: List[Dict[str, Any]] = []
         for cfg in ServiceConfig.TRANSLATION_ROWS:
@@ -168,14 +172,29 @@ class TranslationBlockRenderer(BlockRenderer):
             src = data_map.get(key, {})
             items.append(
                 {
-                    "parameter": tr(cfg.get("name"), self.exporter.lang),
+                    "parameter": src.get("parameter")
+                    or tr(cfg.get("name"), self.exporter.lang),
                     "unit": tr("Слово", self.exporter.lang),
                     "volume": self.exporter._to_number(src.get("volume") or 0),
                     "rate": self.exporter._to_number(src.get("rate") or 0),
-                    "multiplier": cfg.get("multiplier"),
-                    "is_base": bool(cfg.get("is_base")),
+                    "multiplier": src.get("multiplier", cfg.get("multiplier")),
+                    "is_base": bool(src.get("is_base", cfg.get("is_base"))),
                 }
             )
+
+        for row in extras:
+            items.append(
+                {
+                    "parameter": row.get("parameter")
+                    or tr(row.get("name"), self.exporter.lang),
+                    "unit": tr("Слово", self.exporter.lang),
+                    "volume": self.exporter._to_number(row.get("volume") or 0),
+                    "rate": self.exporter._to_number(row.get("rate") or 0),
+                    "multiplier": row.get("multiplier"),
+                    "is_base": bool(row.get("is_base")),
+                }
+            )
+
         return items
 
 
