@@ -480,3 +480,21 @@ class LanguagePairWidget(QWidget):
                 self.translation_group.rows_config,
                 getattr(self.translation_group, 'base_rate_row')
             )
+
+    def convert_rates(self, multiplier: float):
+        """Multiply all rate values by *multiplier* and update totals."""
+        group = getattr(self, 'translation_group', None)
+        if not group or not hasattr(group, 'table'):
+            return
+        table: QTableWidget = group.table
+        rows = group.rows_config
+        for row in range(table.rowCount()):
+            if rows[row].get('deleted'):
+                continue
+            item = table.item(row, 2)
+            if item is None:
+                continue
+            rate = _to_float(item.text())
+            sep = '.' if self.lang == 'en' else ','
+            item.setText(self._format_rate(rate * multiplier, sep))
+        self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))

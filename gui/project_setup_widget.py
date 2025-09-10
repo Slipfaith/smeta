@@ -258,6 +258,19 @@ class ProjectSetupWidget(QWidget):
         ])
         self.update_sums()
 
+    def convert_rates(self, multiplier: float):
+        """Multiply all rate values by *multiplier* and update totals."""
+        for row in range(self.table.rowCount()):
+            if self.rows_deleted[row]:
+                continue
+            item = self.table.item(row, 2)
+            if item is None:
+                continue
+            rate = _to_float(item.text())
+            sep = '.' if self.lang == 'en' else ','
+            item.setText(format_rate(rate * multiplier, sep))
+        self.update_sums()
+
     def set_language(self, lang: str):
         self.lang = lang
         self.title_label.setText(tr("Запуск и управление проектом", lang))
