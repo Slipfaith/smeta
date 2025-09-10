@@ -148,21 +148,25 @@ class TranslationBlockRenderer(BlockRenderer):
         translation_rows = (pair.get("services") or {}).get("translation", [])
         data_map: Dict[str, Dict[str, Any]] = {}
         extras: List[Dict[str, Any]] = []
+        default_keys = {cfg.get("key") for cfg in ServiceConfig.TRANSLATION_ROWS}
         for row in translation_rows:
             key = row.get("key") or row.get("name")
-            if key:
-                data_map[key] = row
             lname = str(key).lower() if key else ""
             if "new" in lname or "нов" in lname:
-                data_map.setdefault("new", row)
+                std_key = "new"
             elif "95" in lname:
-                data_map.setdefault("fuzzy_95_99", row)
+                std_key = "fuzzy_95_99"
             elif "75" in lname:
-                data_map.setdefault("fuzzy_75_94", row)
+                std_key = "fuzzy_75_94"
             elif "100" in lname:
-                data_map.setdefault("reps_100_30", row)
-            elif key:
-                extras.append(row)
+                std_key = "reps_100_30"
+            else:
+                std_key = key
+            if std_key in default_keys:
+                if std_key in data_map:
+                    extras.append(row)
+                else:
+                    data_map[std_key] = row
             else:
                 extras.append(row)
 
