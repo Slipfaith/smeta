@@ -213,6 +213,8 @@ class LanguagePairWidget(QWidget):
                 "deleted": False,
             }
 
+        rows.insert(insert_at, new_cfg)
+        table.blockSignals(True)
         table.setItem(insert_at, 0, QTableWidgetItem(name))
         table.setItem(insert_at, 1, QTableWidgetItem("0"))
         rate_item = QTableWidgetItem("0")
@@ -221,7 +223,7 @@ class LanguagePairWidget(QWidget):
         sum_item = QTableWidgetItem("0.00")
         sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         table.setItem(insert_at, 3, sum_item)
-        rows.insert(insert_at, new_cfg)
+        table.blockSignals(False)
         if base_rate_row is not None and insert_at <= base_rate_row:
             base_rate_row += 1
             setattr(group, 'base_rate_row', base_rate_row)
@@ -381,7 +383,7 @@ class LanguagePairWidget(QWidget):
                 table.blockSignals(False)
 
             subtotal = 0.0
-            for row in range(table.rowCount()):
+            for row in range(min(table.rowCount(), len(rows))):
                 row_cfg = rows[row]
                 if row_cfg.get('deleted'):
                     if table.item(row, 3):
@@ -450,7 +452,7 @@ class LanguagePairWidget(QWidget):
     def _get_table_data(self, table: QTableWidget) -> List[Dict[str, Any]]:
         out = []
         rows_cfg = self.translation_group.rows_config
-        for row in range(table.rowCount()):
+        for row in range(min(table.rowCount(), len(rows_cfg))):
             if rows_cfg[row].get('deleted'):
                 continue
             out.append({
