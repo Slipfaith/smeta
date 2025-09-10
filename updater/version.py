@@ -1,0 +1,3 @@
+APP_VERSION = "1.0.0"
+RELEASE_DATE = "2024-05-30"
+AUTHOR = "slipfaith"

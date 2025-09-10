@@ -32,11 +32,11 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QApplication,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 
 from logic.progress import Progress
-
+from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
@@ -243,6 +243,7 @@ class TranslationCostCalculator(QMainWindow):
         self.total_label = QLabel()
         self.setup_ui()
         self.setup_style()
+        QTimer.singleShot(0, self.auto_check_for_updates)
 
     def setup_ui(self):
         self.setGeometry(100, 100, 1000, 600)
@@ -279,6 +280,15 @@ class TranslationCostCalculator(QMainWindow):
         self.pm_action = QAction(tr("Проджект менеджер", lang), self)
         self.pm_action.triggered.connect(self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
+
+        self.update_menu = self.menuBar().addMenu(tr("Обновление", lang))
+        self.check_updates_action = QAction(tr("Проверить обновления", lang), self)
+        self.check_updates_action.triggered.connect(self.manual_update_check)
+        self.update_menu.addAction(self.check_updates_action)
+
+        self.about_action = QAction(tr("О программе", lang), self)
+        self.about_action.triggered.connect(self.show_about_dialog)
+        self.menuBar().addAction(self.about_action)
 
         self.language_menu = self.menuBar().addMenu(tr("Язык", lang))
         self.lang_action_group = QActionGroup(self)
@@ -598,9 +608,27 @@ class TranslationCostCalculator(QMainWindow):
         self.rates_menu.setTitle(tr("Импорт ставок", lang))
         self.import_rates_action.setText(tr("Импортировать из Excel", lang))
         self.pm_action.setText(tr("Проджект менеджер", lang))
+        self.update_menu.setTitle(tr("Обновление", lang))
+        self.check_updates_action.setText(tr("Проверить обновления", lang))
+        self.about_action.setText(tr("О программе", lang))
         self.language_menu.setTitle(tr("Язык", lang))
         self.lang_ru_action.setText(tr("Русский", lang))
         self.lang_en_action.setText(tr("Английский", lang))
+
+    def manual_update_check(self):
+        check_for_updates(self, force=True)
+
+    def auto_check_for_updates(self):
+        check_for_updates(self, force=False)
+
+    def show_about_dialog(self):
+        lang = self.gui_lang
+        text = (
+            f"{tr('Версия', lang)}: {APP_VERSION}\n"
+            f"{tr('Дата', lang)}: {RELEASE_DATE}\n"
+            f"{tr('Автор', lang)}: {AUTHOR}"
+        )
+        QMessageBox.information(self, tr("О программе", lang), text)
 
     def on_currency_changed(self, code: str):
         self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
