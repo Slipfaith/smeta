@@ -136,6 +136,13 @@ class LanguagePairWidget(QWidget):
             add_act = menu.addAction(tr("Добавить строку", self.lang))
             del_act = menu.addAction(tr("Удалить строку", self.lang))
             restore_act = menu.addAction(tr("Восстановить строку", self.lang))
+
+            fuzzy_menu = menu.addMenu(tr("Фаззи", self.lang))
+            fuzzy_actions = {}
+            for cfg in ServiceConfig.TRANSLATION_ROWS[1:]:
+                act = fuzzy_menu.addAction(tr(cfg["name"], self.lang))
+                fuzzy_actions[act] = cfg
+
             row_cfg = rows[row]
             if row_cfg.get("deleted"):
                 del_act.setEnabled(False)
@@ -150,6 +157,8 @@ class LanguagePairWidget(QWidget):
                 self._delete_row(table, rows, group, row)
             elif action == restore_act:
                 self._restore_row(table, rows, group, row)
+            elif action in fuzzy_actions:
+                self._add_row_after(table, rows, group, row, fuzzy_actions[action])
 
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(show_menu)
@@ -174,11 +183,31 @@ class LanguagePairWidget(QWidget):
 
         return group
 
-    def _add_row_after(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+    def _add_row_after(
+        self,
+        table: QTableWidget,
+        rows: List[Dict],
+        group: QGroupBox,
+        row: int,
+        row_cfg: Dict | None = None,
+    ):
         base_rate_row = getattr(group, 'base_rate_row', None)
         insert_at = row + 1
         table.insertRow(insert_at)
-        table.setItem(insert_at, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
+
+        if row_cfg is None:
+            name = tr("Новая строка", self.lang)
+            new_cfg = {"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False}
+        else:
+            name = tr(row_cfg["name"], self.lang)
+            new_cfg = {
+                "name": row_cfg["name"],
+                "is_base": row_cfg.get("is_base", False),
+                "multiplier": row_cfg.get("multiplier", 1.0),
+                "deleted": False,
+            }
+
+        table.setItem(insert_at, 0, QTableWidgetItem(name))
         table.setItem(insert_at, 1, QTableWidgetItem("0"))
         rate_item = QTableWidgetItem("0")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -186,7 +215,7 @@ class LanguagePairWidget(QWidget):
         sum_item = QTableWidgetItem("0.00")
         sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         table.setItem(insert_at, 3, sum_item)
-        rows.insert(insert_at, {"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
+        rows.insert(insert_at, new_cfg)
         if base_rate_row is not None and insert_at <= base_rate_row:
             base_rate_row += 1
             setattr(group, 'base_rate_row', base_rate_row)
