@@ -276,6 +276,17 @@ class ExcelExporter:
             return f'"{sym}"#,##0.{"0"*decimals}'
         return f'#,##0.{"0"*decimals} "{sym}"'
 
+    def _replace_currency_formats(self, wb: Workbook) -> None:
+        """Replace dollar signs in cell number formats with the current symbol."""
+        if self.currency == "USD":
+            return
+        for ws in wb.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    fmt = cell.number_format
+                    if isinstance(fmt, str) and "$" in fmt:
+                        cell.number_format = fmt.replace("$", self.currency_symbol)
+
     def _to_number(self, value: Any) -> Any:
         if isinstance(value, str):
             try:
@@ -435,6 +446,7 @@ class ExcelExporter:
                 progress_callback(0, "Загрузка шаблона")
 
             wb = load_workbook(self.template_path)
+            self._replace_currency_formats(wb)
             step("Шаблон загружен")
 
             quotation_ws = (
