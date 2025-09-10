@@ -445,18 +445,39 @@ class TranslationCostCalculator(QMainWindow):
             combo.setEditText(prev_text)
 
     def set_app_language(self, lang: str):
+        """Change application language via menu action."""
+        self.lang_mode_slider.blockSignals(True)
         self.lang_mode_slider.setValue(1 if lang == "ru" else 0)
+        self.lang_mode_slider.blockSignals(False)
+        self.lang_display_ru = lang == "ru"
+        self._update_excel_language(lang)
+        self._update_gui_language(lang)
 
     def on_lang_mode_changed(self, value: int):
+        """Handle slider changes – only data for Excel should switch language."""
+        lang = "ru" if value == 1 else "en"
         self.lang_display_ru = value == 1
+        self._update_excel_language(lang)
+
+    def _update_excel_language(self, lang: str):
+        """Update widgets that affect exported spreadsheet only."""
         self.populate_lang_combo(self.source_lang_combo)
         self.populate_lang_combo(self.target_lang_combo)
-        lang = "ru" if self.lang_display_ru else "en"
         if getattr(self, "project_setup_widget", None):
             self.project_setup_widget.set_language(lang)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_language(lang)
+        for pair_key, widget in self.language_pairs.items():
+            widget.set_language(lang)
+            display_name = self._display_pair_name(pair_key)
+            widget.set_pair_name(display_name)
+            right_key = pair_key.split(" → ")[1]
+            lang_info = self._find_language_by_key(right_key)
+            self.pair_headers[pair_key] = lang_info[lang]
+        self.update_pairs_list()
 
+    def _update_gui_language(self, lang: str):
+        """Update visible GUI texts when language is changed via menu."""
         self.project_group.setTitle(tr("Информация о проекте", lang))
         self.project_name_label.setText(tr("Название проекта", lang) + ":")
         self.client_name_label.setText(tr("Название клиента", lang) + ":")
@@ -481,26 +502,19 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_group.setTitle(tr("Языковые пары", lang))
         self.tabs.setTabText(0, tr("Языковые пары", lang))
         self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
-        self.drop_hint_label.setText(
-            tr(
-                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
-                lang,
+        if getattr(self, "drop_hint_label", None):
+            self.drop_hint_label.setText(
+                tr(
+                    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                    lang,
+                )
             )
-        )
         if self.only_new_repeats_mode:
             self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
         else:
             self.only_new_repeats_btn.setText(
                 tr("Только новые слова и повторы", lang)
             )
-        for pair_key, widget in self.language_pairs.items():
-            widget.set_language(lang)
-            display_name = self._display_pair_name(pair_key)
-            widget.set_pair_name(display_name)
-            right_key = pair_key.split(" → ")[1]
-            lang_info = self._find_language_by_key(right_key)
-            self.pair_headers[pair_key] = lang_info[lang]
-        self.update_pairs_list()
         self.update_menu_texts()
 
     def update_menu_texts(self):
