@@ -300,14 +300,19 @@ class TranslationCostCalculator(QMainWindow):
         self.convert_btn = QPushButton(tr("Конвертировать в рубли", lang))
         self.convert_btn.clicked.connect(self.convert_to_rub)
         p.addWidget(self.convert_btn)
+
         self.vat_label = QLabel(tr("НДС, %", lang) + ":")
-        p.addWidget(self.vat_label)
         self.vat_spin = QDoubleSpinBox()
         self.vat_spin.setDecimals(2)
         self.vat_spin.setRange(0, 100)
         self.vat_spin.setValue(20.0)
         self.vat_spin.valueChanged.connect(self.update_total)
-        p.addWidget(self.vat_spin)
+        self.vat_spin.wheelEvent = lambda event: event.ignore()
+
+        vat_layout = QHBoxLayout()
+        vat_layout.addWidget(self.vat_label)
+        vat_layout.addWidget(self.vat_spin)
+        p.addLayout(vat_layout)
         self.project_group.setLayout(p)
         lay.addWidget(self.project_group)
         self.on_legal_entity_changed(self.legal_entity_combo.currentText())
@@ -542,7 +547,7 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_currency(self.currency_symbol, code)
         if getattr(self, "convert_btn", None):
-            self.convert_btn.setEnabled(code == "USD")
+            self.convert_btn.setEnabled(code not in ("RUB", "EUR"))
 
     def convert_to_rub(self):
         """Convert all rates from USD to RUB using user-provided rate."""
