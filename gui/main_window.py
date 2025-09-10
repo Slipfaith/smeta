@@ -288,7 +288,11 @@ class TranslationCostCalculator(QMainWindow):
         self.legal_entity_label = QLabel(tr("Юрлицо", lang) + ":")
         p.addWidget(self.legal_entity_label)
         self.legal_entity_combo = QComboBox()
+        # Placeholder that indicates no legal entity selected yet
+        self.legal_entity_placeholder = tr("Выбери юрлицо", lang)
+        self.legal_entity_combo.addItem(self.legal_entity_placeholder)
         self.legal_entity_combo.addItems(self.legal_entities.keys())
+        self.legal_entity_combo.setCurrentIndex(0)
         self.legal_entity_combo.currentTextChanged.connect(self.on_legal_entity_changed)
         p.addWidget(self.legal_entity_combo)
         self.currency_label = QLabel(tr("Валюта", lang) + ":")
@@ -315,7 +319,8 @@ class TranslationCostCalculator(QMainWindow):
         p.addLayout(vat_layout)
         self.project_group.setLayout(p)
         lay.addWidget(self.project_group)
-        self.on_legal_entity_changed(self.legal_entity_combo.currentText())
+        # Initial state: no legal entity selected
+        self.on_legal_entity_changed("")
         self.on_currency_changed(self.currency_combo.currentText())
 
         self.pairs_group = QGroupBox(tr("Языковые пары", lang))
@@ -455,17 +460,17 @@ class TranslationCostCalculator(QMainWindow):
         self.lang_mode_slider.setValue(1 if lang == "ru" else 0)
         self.lang_mode_slider.blockSignals(False)
         self.lang_display_ru = lang == "ru"
-        self._update_excel_language(lang)
+        self._update_language_names(lang)
         self._update_gui_language(lang)
 
     def on_lang_mode_changed(self, value: int):
-        """Handle slider changes – only data for Excel should switch language."""
+        """Handle slider changes – update language pair names everywhere."""
         lang = "ru" if value == 1 else "en"
         self.lang_display_ru = value == 1
-        self._update_excel_language(lang)
+        self._update_language_names(lang)
 
-    def _update_excel_language(self, lang: str):
-        """Update widgets that affect exported spreadsheet only."""
+    def _update_language_names(self, lang: str):
+        """Update language names in GUI widgets and Excel headers."""
         self.populate_lang_combo(self.source_lang_combo)
         self.populate_lang_combo(self.target_lang_combo)
         if getattr(self, "project_setup_widget", None):
@@ -552,6 +557,13 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "convert_btn", None):
             self.convert_btn.setEnabled(code not in ("RUB", "EUR"))
 
+    def get_selected_legal_entity(self) -> str:
+        """Return currently selected legal entity or empty string if none."""
+        idx = self.legal_entity_combo.currentIndex()
+        if idx <= 0:
+            return ""
+        return self.legal_entity_combo.currentText()
+
     def convert_to_rub(self):
         """Convert all rates from USD to RUB using user-provided rate."""
         if self.currency_combo.currentText() != "USD":
@@ -578,6 +590,8 @@ class TranslationCostCalculator(QMainWindow):
         self.update_total()
 
     def on_legal_entity_changed(self, entity: str):
+        if entity == self.legal_entity_placeholder:
+            entity = ""
         is_art = entity == "Арт"
         self.vat_spin.setEnabled(is_art)
         if is_art and self.vat_spin.value() == 0:
@@ -1226,7 +1240,7 @@ class TranslationCostCalculator(QMainWindow):
             "client_name": self.client_name_edit.text(),
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
-            "legal_entity": self.legal_entity_combo.currentText(),
+            "legal_entity": self.get_selected_legal_entity(),
             "currency": self.currency_combo.currentText(),
             "language_pairs": [],
             "additional_services": [],
@@ -1274,7 +1288,7 @@ class TranslationCostCalculator(QMainWindow):
             return
 
         client_name = project_data["client_name"].replace(" ", "_")
-        entity_for_file = self.legal_entity_combo.currentText().replace(" ", "_")
+        entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
         currency = self.currency_combo.currentText()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.xlsx"
@@ -1285,7 +1299,7 @@ class TranslationCostCalculator(QMainWindow):
         if not file_path:
             return
 
-        entity_name = self.legal_entity_combo.currentText()
+        entity_name = self.get_selected_legal_entity()
         template_path = self.legal_entities.get(entity_name)
         exporter = ExcelExporter(
             template_path,
@@ -1310,7 +1324,7 @@ class TranslationCostCalculator(QMainWindow):
             return
         project_data = self.collect_project_data()
         client_name = project_data["client_name"].replace(" ", "_")
-        entity_for_file = self.legal_entity_combo.currentText().replace(" ", "_")
+        entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
         currency = self.currency_combo.currentText()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.pdf"
@@ -1319,7 +1333,7 @@ class TranslationCostCalculator(QMainWindow):
         )
         if not file_path:
             return
-        template_path = self.legal_entities.get(self.legal_entity_combo.currentText())
+        template_path = self.legal_entities.get(self.get_selected_legal_entity())
         exporter = ExcelExporter(
             template_path,
             currency=currency,
@@ -1390,12 +1404,16 @@ class TranslationCostCalculator(QMainWindow):
         self.contact_person_edit.setText(project_data.get("contact_person", ""))
         self.email_edit.setText(project_data.get("email", ""))
         if hasattr(self, "legal_entity_combo"):
-            self.legal_entity_combo.setCurrentText(project_data.get("legal_entity", ""))
+            le = project_data.get("legal_entity", "")
+            if le:
+                self.legal_entity_combo.setCurrentText(le)
+            else:
+                self.legal_entity_combo.setCurrentIndex(0)
         if hasattr(self, "currency_combo"):
             self.currency_combo.setCurrentText(project_data.get("currency", "RUB"))
         if hasattr(self, "vat_spin"):
             self.vat_spin.setValue(project_data.get("vat_rate", 20.0))
-            self.on_legal_entity_changed(self.legal_entity_combo.currentText())
+        self.on_legal_entity_changed(self.get_selected_legal_entity())
 
         for w in self.language_pairs.values():
             w.setParent(None)
