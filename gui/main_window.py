@@ -205,6 +205,9 @@ class TranslationCostCalculator(QMainWindow):
         self.load_action = QAction(tr("Загрузить проект", lang), self)
         self.load_action.triggered.connect(self.load_project)
         self.project_menu.addAction(self.load_action)
+        self.clear_action = QAction(tr("Очистить", lang), self)
+        self.clear_action.triggered.connect(self.clear_all_data)
+        self.project_menu.addAction(self.clear_action)
 
         self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
         self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
@@ -454,6 +457,15 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_language(lang)
 
+        self.project_group.setTitle(tr("Информация о проекте", lang))
+        self.project_name_label.setText(tr("Название проекта", lang) + ":")
+        self.client_name_label.setText(tr("Название клиента", lang) + ":")
+        self.contact_person_label.setText(tr("Контактное лицо", lang) + ":")
+        self.email_label.setText(tr("Email", lang) + ":")
+        self.legal_entity_label.setText(tr("Юрлицо", lang) + ":")
+        self.currency_label.setText(tr("Валюта", lang) + ":")
+        self.convert_btn.setText(tr("Конвертировать в рубли", lang))
+        self.vat_label.setText(tr("НДС, %", lang) + ":")
         self.language_names_label.setText(tr("Названия языков", lang) + ":")
         self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
         self.current_pairs_label.setText(tr("Текущие пары", lang) + ":")
@@ -475,6 +487,12 @@ class TranslationCostCalculator(QMainWindow):
                 lang,
             )
         )
+        if self.only_new_repeats_mode:
+            self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
+        else:
+            self.only_new_repeats_btn.setText(
+                tr("Только новые слова и повторы", lang)
+            )
         for pair_key, widget in self.language_pairs.items():
             widget.set_language(lang)
             display_name = self._display_pair_name(pair_key)
@@ -483,12 +501,14 @@ class TranslationCostCalculator(QMainWindow):
             lang_info = self._find_language_by_key(right_key)
             self.pair_headers[pair_key] = lang_info[lang]
         self.update_pairs_list()
+        self.update_menu_texts()
 
     def update_menu_texts(self):
         lang = "ru" if self.lang_display_ru else "en"
         self.project_menu.setTitle(tr("Проект", lang))
         self.save_action.setText(tr("Сохранить проект", lang))
         self.load_action.setText(tr("Загрузить проект", lang))
+        self.clear_action.setText(tr("Очистить", lang))
         self.export_menu.setTitle(tr("Экспорт", lang))
         self.save_excel_action.setText(tr("Сохранить Excel", lang))
         self.save_pdf_action.setText(tr("Сохранить PDF", lang))
@@ -559,7 +579,7 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_layout.setSpacing(12)
 
         self.only_new_repeats_btn = QPushButton(
-            tr("Только новые слова и повторы", "ru")
+            tr("Только новые слова и повторы", lang)
         )
         self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
         self.pairs_layout.addWidget(self.only_new_repeats_btn)
@@ -613,18 +633,18 @@ class TranslationCostCalculator(QMainWindow):
         self.pairs_scroll.setAcceptDrops(True)
         self.setup_drag_drop()
 
-        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", "ru"))
+        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", lang))
 
         self.additional_services_widget = AdditionalServicesWidget(
             self.currency_symbol,
             self.currency_combo.currentText(),
-            lang="ru" if self.lang_display_ru else "en",
+            lang=lang,
         )
         self.additional_services_widget.subtotal_changed.connect(self.update_total)
         add_scroll = QScrollArea()
         add_scroll.setWidget(self.additional_services_widget)
         add_scroll.setWidgetResizable(True)
-        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", "ru"))
+        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", lang))
 
         lay.addWidget(self.tabs)
 
@@ -643,7 +663,8 @@ class TranslationCostCalculator(QMainWindow):
         drop_area.setWidget(self.pairs_container_widget)
 
         self.tabs.removeTab(0)
-        self.tabs.insertTab(0, drop_area, tr("Языковые пары", "ru"))
+        lang = "ru" if self.lang_display_ru else "en"
+        self.tabs.insertTab(0, drop_area, tr("Языковые пары", lang))
         self.pairs_scroll = drop_area
 
     def _hide_drop_hint(self):
@@ -658,11 +679,12 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = not self.only_new_repeats_mode
         for w in self.language_pairs.values():
             w.set_only_new_and_repeats_mode(self.only_new_repeats_mode)
+        lang = "ru" if self.lang_display_ru else "en"
         if self.only_new_repeats_mode:
-            self.only_new_repeats_btn.setText(tr("Показать 4 строки", "ru"))
+            self.only_new_repeats_btn.setText(tr("Показать 4 строки", lang))
         else:
             self.only_new_repeats_btn.setText(
-                tr("Только новые слова и повторы", "ru")
+                tr("Только новые слова и повторы", lang)
             )
 
     def setup_style(self):
@@ -917,6 +939,42 @@ class TranslationCostCalculator(QMainWindow):
         self.language_pairs.clear()
         self.pair_headers.clear()
         self.update_pairs_list()
+        self.update_total()
+
+    def clear_all_data(self):
+        """Reset all user-entered and loaded data."""
+        self.project_name_edit.clear()
+        self.client_name_edit.clear()
+        self.contact_person_edit.clear()
+        self.email_edit.clear()
+        self.legal_entity_combo.setCurrentIndex(0)
+        self.currency_combo.setCurrentIndex(0)
+        self.vat_spin.setValue(20.0)
+
+        lang = "ru" if self.lang_display_ru else "en"
+        self.project_setup_fee_spin.setValue(0.5)
+        if getattr(self, "project_setup_widget", None):
+            self.project_setup_widget.load_data(
+                [
+                    {
+                        "parameter": tr("Запуск и управление проектом", lang),
+                        "volume": self.project_setup_fee_spin.value(),
+                        "rate": 0.0,
+                        "total": 0.0,
+                    }
+                ]
+            )
+
+        self.clear_language_pairs()
+        if getattr(self, "additional_services_widget", None):
+            self.additional_services_widget.load_data([])
+
+        self.only_new_repeats_mode = False
+        if getattr(self, "only_new_repeats_btn", None):
+            self.only_new_repeats_btn.setText(
+                tr("Только новые слова и повторы", lang)
+            )
+
         self.update_total()
 
     def import_rates_from_excel(self) -> None:
