@@ -648,7 +648,7 @@ class TranslationCostCalculator(QMainWindow):
     def on_legal_entity_changed(self, entity: str):
         if entity == self.legal_entity_placeholder:
             entity = ""
-        is_art = entity == "Арт"
+        is_art = entity == "Артфест"
         self.vat_spin.setEnabled(is_art)
         if is_art and self.vat_spin.value() == 0:
             self.vat_spin.setValue(20.0)
