@@ -197,11 +197,17 @@ class LanguagePairWidget(QWidget):
 
         if row_cfg is None:
             name = tr("Новая строка", self.lang)
-            new_cfg = {"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False}
+            new_cfg = {
+                "name": "Новая строка",
+                "is_base": False,
+                "multiplier": 1.0,
+                "deleted": False,
+            }
         else:
             name = tr(row_cfg["name"], self.lang)
             new_cfg = {
                 "name": row_cfg["name"],
+                "key": row_cfg.get("key"),
                 "is_base": row_cfg.get("is_base", False),
                 "multiplier": row_cfg.get("multiplier", 1.0),
                 "deleted": False,
@@ -449,6 +455,7 @@ class LanguagePairWidget(QWidget):
                 continue
             out.append({
                 "key": rows_cfg[row].get("key"),
+                "name": rows_cfg[row].get("name"),
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
                 "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
                 "rate":   _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
@@ -491,6 +498,8 @@ class LanguagePairWidget(QWidget):
                 table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
             rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
+            rows[row]["key"] = row_data.get("key", rows[row].get("key"))
+            rows[row]["name"] = row_data.get("name", rows[row].get("name"))
             if rows[row].get("is_base"):
                 base_rate_row = row
 
