@@ -16,6 +16,7 @@ from resource_utils import resource_path
 
 from .service_config import ServiceConfig
 from .translation_config import tr
+from .excel_process import apply_separators
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -556,6 +557,7 @@ class ExcelExporter:
             self.logger.info("Saving workbook to %s", output_path)
             step("Сохранение файла")
             wb.save(output_path)
+            apply_separators(output_path, self.lang)
 
             if progress_callback:
                 progress_callback(100, "Готово")

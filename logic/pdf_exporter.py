@@ -1,10 +1,10 @@
-# logic/pdf_exporter.py
 import os
 import logging
 import tempfile
 from typing import Dict, Any
 
 from .excel_exporter import ExcelExporter
+from .excel_process import temporary_separators
 
 logger = logging.getLogger("PdfExporter")
 
@@ -41,8 +41,6 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
     """
 
     excel = wb = None
-    orig_decimal = orig_thousands = orig_use_sys = None
-    custom_sep = None
     try:
         import win32com.client  # type: ignore
 
@@ -50,25 +48,10 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
         excel.Visible = False
         excel.DisplayAlerts = False
 
-        lang_lc = lang.lower()
-        if lang_lc.startswith("en"):
-            custom_sep = (".", ",")
-        elif lang_lc.startswith("ru"):
-            custom_sep = (",", " ")
-
-        if custom_sep is not None:
-            try:
-                orig_decimal = excel.DecimalSeparator
-                orig_thousands = excel.ThousandsSeparator
-                orig_use_sys = excel.UseSystemSeparators
-                excel.DecimalSeparator, excel.ThousandsSeparator = custom_sep
-                excel.UseSystemSeparators = False
-            except Exception:
-                pass
-
-        wb = excel.Workbooks.Open(xlsx_path)
-        wb.ExportAsFixedFormat(0, pdf_path)
-        success = os.path.exists(pdf_path)
+        with temporary_separators(excel, lang):
+            wb = excel.Workbooks.Open(xlsx_path)
+            wb.ExportAsFixedFormat(0, pdf_path)
+            success = os.path.exists(pdf_path)
     except Exception:
         success = False
     finally:
@@ -78,13 +61,6 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
             except Exception:
                 pass
         if excel is not None:
-            if custom_sep is not None and orig_use_sys is not None:
-                try:
-                    excel.DecimalSeparator = orig_decimal
-                    excel.ThousandsSeparator = orig_thousands
-                    excel.UseSystemSeparators = orig_use_sys
-                except Exception:
-                    pass
             try:
                 excel.Quit()
             except Exception:
