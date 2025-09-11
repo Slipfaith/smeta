@@ -1,19 +1,20 @@
 import json
-import os
+from pathlib import Path
 from typing import Dict
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "legal_entities.json")
+from resource_utils import resource_path
+
+CONFIG_PATH = resource_path(Path("logic") / "legal_entities.json")
 
 
 def load_legal_entities() -> Dict[str, str]:
     """Return mapping of legal entity name to absolute template path."""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    with CONFIG_PATH.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    base_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
     out: Dict[str, str] = {}
     if isinstance(data, dict):
         for name, rel_path in data.items():
-            out[name] = os.path.join(base_dir, rel_path)
+            out[name] = str(resource_path(rel_path))
     return out
 
 
