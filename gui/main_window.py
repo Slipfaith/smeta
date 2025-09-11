@@ -1496,7 +1496,7 @@ class TranslationCostCalculator(QMainWindow):
                         return
                     progress.set_label("Конвертация в PDF")
                     progress.set_value(80)
-                    if not xlsx_to_pdf(xlsx_path, pdf_path):
+                    if not xlsx_to_pdf(xlsx_path, pdf_path, lang=export_lang):
                         QMessageBox.critical(
                             self, "Ошибка", "Не удалось конвертировать в PDF"
                         )
