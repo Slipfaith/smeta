@@ -101,9 +101,9 @@ TRANSLATIONS = {
     "Конвертировать в рубли": {"ru": "Конвертировать в рубли", "en": "Convert to RUB"},
     "Курс USD": {"ru": "Курс USD", "en": "USD rate"},
     "1 USD в рублях": {"ru": "1 USD в рублях", "en": "1 USD in RUB"},
-    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения": {
-        "ru": "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
-        "en": "Drag Trados XML report files here for automatic filling",
+    "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения": {
+        "ru": "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
+        "en": "Drag Trados or Smartcat XML report files here for automatic filling",
     },
     "Обновление": {"ru": "Обновление", "en": "Update"},
     "Проверить обновления": {"ru": "Проверить обновления", "en": "Check for updates"},

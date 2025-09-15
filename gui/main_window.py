@@ -615,7 +615,7 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "drop_hint_label", None):
             self.drop_hint_label.setText(
                 tr(
-                    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                    "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
                     lang,
                 )
             )
@@ -756,7 +756,7 @@ class TranslationCostCalculator(QMainWindow):
 
         self.drop_hint_label = QLabel(
             tr(
-                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
                 gui_lang,
             )
         )

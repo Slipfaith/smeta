@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import xml.etree.ElementTree as ET
 import re
 import csv
@@ -23,6 +23,9 @@ ROW_NAMES = ServiceConfig.ROW_NAMES
 
 LANGUAGE_CODE_MAP: Dict[str, str] = {}
 LANGUAGE_NAME_MAP: Dict[str, str] = {}
+
+
+SMARTCAT_NS = "urn:schemas-microsoft-com:office:spreadsheet"
 
 
 def _load_languages_csv() -> None:
@@ -326,6 +329,548 @@ def _parse_analyse_element(analyse: ET.Element, unit: str = "words") -> Dict[str
     return values
 
 
+def _is_smartcat_report(path: str) -> bool:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            head = f.read(2048)
+    except OSError:
+        return False
+
+    lower = head.lower()
+    if "<workbook" not in lower:
+        return False
+
+    if "urn:schemas-microsoft-com:office:spreadsheet" in lower:
+        return True
+
+    return "statistics for project" in lower
+
+
+def _ensure_placeholder_entry(
+    results: Dict[str, Dict[str, float]], preferred_name: str, fallback: str
+) -> str:
+    base = preferred_name.strip() or fallback.strip()
+    if not base:
+        base = "Пустая языковая пара"
+
+    candidate = base
+    index = 2
+    while candidate in results:
+        candidate = f"{base} ({index})"
+        index += 1
+
+    results[candidate] = {name: 0.0 for name in ROW_NAMES}
+    return candidate
+
+
+def _merge_pair_results(
+    target: Dict[str, Dict[str, float]], additions: Dict[str, Dict[str, float]]
+) -> None:
+    for pair_key, values in additions.items():
+        if pair_key not in target:
+            target[pair_key] = {name: 0.0 for name in ROW_NAMES}
+        for name in ROW_NAMES:
+            target[pair_key][name] += values.get(name, 0.0)
+
+
+def _parse_number(text: str) -> float:
+    if not text:
+        return 0.0
+
+    cleaned = text.strip().replace("\xa0", "").replace(" ", "")
+    if not cleaned:
+        return 0.0
+
+    if cleaned.count(",") and cleaned.count('.'):
+        if cleaned.rfind('.') > cleaned.rfind(','):
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace('.', "")
+            cleaned = cleaned.replace(',', '.')
+    elif "," in cleaned and "." not in cleaned:
+        cleaned = cleaned.replace(",", ".")
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        cleaned = re.sub(r"[^0-9.+-]", "", cleaned)
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+
+def _smartcat_unit_keywords(unit: str) -> List[str]:
+    unit_lc = unit.lower()
+    if "char" in unit_lc or "символ" in unit_lc:
+        return ["character", "characters", "символ", "символы", "знаков"]
+    return ["word", "words", "слово", "слова"]
+
+
+def _worksheet_to_rows(worksheet: ET.Element) -> List[List[str]]:
+    table = worksheet.find(f"{{{SMARTCAT_NS}}}Table")
+    if table is None:
+        return []
+
+    rows: List[List[str]] = []
+    for row in table.findall(f"{{{SMARTCAT_NS}}}Row"):
+        values: List[str] = []
+        for cell in row.findall(f"{{{SMARTCAT_NS}}}Cell"):
+            index_attr = cell.get(f"{{{SMARTCAT_NS}}}Index")
+            if index_attr:
+                try:
+                    index = int(index_attr) - 1
+                    while len(values) < index:
+                        values.append("")
+                except ValueError:
+                    pass
+
+            data_elem = cell.find(f"{{{SMARTCAT_NS}}}Data")
+            text = ""
+            if data_elem is not None and data_elem.text:
+                text = data_elem.text.strip()
+            values.append(text)
+        rows.append(values)
+    return rows
+
+
+def _smartcat_candidates_from_text(text: str) -> List[str]:
+    candidates: List[str] = []
+    if not text:
+        return candidates
+
+    stripped = text.strip()
+    if not stripped:
+        return candidates
+
+    bracket_matches = re.findall(r"\[([A-Za-z0-9_-]{2,})\]", stripped)
+    candidates.extend(bracket_matches)
+
+    arrow_match = re.search(r"(?:→|->|➔|➡|➞|⟶|⟹)\s*([^\]]+)$", stripped)
+    if arrow_match:
+        candidates.append(arrow_match.group(1).strip())
+
+    if ":" in stripped:
+        label, _, value = stripped.partition(":")
+        if any(
+            keyword in label.lower()
+            for keyword in ("target", "language", "язык", "целевой")
+        ):
+            candidates.append(value.strip())
+
+    lower = stripped.lower()
+    if lower.startswith("statistics for project"):
+        rest = stripped[len("statistics for project") :].strip(" :-")
+        if rest:
+            candidates.append(rest)
+    elif lower.startswith("statistics"):
+        rest = stripped[len("statistics") :].strip(" :-")
+        if rest and len(rest.split()) <= 3:
+            candidates.append(rest)
+
+    if len(stripped) <= 15 and re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", stripped):
+        candidates.append(stripped)
+    elif (
+        len(stripped.split()) <= 3
+        and not any(
+            keyword in lower
+            for keyword in (
+                "statistics",
+                "project",
+                "match",
+                "segment",
+                "words",
+                "characters",
+                "total",
+            )
+        )
+    ):
+        candidates.append(stripped)
+
+    return [c for c in candidates if c]
+
+
+def _resolve_language_display(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+
+    display = _expand_language_code(value)
+    if display:
+        return display
+
+    normalized = _normalize_language_name(value)
+    if normalized:
+        return normalized
+
+    if re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", value):
+        return value.upper()
+
+    return value
+
+
+def _extract_smartcat_target_language(path: str, root: ET.Element) -> str:
+    candidates = _smartcat_candidates_from_text(Path(path).stem)
+
+    for worksheet in root.findall(f"{{{SMARTCAT_NS}}}Worksheet"):
+        name_attr = worksheet.get(f"{{{SMARTCAT_NS}}}Name", "")
+        candidates.extend(_smartcat_candidates_from_text(name_attr))
+
+        table = worksheet.find(f"{{{SMARTCAT_NS}}}Table")
+        if table is None:
+            continue
+
+        for row in table.findall(f"{{{SMARTCAT_NS}}}Row"):
+            for cell in row.findall(f"{{{SMARTCAT_NS}}}Cell"):
+                data_elem = cell.find(f"{{{SMARTCAT_NS}}}Data")
+                if data_elem is None or not data_elem.text:
+                    continue
+                text = data_elem.text.strip()
+                if not text:
+                    continue
+                lower = text.lower()
+                if any(
+                    keyword in lower for keyword in ("target", "language", "язык", "целевой")
+                ):
+                    candidates.extend(_smartcat_candidates_from_text(text))
+                elif "[" in text and "]" in text:
+                    candidates.extend(_smartcat_candidates_from_text(text))
+            if candidates:
+                break
+        if candidates:
+            break
+
+    seen = set()
+    for candidate in candidates:
+        candidate_norm = candidate.strip()
+        if not candidate_norm:
+            continue
+        key = candidate_norm.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        display = _resolve_language_display(candidate_norm)
+        if display:
+            return display
+
+    return ""
+
+
+def _find_smartcat_statistics(
+    rows: List[List[str]], unit: str
+) -> List[Tuple[str, float]]:
+    if not rows:
+        return []
+
+    keywords = _smartcat_unit_keywords(unit)
+
+    header_idx: Optional[int] = None
+    value_col: Optional[int] = None
+
+    for idx, row in enumerate(rows):
+        normalized = [cell.strip().lower() for cell in row]
+        if not any(normalized):
+            continue
+        first_cell = normalized[0] if normalized else ""
+        if header_idx is None and any(
+            token in first_cell for token in ("segment", "match", "тип", "совпад")
+        ):
+            for col, cell in enumerate(normalized):
+                if any(keyword in cell for keyword in keywords):
+                    header_idx = idx
+                    value_col = col
+                    break
+        if header_idx is not None:
+            break
+
+    if header_idx is None or value_col is None:
+        return []
+
+    stats: List[Tuple[str, float]] = []
+    blank_rows = 0
+
+    for row in rows[header_idx + 1 :]:
+        normalized = [cell.strip() for cell in row]
+        if not any(normalized):
+            blank_rows += 1
+            if blank_rows >= 2 and stats:
+                break
+            continue
+
+        blank_rows = 0
+
+        if len(row) <= value_col:
+            continue
+
+        label = normalized[0]
+        if not label:
+            continue
+
+        lower_label = label.lower()
+        if lower_label in {"total", "subtotal", "итого"}:
+            break
+        if any(
+            keyword in lower_label
+            for keyword in ("segment type", "match type", "workflow", "language pair")
+        ):
+            continue
+
+        value = _parse_number(row[value_col])
+        if value <= 0:
+            continue
+
+        stats.append((label, value))
+
+    return stats
+
+
+def _categorize_smartcat_row(label: str) -> Optional[str]:
+    norm = re.sub(r"\s+", " ", label).strip()
+    if not norm:
+        return None
+
+    lower = norm.lower()
+    if any(keyword in lower for keyword in ("machine", "mt", "итого", "total")):
+        if "total" in lower or "итого" in lower:
+            return None
+        if "machine" in lower or "mt" in lower:
+            return None
+
+    digits = [int(val) for val in re.findall(r"\d+", lower)]
+
+    if any(keyword in lower for keyword in ("repeat", "повтор", "context", "perfect")):
+        return ROW_NAMES[3]
+
+    if any(value >= 100 for value in digits):
+        return ROW_NAMES[3]
+
+    if any(95 <= value <= 99 for value in digits):
+        return ROW_NAMES[2]
+
+    if any(75 <= value <= 94 for value in digits):
+        return ROW_NAMES[1]
+
+    if any(keyword in lower for keyword in ("no match", "без совп", "новые", "new")):
+        return ROW_NAMES[0]
+
+    if any(60 <= value <= 74 for value in digits):
+        return ROW_NAMES[0]
+
+    if "tm" in lower and digits:
+        if any(value >= 95 for value in digits):
+            return ROW_NAMES[2]
+        if any(value >= 75 for value in digits):
+            return ROW_NAMES[1]
+
+    if "match" in lower and "100" in lower:
+        return ROW_NAMES[3]
+
+    return ROW_NAMES[0]
+
+
+def _parse_smartcat_report(
+    path: str, unit: str
+) -> Tuple[Dict[str, Dict[str, float]], List[str], bool, str]:
+    filename = Path(path).name
+    print(f"Detected Smartcat report: {path}")
+
+    results: Dict[str, Dict[str, float]] = {}
+    warnings: List[str] = []
+    processed = False
+    placeholder = Path(path).stem
+
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError as exc:
+        msg = f"{filename}: XML Parse Error - {exc}"
+        print(f"ERROR: {msg}")
+        warnings.append(msg)
+        return results, warnings, processed, placeholder
+    except Exception as exc:
+        msg = f"{filename}: Unexpected error - {exc}"
+        print(f"ERROR: {msg}")
+        warnings.append(msg)
+        return results, warnings, processed, placeholder
+
+    root = tree.getroot()
+    print(f"Root element: {root.tag}")
+
+    target_lang = _extract_smartcat_target_language(path, root)
+    if target_lang:
+        placeholder = target_lang
+    pair_key = target_lang or placeholder
+    print(f"Smartcat target language: '{pair_key}'")
+
+    statistics_rows: List[Tuple[str, float]] = []
+    for worksheet in root.findall(f"{{{SMARTCAT_NS}}}Worksheet"):
+        sheet_name = worksheet.get(f"{{{SMARTCAT_NS}}}Name", "") or "<unnamed>"
+        print(f"  Inspecting worksheet: {sheet_name}")
+        rows = _worksheet_to_rows(worksheet)
+        statistics_rows = _find_smartcat_statistics(rows, unit)
+        if statistics_rows:
+            print(f"  → Statistics found in worksheet '{sheet_name}'")
+            break
+
+    if not statistics_rows:
+        msg = f"{filename}: Не удалось извлечь статистику Smartcat"
+        print(f"WARNING: {msg}")
+        warnings.append(msg)
+        return results, warnings, processed, pair_key
+
+    values = {name: 0.0 for name in ROW_NAMES}
+    for label, number in statistics_rows:
+        category = _categorize_smartcat_row(label)
+        if not category:
+            print(f"    Skipping row '{label}'")
+            continue
+        print(f"    {label} -> {category}: {number}")
+        values[category] += number
+
+    total = sum(values.values())
+    results[pair_key] = values
+
+    if total > 0:
+        processed = True
+        print(f"✓ Smartcat report processed: {pair_key} total {total}")
+    else:
+        msg = f"{filename}: Статистика Smartcat не содержит слов"
+        print(f"WARNING: {msg}")
+        warnings.append(msg)
+
+    return results, warnings, processed, pair_key
+
+
+def _parse_trados_report(
+    path: str, unit: str
+) -> Tuple[Dict[str, Dict[str, float]], List[str], bool, str]:
+    filename = Path(path).name
+    print(f"Processing Trados report: {path}")
+
+    results: Dict[str, Dict[str, float]] = {}
+    warnings: List[str] = []
+    processed = False
+    placeholder = Path(path).stem
+
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+
+        print(f"Root element: {root.tag}")
+        print(f"Root attributes: {root.attrib}")
+
+        if root.tag != 'task':
+            print(f"WARNING: Expected 'task' root element, got '{root.tag}'")
+
+        taskinfo = root.find('taskInfo')
+        if taskinfo is None:
+            warning_msg = f"{filename}: No taskInfo element found"
+            print(f"ERROR: {warning_msg}")
+            warnings.append(warning_msg)
+            return results, warnings, processed, placeholder
+
+        print(f"TaskInfo found: {taskinfo.attrib}")
+
+        filename_only = Path(path).name
+        src_lang, tgt_lang = _extract_languages_from_filename(filename_only)
+        taskinfo_lang = _extract_language_from_taskinfo(taskinfo)
+
+        pair_key: Optional[str] = None
+        determined_source_lang = ""
+        determined_target_lang = ""
+
+        if src_lang and tgt_lang:
+            determined_source_lang = src_lang
+            determined_target_lang = tgt_lang
+            print(f"Language pair from filename: {src_lang} → {tgt_lang}")
+            if (
+                taskinfo_lang
+                and len(tgt_lang) <= 3
+                and len(taskinfo_lang) > len(tgt_lang)
+            ):
+                determined_target_lang = taskinfo_lang
+            pair_key = f"{determined_source_lang} → {determined_target_lang}"
+        elif taskinfo_lang:
+            determined_source_lang = "EN"
+            determined_target_lang = taskinfo_lang
+            pair_key = f"EN → {taskinfo_lang}"
+            print(f"Language pair from taskInfo: {pair_key}")
+
+        if not pair_key:
+            warning_msg = (
+                f"{filename}: Could not determine language pair (src='{src_lang}', tgt='{tgt_lang}', taskinfo='{taskinfo_lang}')"
+            )
+            print(f"ERROR: {warning_msg}")
+            warnings.append(warning_msg)
+            return results, warnings, processed, placeholder
+
+        placeholder = determined_target_lang or pair_key
+
+        print(
+            f"Final determined pair: '{determined_source_lang}' → '{determined_target_lang}'"
+        )
+        print(f"Pair key: '{pair_key}'")
+
+        file_elements = root.findall('file')
+        print(f"Found {len(file_elements)} file elements")
+
+        if not file_elements:
+            warning_msg = f"{filename}: No file elements found"
+            print(f"ERROR: {warning_msg}")
+            warnings.append(warning_msg)
+            return results, warnings, processed, placeholder
+
+        pair_values = {name: 0.0 for name in ROW_NAMES}
+        pair_total_words = 0.0
+        files_processed_in_pair = 0
+
+        for j, file_elem in enumerate(file_elements):
+            file_name = file_elem.get('name', f'file_{j}')
+            print(f"\n  Processing file {j + 1}/{len(file_elements)}: {file_name}")
+
+            analyse_elem = file_elem.find('analyse')
+            if analyse_elem is None:
+                print(f"    No analyse element in file {file_name}")
+                continue
+
+            file_values = _parse_analyse_element(analyse_elem, unit)
+
+            for name in ROW_NAMES:
+                add_val = file_values[name]
+                pair_values[name] += add_val
+                if add_val > 0:
+                    print(f"    {name}: +{add_val} (now {pair_values[name]})")
+
+            file_total = sum(file_values.values())
+            pair_total_words += file_total
+            print(f"    File total: {file_total} words")
+            files_processed_in_pair += 1
+
+        results[pair_key] = pair_values
+
+        print(
+            f"\nPair {pair_key} total: {pair_total_words} words from {files_processed_in_pair} files"
+        )
+
+        if pair_total_words > 0:
+            processed = True
+            print(f"✓ Successfully processed report: {pair_key}")
+        else:
+            warning_msg = f"{filename}: No words found in any file"
+            print(f"WARNING: {warning_msg}")
+            warnings.append(warning_msg)
+
+    except ET.ParseError as exc:
+        error_msg = f"{filename}: XML Parse Error - {exc}"
+        print(f"ERROR: {error_msg}")
+        warnings.append(error_msg)
+    except Exception as exc:
+        error_msg = f"{filename}: Unexpected error - {exc}"
+        print(f"ERROR: {error_msg}")
+        warnings.append(error_msg)
+
+    return results, warnings, processed, placeholder
+
+
 def parse_reports(paths: List[str], unit: str = "Words") -> Tuple[Dict[str, Dict[str, float]], List[str]]:
     """Парсит Trados XML отчёты и возвращает агрегированные объёмы по парам языков."""
     print(f"Starting to parse {len(paths)} XML reports...")
@@ -338,135 +883,37 @@ def parse_reports(paths: List[str], unit: str = "Words") -> Tuple[Dict[str, Dict
 
     for i, path in enumerate(paths):
         print(f"\n--- Processing file {i + 1}/{len(paths)}: {path} ---")
+        filename = Path(path).name
 
-        try:
-            tree = ET.parse(path)
-            root = tree.getroot()
+        if _is_smartcat_report(path):
+            file_results, file_warnings, processed, placeholder = _parse_smartcat_report(
+                path, unit_attr
+            )
+        else:
+            file_results, file_warnings, processed, placeholder = _parse_trados_report(
+                path, unit_attr
+            )
 
-            print(f"Root element: {root.tag}")
-            print(f"Root attributes: {root.attrib}")
+        warnings.extend(file_warnings)
 
-            if root.tag != 'task':
-                print(f"WARNING: Expected 'task' root element, got '{root.tag}'")
-
-            # Извлекаем информацию о задаче
-            taskinfo = root.find('taskInfo')
-            if taskinfo is None:
-                warning_msg = f"{path}: No taskInfo element found"
-                print(f"ERROR: {warning_msg}")
-                warnings.append(warning_msg)
-                continue
-
-            print(f"TaskInfo found: {taskinfo.attrib}")
-
-            # Пытаемся определить языки
-            # 1. Из названия файла
-            import os
-            filename = os.path.basename(path)
-            src_lang, tgt_lang = _extract_languages_from_filename(filename)
-
-            # 2. Из taskInfo (обычно это целевой язык)
-            taskinfo_lang = _extract_language_from_taskinfo(taskinfo)
-
-            # Логика определения пары языков
-            pair_key = None
-            determined_source_lang = ""
-            determined_target_lang = ""
-
-            if src_lang and tgt_lang:
-                determined_source_lang = src_lang
-                determined_target_lang = tgt_lang
-                print(f"Language pair from filename: {src_lang} → {tgt_lang}")
-                if (
-                    taskinfo_lang
-                    and len(tgt_lang) <= 3
-                    and len(taskinfo_lang) > len(tgt_lang)
-                ):
-                    determined_target_lang = taskinfo_lang
-                pair_key = f"{determined_source_lang} → {determined_target_lang}"
-            elif taskinfo_lang:
-                # Если из файла не удалось извлечь, предполагаем EN -> taskinfo_lang
-                determined_source_lang = "EN"
-                determined_target_lang = taskinfo_lang
-                if taskinfo_lang != 'EN':
-                    pair_key = f"EN → {taskinfo_lang}"
+        if file_results:
+            for pair_key in file_results:
+                if pair_key not in results:
+                    print(f"✓ Created new entry for pair: {pair_key}")
                 else:
-                    pair_key = f"EN → {taskinfo_lang}"
-                print(f"Language pair from taskInfo: {pair_key}")
+                    print(f"→ Adding to existing pair: {pair_key}")
+            _merge_pair_results(results, file_results)
+        else:
+            if not file_warnings:
+                msg = f"{filename}: Отчёт не удалось обработать"
+                print(f"ERROR: {msg}")
+                warnings.append(msg)
+            placeholder_name = placeholder or filename
+            created_key = _ensure_placeholder_entry(results, placeholder_name, filename)
+            print(f"  Added placeholder entry for '{created_key}'")
 
-            if not pair_key:
-                warning_msg = f"{path}: Could not determine language pair (src='{src_lang}', tgt='{tgt_lang}', taskinfo='{taskinfo_lang}')"
-                print(f"ERROR: {warning_msg}")
-                warnings.append(warning_msg)
-                continue
-
-            print(f"Final determined pair: '{determined_source_lang}' → '{determined_target_lang}'")
-            print(f"Pair key: '{pair_key}'")
-
-            # Ищем файлы для анализа
-            file_elements = root.findall('file')
-            print(f"Found {len(file_elements)} file elements")
-
-            if not file_elements:
-                warning_msg = f"{path}: No file elements found"
-                print(f"ERROR: {warning_msg}")
-                warnings.append(warning_msg)
-                continue
-
-            # Инициализируем аккумулятор для этой языковой пары
-            if pair_key not in results:
-                results[pair_key] = {name: 0.0 for name in ROW_NAMES}
-                print(f"✓ Created new entry for pair: {pair_key}")
-            else:
-                print(f"→ Adding to existing pair: {pair_key}")
-
-            pair_total_words = 0
-            files_processed_in_pair = 0
-
-            # Обрабатываем каждый файл
-            for j, file_elem in enumerate(file_elements):
-                file_name = file_elem.get('name', f'file_{j}')
-                print(f"\n  Processing file {j + 1}/{len(file_elements)}: {file_name}")
-
-                analyse_elem = file_elem.find('analyse')
-                if analyse_elem is None:
-                    print(f"    No analyse element in file {file_name}")
-                    continue
-
-                # Парсим данные анализа
-                file_values = _parse_analyse_element(analyse_elem, unit_attr)
-
-                # Добавляем к общему результату
-                for name in ROW_NAMES:
-                    old_val = results[pair_key][name]
-                    add_val = file_values[name]
-                    results[pair_key][name] += add_val
-                    if add_val > 0:
-                        print(f"    {name}: {old_val} + {add_val} = {results[pair_key][name]}")
-
-                file_total = sum(file_values.values())
-                pair_total_words += file_total
-                files_processed_in_pair += 1
-                print(f"    File total: {file_total} words")
-
-            print(f"\nPair {pair_key} total: {pair_total_words} words from {files_processed_in_pair} files")
-
-            if pair_total_words > 0:
-                successfully_processed += 1
-                print(f"✓ Successfully processed report {i + 1}: {pair_key}")
-            else:
-                warning_msg = f"{path}: No words found in any file"
-                print(f"WARNING: {warning_msg}")
-                warnings.append(warning_msg)
-
-        except ET.ParseError as e:
-            error_msg = f"{path}: XML Parse Error - {e}"
-            print(f"ERROR: {error_msg}")
-            warnings.append(error_msg)
-        except Exception as e:
-            error_msg = f"{path}: Unexpected error - {e}"
-            print(f"ERROR: {error_msg}")
-            warnings.append(error_msg)
+        if processed:
+            successfully_processed += 1
 
     print(f"\n=== FINAL RESULTS ===")
     print(f"Successfully processed: {successfully_processed}/{len(paths)} reports")
