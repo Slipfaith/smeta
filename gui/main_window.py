@@ -52,6 +52,11 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 from logic.translation_config import tr
+from logic.language_codes import (
+    determine_short_code,
+    localise_territory_code,
+    replace_territory_with_code,
+)
 from logic.project_io import (
     save_project as save_project_file,
     load_project as load_project_file,
@@ -79,7 +84,8 @@ def _load_csv_language_map() -> None:
                 if not (lang_en or lang_ru):
                     continue
 
-                display_en = f"{lang_en} ({country_en})" if country_en else lang_en
+                country_code = determine_short_code(code, lang_en, country_en, country_ru)
+                display_en = f"{lang_en} ({country_code})" if country_code else lang_en
 
                 if not re.search("[А-Яа-я]", lang_ru):
                     try:
@@ -94,12 +100,37 @@ def _load_csv_language_map() -> None:
                     except Exception:
                         country_ru = country_en
 
-                display_ru = f"{lang_ru} ({country_ru})" if country_ru else lang_ru
+                country_code_ru = localise_territory_code(country_code, "ru")
+                if country_code_ru:
+                    display_ru = f"{lang_ru} ({country_code_ru})"
+                elif country_ru:
+                    display_ru = f"{lang_ru} ({country_ru})"
+                else:
+                    display_ru = lang_ru
 
-                if display_en:
-                    CSV_LANGUAGE_MAP[display_en.lower()] = {"en": display_en, "ru": display_ru}
-                if display_ru:
-                    CSV_LANGUAGE_MAP[display_ru.lower()] = {"en": display_en, "ru": display_ru}
+                display_ru = replace_territory_with_code(display_ru, "ru")
+
+                entry = {
+                    "en": display_en or display_ru or lang_en or lang_ru,
+                    "ru": display_ru or display_en or lang_ru or lang_en,
+                }
+
+                for key in filter(
+                    None,
+                    [
+                        lang_en.lower() if lang_en else None,
+                        display_en.lower() if display_en else None,
+                        f"{lang_en.lower()} ({country_en.lower()})"
+                        if lang_en and country_en
+                        else None,
+                        lang_ru.lower() if lang_ru else None,
+                        display_ru.lower() if display_ru else None,
+                        f"{lang_ru.lower()} ({country_ru.lower()})"
+                        if lang_ru and country_ru
+                        else None,
+                    ],
+                ):
+                    CSV_LANGUAGE_MAP[key] = entry
     except FileNotFoundError:
         pass
 

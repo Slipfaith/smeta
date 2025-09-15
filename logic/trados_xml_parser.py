@@ -8,6 +8,11 @@ from pathlib import Path
 import langcodes
 import pycountry
 
+from .language_codes import (
+    determine_short_code,
+    localise_territory_code,
+    replace_territory_with_code,
+)
 from .service_config import ServiceConfig
 
 # Фиксированный порядок строк статистики
@@ -36,7 +41,8 @@ def _load_languages_csv() -> None:
                 if not lang_en:
                     continue
 
-                display_en = f"{lang_en} ({country_en})" if country_en else lang_en
+                country_code = determine_short_code(code, lang_en, country_en, country_ru)
+                display_en = f"{lang_en} ({country_code})" if country_code else lang_en
 
                 # Попытка использовать русские названия из CSV
                 lang_ru_final = lang_ru if re.search("[А-Яа-я]", lang_ru) else ""
@@ -58,11 +64,13 @@ def _load_languages_csv() -> None:
                     except Exception:
                         country_ru_final = country_en
 
-                display_ru = (
-                    f"{lang_ru_final} ({country_ru_final})"
-                    if country_ru_final
-                    else lang_ru_final
-                )
+                country_code_ru = localise_territory_code(country_code, "ru")
+                if country_code_ru:
+                    display_ru = f"{lang_ru_final} ({country_code_ru})"
+                elif country_ru_final:
+                    display_ru = f"{lang_ru_final} ({country_ru_final})"
+                else:
+                    display_ru = lang_ru_final
 
                 display = display_ru or display_en
                 if display:
@@ -76,10 +84,16 @@ def _load_languages_csv() -> None:
                     [
                         lang_en.lower(),
                         display_en.lower(),
+                        f"{lang_en.lower()} ({country_en.lower()})"
+                        if lang_en and country_en
+                        else None,
                         lang_ru.lower(),
                         display_ru.lower(),
                         f"{lang_ru.lower()} ({country_ru.lower()})"
                         if lang_ru and country_ru
+                        else None,
+                        f"{lang_ru.lower()} ({country_ru_final.lower()})"
+                        if lang_ru and country_ru_final
                         else None,
                     ],
                 ):
@@ -144,6 +158,7 @@ def _expand_language_code(code: str) -> str:
 
     try:
         result = langcodes.Language.get(normalized).display_name('ru')
+        result = replace_territory_with_code(result, 'ru')
         print(f"    Expanded {code} -> {result}")
         return result
     except langcodes.LanguageTagError:
@@ -166,7 +181,8 @@ def _normalize_language_name(name: str) -> str:
 
     # Прямое использование кода, если он уже корректный
     try:
-        return langcodes.Language.get(name).display_name('ru')
+        result = langcodes.Language.get(name).display_name('ru')
+        return replace_territory_with_code(result, 'ru')
     except langcodes.LanguageTagError:
         pass
 
@@ -188,11 +204,13 @@ def _normalize_language_name(name: str) -> str:
             code = getattr(lang, 'alpha_2', '') or getattr(lang, 'alpha_3', '')
 
         if code:
-            return langcodes.Language.get(code).display_name('ru')
+            result = langcodes.Language.get(code).display_name('ru')
+            return replace_territory_with_code(result, 'ru')
     except LookupError:
         try:
             code = langcodes.find(name)
-            return langcodes.Language.get(code).display_name('ru')
+            result = langcodes.Language.get(code).display_name('ru')
+            return replace_territory_with_code(result, 'ru')
         except Exception:
             return ""
     except langcodes.LanguageTagError:
