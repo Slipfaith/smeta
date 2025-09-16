@@ -18,20 +18,23 @@ def is_smartcat_report(path: str) -> bool:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             head = f.read(2048)
     except OSError:
-        return False
+        head = ""
 
     lower = head.lower()
-    if "<workbook" not in lower:
-        return False
-
-    if "urn:schemas-microsoft-com:office:spreadsheet" in lower:
+    if "<workbook" in lower and "urn:schemas-microsoft-com:office:spreadsheet" in lower:
         return True
 
     if "statistics for project" in lower:
         return True
 
-    filename = Path(path).name.lower()
-    if filename.startswith("[") and "]" in filename[:10]:
+    filename = Path(path).name
+    normalized = filename.lstrip("\ufeff").lstrip()
+    normalized_lower = normalized.lower()
+
+    if re.search(r"^\[[^\]]{1,15}\]", normalized_lower):
+        return True
+
+    if "statistics for project" in normalized_lower:
         return True
 
     return False
@@ -65,6 +68,8 @@ def parse_smartcat_report(
     print(f"Root element: {root.tag}")
 
     target_lang = _extract_smartcat_target_language(root)
+    if not target_lang:
+        target_lang = _target_language_from_filename(filename)
     if target_lang:
         placeholder = target_lang
     pair_key = target_lang or placeholder
@@ -107,6 +112,27 @@ def parse_smartcat_report(
         warnings.append(msg)
 
     return results, warnings, processed, pair_key
+
+
+def _target_language_from_filename(filename: str) -> str:
+    match = re.search(r"\[([^\[\]]{1,30})\]", filename)
+    if not match:
+        return ""
+
+    raw_contents = match.group(1).strip()
+    if not raw_contents:
+        return ""
+
+    tokens = [token.strip() for token in re.split(r"[,;/\\|]+", raw_contents) if token.strip()]
+    if not tokens:
+        tokens = [token.strip() for token in re.split(r"\s+", raw_contents) if token.strip()]
+
+    for token in tokens:
+        display = resolve_language_display(token)
+        if display:
+            return display
+
+    return resolve_language_display(raw_contents)
 
 
 def _parse_number(text: str) -> float:
