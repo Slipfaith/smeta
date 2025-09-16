@@ -128,9 +128,17 @@ TRANSLATIONS = {
         "ru": "Обновление установлено. Перезапустите программу.",
         "en": "Update installed. Please restart the application.",
     },
+    "Обновление скачано. Программа закроется для установки обновления.": {
+        "ru": "Обновление скачано. Программа закроется для установки обновления.",
+        "en": "Update downloaded. The application will close to finish installation.",
+    },
     "Ошибка при установке обновления: {0}": {
         "ru": "Ошибка при установке обновления: {0}",
         "en": "Failed to install update: {0}",
+    },
+    "Не удалось подготовить установку обновления: {0}": {
+        "ru": "Не удалось подготовить установку обновления: {0}",
+        "en": "Failed to prepare update installation: {0}",
     },
 }
 
