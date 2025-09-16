@@ -32,11 +32,11 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QApplication,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 
 from logic.progress import Progress
-
+from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
@@ -52,6 +52,11 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import load_legal_entities
 from logic.translation_config import tr
+from logic.language_codes import (
+    determine_short_code,
+    localise_territory_code,
+    replace_territory_with_code,
+)
 from logic.project_io import (
     save_project as save_project_file,
     load_project as load_project_file,
@@ -79,7 +84,8 @@ def _load_csv_language_map() -> None:
                 if not (lang_en or lang_ru):
                     continue
 
-                display_en = f"{lang_en} ({country_en})" if country_en else lang_en
+                country_code = determine_short_code(code, lang_en, country_en, country_ru)
+                display_en = f"{lang_en} ({country_code})" if country_code else lang_en
 
                 if not re.search("[А-Яа-я]", lang_ru):
                     try:
@@ -94,12 +100,37 @@ def _load_csv_language_map() -> None:
                     except Exception:
                         country_ru = country_en
 
-                display_ru = f"{lang_ru} ({country_ru})" if country_ru else lang_ru
+                country_code_ru = localise_territory_code(country_code, "ru")
+                if country_code_ru:
+                    display_ru = f"{lang_ru} ({country_code_ru})"
+                elif country_ru:
+                    display_ru = f"{lang_ru} ({country_ru})"
+                else:
+                    display_ru = lang_ru
 
-                if display_en:
-                    CSV_LANGUAGE_MAP[display_en.lower()] = {"en": display_en, "ru": display_ru}
-                if display_ru:
-                    CSV_LANGUAGE_MAP[display_ru.lower()] = {"en": display_en, "ru": display_ru}
+                display_ru = replace_territory_with_code(display_ru, "ru")
+
+                entry = {
+                    "en": display_en or display_ru or lang_en or lang_ru,
+                    "ru": display_ru or display_en or lang_ru or lang_en,
+                }
+
+                for key in filter(
+                    None,
+                    [
+                        lang_en.lower() if lang_en else None,
+                        display_en.lower() if display_en else None,
+                        f"{lang_en.lower()} ({country_en.lower()})"
+                        if lang_en and country_en
+                        else None,
+                        lang_ru.lower() if lang_ru else None,
+                        display_ru.lower() if display_ru else None,
+                        f"{lang_ru.lower()} ({country_ru.lower()})"
+                        if lang_ru and country_ru
+                        else None,
+                    ],
+                ):
+                    CSV_LANGUAGE_MAP[key] = entry
     except FileNotFoundError:
         pass
 
@@ -243,6 +274,7 @@ class TranslationCostCalculator(QMainWindow):
         self.total_label = QLabel()
         self.setup_ui()
         self.setup_style()
+        QTimer.singleShot(0, self.auto_check_for_updates)
 
     def setup_ui(self):
         self.setGeometry(100, 100, 1000, 600)
@@ -279,6 +311,15 @@ class TranslationCostCalculator(QMainWindow):
         self.pm_action = QAction(tr("Проджект менеджер", lang), self)
         self.pm_action.triggered.connect(self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
+
+        self.update_menu = self.menuBar().addMenu(tr("Обновление", lang))
+        self.check_updates_action = QAction(tr("Проверить обновления", lang), self)
+        self.check_updates_action.triggered.connect(self.manual_update_check)
+        self.update_menu.addAction(self.check_updates_action)
+
+        self.about_action = QAction(tr("О программе", lang), self)
+        self.about_action.triggered.connect(self.show_about_dialog)
+        self.menuBar().addAction(self.about_action)
 
         self.language_menu = self.menuBar().addMenu(tr("Язык", lang))
         self.lang_action_group = QActionGroup(self)
@@ -574,7 +615,7 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "drop_hint_label", None):
             self.drop_hint_label.setText(
                 tr(
-                    "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                    "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
                     lang,
                 )
             )
@@ -598,9 +639,27 @@ class TranslationCostCalculator(QMainWindow):
         self.rates_menu.setTitle(tr("Импорт ставок", lang))
         self.import_rates_action.setText(tr("Импортировать из Excel", lang))
         self.pm_action.setText(tr("Проджект менеджер", lang))
+        self.update_menu.setTitle(tr("Обновление", lang))
+        self.check_updates_action.setText(tr("Проверить обновления", lang))
+        self.about_action.setText(tr("О программе", lang))
         self.language_menu.setTitle(tr("Язык", lang))
         self.lang_ru_action.setText(tr("Русский", lang))
         self.lang_en_action.setText(tr("Английский", lang))
+
+    def manual_update_check(self):
+        check_for_updates(self, force=True)
+
+    def auto_check_for_updates(self):
+        check_for_updates(self, force=False)
+
+    def show_about_dialog(self):
+        lang = self.gui_lang
+        text = (
+            f"{tr('Версия', lang)}: {APP_VERSION}\n"
+            f"{tr('Дата', lang)}: {RELEASE_DATE}\n"
+            f"{tr('Автор', lang)}: {AUTHOR}"
+        )
+        QMessageBox.information(self, tr("О программе", lang), text)
 
     def on_currency_changed(self, code: str):
         self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
@@ -697,7 +756,7 @@ class TranslationCostCalculator(QMainWindow):
 
         self.drop_hint_label = QLabel(
             tr(
-                "Перетащите XML файлы отчетов Trados сюда для автоматического заполнения",
+                "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
                 gui_lang,
             )
         )
@@ -1468,7 +1527,7 @@ class TranslationCostCalculator(QMainWindow):
                         return
                     progress.set_label("Конвертация в PDF")
                     progress.set_value(80)
-                    if not xlsx_to_pdf(xlsx_path, pdf_path):
+                    if not xlsx_to_pdf(xlsx_path, pdf_path, lang=export_lang):
                         QMessageBox.critical(
                             self, "Ошибка", "Не удалось конвертировать в PDF"
                         )

@@ -3,11 +3,10 @@ import re
 
 from babel import Locale
 
+from logic.language_codes import RU_TERRITORY_ABBREVIATIONS
 
-RU_SHORT_TERRITORIES = {
-    "US": "США",
-    "RU": "РФ",
-}
+
+RU_SHORT_TERRITORIES = RU_TERRITORY_ABBREVIATIONS
 
 
 def format_rate(value: Union[int, float, str], sep: str | None = None) -> str:
