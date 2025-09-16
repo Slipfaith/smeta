@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
 
 from .service_config import ServiceConfig
@@ -85,20 +85,29 @@ def parse_smartcat_report(
             print(f"  → Statistics found in worksheet '{sheet_name}'")
             break
 
-    if not statistics_rows:
+    values = {name: 0.0 for name in ROW_NAMES}
+    statistics_found = False
+
+    if statistics_rows:
+        statistics_found = True
+        for label, number in statistics_rows:
+            category = _categorize_smartcat_row(label)
+            if not category:
+                print(f"    Skipping row '{label}'")
+                continue
+            print(f"    {label} -> {category}: {number}")
+            values[category] += number
+    else:
+        fallback_values, fallback_found = _parse_smartcat_task_statistics(root, unit)
+        if fallback_found:
+            statistics_found = True
+            values = fallback_values
+
+    if not statistics_found:
         msg = f"{filename}: Не удалось извлечь статистику Smartcat"
         print(f"WARNING: {msg}")
         warnings.append(msg)
         return results, warnings, processed, pair_key
-
-    values = {name: 0.0 for name in ROW_NAMES}
-    for label, number in statistics_rows:
-        category = _categorize_smartcat_row(label)
-        if not category:
-            print(f"    Skipping row '{label}'")
-            continue
-        print(f"    {label} -> {category}: {number}")
-        values[category] += number
 
     total = sum(values.values())
     results[pair_key] = values
@@ -431,3 +440,181 @@ def _categorize_smartcat_row(label: str) -> Optional[str]:
         return ROW_NAMES[3]
 
     return ROW_NAMES[0]
+
+
+def _strip_namespace(tag: str) -> str:
+    if "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _iter_elements_by_name(root: ET.Element, local_name: str) -> List[ET.Element]:
+    target = local_name.lower()
+    return [elem for elem in root.iter() if _strip_namespace(elem.tag).lower() == target]
+
+
+def _find_child_by_name(parent: ET.Element, local_name: str) -> Optional[ET.Element]:
+    target = local_name.lower()
+    for child in parent:
+        if _strip_namespace(child.tag).lower() == target:
+            return child
+    return None
+
+
+def _iter_children_by_name(parent: ET.Element, local_name: str) -> List[ET.Element]:
+    target = local_name.lower()
+    return [child for child in parent if _strip_namespace(child.tag).lower() == target]
+
+
+def _stat_value_from_attributes(elem: ET.Element, unit: str) -> str:
+    attr_map = {
+        key.lower(): value
+        for key, value in elem.attrib.items()
+        if value is not None
+    }
+
+    unit_lc = unit.lower()
+    candidates = [unit_lc]
+
+    if unit_lc.endswith("s"):
+        candidates.append(unit_lc[:-1])
+    else:
+        candidates.append(f"{unit_lc}s")
+
+    candidates.extend(
+        [
+            "words",
+            "word",
+            "characters",
+            "character",
+            "chars",
+            "char",
+            "символ",
+            "символы",
+            "знаков",
+            "count",
+            "value",
+        ]
+    )
+
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in attr_map:
+            return attr_map[key]
+
+    if elem.text:
+        return elem.text.strip()
+    return ""
+
+
+def _parse_smartcat_analyse_element(
+    analyse: ET.Element, unit: str
+) -> Tuple[Dict[str, float], bool]:
+    values = {name: 0.0 for name in ROW_NAMES}
+    has_data = False
+
+    def _add_value(row_name: str, amount: float) -> None:
+        nonlocal has_data
+        if amount <= 0:
+            return
+        values[row_name] += amount
+        has_data = True
+
+    unit_attr = unit.lower()
+
+    new_elem = _find_child_by_name(analyse, "new")
+    if new_elem is not None:
+        amount = _parse_number(_stat_value_from_attributes(new_elem, unit_attr))
+        _add_value(ROW_NAMES[0], amount)
+
+    for fuzzy in _iter_children_by_name(analyse, "fuzzy"):
+        amount = _parse_number(_stat_value_from_attributes(fuzzy, unit_attr))
+        if amount <= 0:
+            continue
+        max_val = int(_parse_number(fuzzy.get("max", "0")))
+
+        if max_val <= 74:
+            _add_value(ROW_NAMES[0], amount)
+        elif max_val <= 94:
+            _add_value(ROW_NAMES[1], amount)
+        elif max_val <= 99:
+            _add_value(ROW_NAMES[2], amount)
+        else:
+            _add_value(ROW_NAMES[3], amount)
+
+    for tag in (
+        "exact",
+        "repeated",
+        "crossFileRepeated",
+        "inContextExact",
+        "perfect",
+        "locked",
+    ):
+        for elem in _iter_children_by_name(analyse, tag):
+            amount = _parse_number(_stat_value_from_attributes(elem, unit_attr))
+            _add_value(ROW_NAMES[3], amount)
+
+    return values, has_data
+
+
+def _parse_smartcat_task_statistics(
+    root: ET.Element, unit: str
+) -> Tuple[Dict[str, float], bool]:
+    print("  Attempting Smartcat task-format parsing...")
+
+    values = {name: 0.0 for name in ROW_NAMES}
+    processed_any = False
+    processed_ids: Set[int] = set()
+
+    file_elements = _iter_elements_by_name(root, "file")
+    if file_elements:
+        print(f"  Found {len(file_elements)} file elements in Smartcat report")
+        for idx, file_elem in enumerate(file_elements, 1):
+            file_name = file_elem.get("name") or file_elem.get("path") or f"file_{idx}"
+            print(f"    Processing file {idx}/{len(file_elements)}: {file_name}")
+            analyse = _find_child_by_name(file_elem, "analyse")
+            if analyse is None:
+                print("      No <analyse> element found")
+                continue
+
+            analyse_values, has_data = _parse_smartcat_analyse_element(analyse, unit)
+            if not has_data:
+                print("      Analyse element contained no data")
+                continue
+
+            processed_any = True
+            processed_ids.add(id(analyse))
+            for name in ROW_NAMES:
+                amount = analyse_values[name]
+                if amount > 0:
+                    values[name] += amount
+                    print(
+                        f"      {name}: +{amount} (now {values[name]})"
+                    )
+
+        if processed_any:
+            return values, True
+
+    analyse_elements = [
+        elem
+        for elem in _iter_elements_by_name(root, "analyse")
+        if id(elem) not in processed_ids
+    ]
+    if analyse_elements:
+        print(f"  Found {len(analyse_elements)} analyse elements for fallback parsing")
+        for idx, analyse in enumerate(analyse_elements, 1):
+            analyse_values, has_data = _parse_smartcat_analyse_element(analyse, unit)
+            if not has_data:
+                continue
+
+            processed_any = True
+            print(f"    Analyse block #{idx}")
+            for name in ROW_NAMES:
+                amount = analyse_values[name]
+                if amount > 0:
+                    values[name] += amount
+                    print(
+                        f"      {name}: +{amount} (now {values[name]})"
+                    )
+
+    return values, processed_any
