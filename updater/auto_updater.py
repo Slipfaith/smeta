@@ -1,8 +1,12 @@
+import contextlib
 import hashlib
-import sys
-import time
-import tempfile
+import os
 import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -44,6 +48,65 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _escape_for_batch(path: Path) -> str:
+    """Escape characters that have special meaning in batch scripts."""
+
+    return str(path).replace("%", "%%")
+
+
+def _schedule_windows_install(exe_path: Path, downloaded_exe: Path, old_path: Path) -> None:
+    """Prepare and launch a helper script that installs the update on Windows."""
+
+    update_path = exe_path.with_name(f"{exe_path.stem}_update{exe_path.suffix}")
+    script_path = exe_path.with_name("smeta_update.bat")
+    if script_path.exists():
+        script_path.unlink()
+    script_template = textwrap.dedent(
+        """\
+        @echo off
+        setlocal enableextensions
+        set "TARGET={target}"
+        set "NEW={new}"
+        set "OLD={old}"
+        set "SCRIPT=%~f0"
+        if exist "%OLD%" del /f /q "%OLD%" >nul 2>&1
+        :wait
+        move /Y "%TARGET%" "%OLD%" >nul 2>&1
+        if errorlevel 1 (
+            timeout /t 1 /nobreak >nul
+            goto wait
+        )
+        move /Y "%NEW%" "%TARGET%" >nul 2>&1
+        start "" "%TARGET%"
+        del /f /q "%OLD%" >nul 2>&1
+        del /f /q "%SCRIPT%" >nul 2>&1
+        """
+    ).format(
+        target=_escape_for_batch(exe_path),
+        new=_escape_for_batch(update_path),
+        old=_escape_for_batch(old_path),
+    )
+    script_path.write_text(script_template, encoding="utf-8")
+    if update_path.exists():
+        update_path.unlink()
+    try:
+        shutil.move(str(downloaded_exe), str(update_path))
+    except Exception:
+        with contextlib.suppress(Exception):
+            script_path.unlink()
+        raise
+    creationflags = 0
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creationflags |= subprocess.CREATE_NO_WINDOW
+    try:
+        subprocess.Popen(["cmd", "/c", str(script_path)], creationflags=creationflags)
+    except Exception:
+        with contextlib.suppress(Exception):
+            shutil.move(str(update_path), str(downloaded_exe))
+            script_path.unlink()
+        raise
+
+
 def check_for_updates(parent: Optional[object] = None, force: bool = False) -> None:
     """Check GitHub for a new release and update if confirmed by the user."""
     if not _should_check(force):
@@ -68,38 +131,61 @@ def check_for_updates(parent: Optional[object] = None, force: bool = False) -> N
         tmp_dir = Path(tempfile.mkdtemp(prefix="smeta_update"))
         exe_file = tmp_dir / "smeta.exe"
         sha_file = tmp_dir / "smeta.exe.sha256"
-        _download(exe_url, exe_file)
-        _download(sha_url, sha_file)
-        expected = sha_file.read_text().strip().split()[0]
-        actual = _sha256(exe_file)
-        if expected != actual:
-            QMessageBox.warning(parent, tr("Обновление", lang), tr("Ошибка проверки подлинности", lang))
-            return
-        reply = QMessageBox.question(
-            parent,
-            tr("Доступно обновление", lang),
-            tr("Новая версия {0}. Закрыть программу для установки?", lang).format(tag),
-        )
-        if reply == QMessageBox.Yes:
-            exe_path = Path(sys.argv[0]).resolve()
-            old_path = exe_path.with_name("old.exe")
-            try:
-                if old_path.exists():
-                    old_path.unlink()
-                exe_path.rename(old_path)
-                shutil.move(str(exe_file), str(exe_path))
-                QMessageBox.information(
-                    parent,
-                    tr("Обновление", lang),
-                    tr("Обновление установлено. Перезапустите программу.", lang),
-                )
-                QApplication.quit()
-            except Exception as e:  # pragma: no cover - safety
-                QMessageBox.critical(
-                    parent,
-                    tr("Обновление", lang),
-                    tr("Ошибка при установке обновления: {0}", lang).format(e),
-                )
+        try:
+            _download(exe_url, exe_file)
+            _download(sha_url, sha_file)
+            expected = sha_file.read_text().strip().split()[0]
+            actual = _sha256(exe_file)
+            if expected != actual:
+                QMessageBox.warning(parent, tr("Обновление", lang), tr("Ошибка проверки подлинности", lang))
+                return
+            reply = QMessageBox.question(
+                parent,
+                tr("Доступно обновление", lang),
+                tr("Новая версия {0}. Закрыть программу для установки?", lang).format(tag),
+            )
+            if reply == QMessageBox.Yes:
+                exe_path = Path(sys.argv[0]).resolve()
+                old_path = exe_path.with_name("old.exe")
+                try:
+                    if os.name == "nt" and exe_path.suffix.lower() == ".exe":
+                        try:
+                            _schedule_windows_install(exe_path, exe_file, old_path)
+                        except Exception as install_error:  # pragma: no cover - safety
+                            QMessageBox.critical(
+                                parent,
+                                tr("Обновление", lang),
+                                tr("Не удалось подготовить установку обновления: {0}", lang).format(install_error),
+                            )
+                            return
+                        QMessageBox.information(
+                            parent,
+                            tr("Обновление", lang),
+                            tr("Обновление скачано. Программа закроется для установки обновления.", lang),
+                        )
+                        QApplication.quit()
+                        return
+                    if old_path.exists():
+                        old_path.unlink()
+                    exe_path.rename(old_path)
+                    shutil.move(str(exe_file), str(exe_path))
+                    QMessageBox.information(
+                        parent,
+                        tr("Обновление", lang),
+                        tr("Обновление установлено. Перезапустите программу.", lang),
+                    )
+                    QApplication.quit()
+                    return
+                except Exception as e:  # pragma: no cover - safety
+                    QMessageBox.critical(
+                        parent,
+                        tr("Обновление", lang),
+                        tr("Ошибка при установке обновления: {0}", lang).format(e),
+                    )
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                sha_file.unlink()
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception as e:  # pragma: no cover - network errors etc.
         if force:
             QMessageBox.warning(parent, tr("Обновление", lang), str(e))
