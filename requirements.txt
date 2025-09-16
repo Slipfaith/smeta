@@ -5,3 +5,5 @@ psutil
 openpyxl
 Pillow
 requests
+PySide6
+pywin32
