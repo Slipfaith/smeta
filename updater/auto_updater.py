@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 from logic.translation_config import tr
 from .version import APP_VERSION
@@ -113,13 +114,35 @@ def check_for_updates(parent: Optional[object] = None, force: bool = False) -> N
         return
     _save_check_time()
     lang = getattr(parent, "gui_lang", "ru")
+    progress: Optional[QProgressDialog] = None
+
+    def _update_progress(message: str) -> None:
+        if progress is None:
+            return
+        progress.setLabelText(message)
+        QApplication.processEvents()
+
     try:
+        if parent is not None:
+            progress = QProgressDialog(parent)
+            progress.setWindowTitle(tr("Обновление", lang))
+            progress.setLabelText(tr("Проверка обновления...", lang))
+            progress.setCancelButton(None)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setRange(0, 0)
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
+            progress.show()
+            QApplication.processEvents()
         url = f"https://api.github.com/repos/{REPO}/releases/latest"
         data = requests.get(url, timeout=10).json()
         tag = data.get("tag_name", "")
         if tag.startswith("v"):
             tag = tag[1:]
         if tag <= APP_VERSION:
+            if progress is not None:
+                progress.close()
             if force:
                 QMessageBox.information(parent, tr("Обновление", lang), tr("Установлена последняя версия", lang))
             return
@@ -127,18 +150,26 @@ def check_for_updates(parent: Optional[object] = None, force: bool = False) -> N
         exe_url = next((u for n, u in assets.items() if n.endswith(".exe")), None)
         sha_url = next((u for n, u in assets.items() if n.endswith(".sha256")), None)
         if not exe_url or not sha_url:
+            if progress is not None:
+                progress.close()
             return
         tmp_dir = Path(tempfile.mkdtemp(prefix="smeta_update"))
         exe_file = tmp_dir / "smeta.exe"
         sha_file = tmp_dir / "smeta.exe.sha256"
         try:
+            _update_progress(tr("Загрузка обновления...", lang))
             _download(exe_url, exe_file)
             _download(sha_url, sha_file)
+            _update_progress(tr("Проверка файла обновления...", lang))
             expected = sha_file.read_text().strip().split()[0]
             actual = _sha256(exe_file)
             if expected != actual:
+                if progress is not None:
+                    progress.close()
                 QMessageBox.warning(parent, tr("Обновление", lang), tr("Ошибка проверки подлинности", lang))
                 return
+            if progress is not None:
+                progress.close()
             reply = QMessageBox.question(
                 parent,
                 tr("Доступно обновление", lang),
@@ -187,5 +218,11 @@ def check_for_updates(parent: Optional[object] = None, force: bool = False) -> N
                 sha_file.unlink()
             shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception as e:  # pragma: no cover - network errors etc.
+        if progress is not None:
+            progress.close()
         if force:
             QMessageBox.warning(parent, tr("Обновление", lang), str(e))
+    finally:
+        if progress is not None:
+            progress.close()
+            QApplication.processEvents()

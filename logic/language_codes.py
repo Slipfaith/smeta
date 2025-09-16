@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import re
+from contextlib import suppress
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict
@@ -170,11 +171,13 @@ def _babel_country_map() -> Dict[str, str]:
             locale = Locale(lang)
         except Exception:
             continue
-        for code, display in locale.territories.items():
-            mapping[_normalize(display)] = code.upper()
-        short_map = locale._data.get("short_territories", {})
-        for code, display in short_map.items():
-            mapping[_normalize(display)] = code.upper()
+        with suppress(Exception):
+            for code, display in locale.territories.items():
+                mapping[_normalize(display)] = code.upper()
+        with suppress(Exception):
+            short_map = locale._data.get("short_territories", {})
+            for code, display in short_map.items():
+                mapping[_normalize(display)] = code.upper()
 
     for code, short in RU_TERRITORY_ABBREVIATIONS.items():
         mapping[_normalize(short)] = code

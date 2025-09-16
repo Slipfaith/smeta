@@ -140,6 +140,18 @@ TRANSLATIONS = {
         "ru": "Не удалось подготовить установку обновления: {0}",
         "en": "Failed to prepare update installation: {0}",
     },
+    "Проверка обновления...": {
+        "ru": "Проверка обновления...",
+        "en": "Checking for updates...",
+    },
+    "Загрузка обновления...": {
+        "ru": "Загрузка обновления...",
+        "en": "Downloading update...",
+    },
+    "Проверка файла обновления...": {
+        "ru": "Проверка файла обновления...",
+        "en": "Verifying download...",
+    },
 }
 
 def tr(text: str, lang: str) -> str:
