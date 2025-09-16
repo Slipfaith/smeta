@@ -1,3 +1,3 @@
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 RELEASE_DATE = "2025-09-16"
 AUTHOR = "slipfaith"
