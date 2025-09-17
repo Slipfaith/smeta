@@ -1,20 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+import babel
+import certifi
+
 block_cipher = None
+
+project_root = Path(__file__).resolve().parent
+
+additional_datas = [
+    (str(project_root / "languages" / "*"), "languages"),
+    (str(project_root / "templates" / "*"), "templates"),
+    (str(project_root / "logic" / "legal_entities.json"), "logic"),
+    (str(Path(babel.__file__).resolve().parent / "locale-data" / "*"), "babel/locale-data"),
+    (certifi.where(), "certifi"),
+    (str(project_root / "rateapp.ico"), "."),
+]
 
 a = Analysis(
     ['main.py'],
-    pathex=['E:/PythonProjects/smeta'],
+    pathex=[str(project_root)],
     binaries=[],
-    datas=[
-        # твои ресурсы
-        ('E:/PythonProjects/smeta/languages/*', 'languages'),
-        ('E:/PythonProjects/smeta/templates/*', 'templates'),
-        ('E:/PythonProjects/smeta/logic/legal_entities.json', 'logic'),
-
-        # Babel locale-data (чтобы не было ошибки "babel data files are not available")
-        ('E:/PythonProjects/smeta/.venv/Lib/site-packages/babel/locale-data/*', 'babel/locale-data'),
-    ],
+    datas=additional_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -40,6 +48,6 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # console=False == твой флаг --noconsole
-    icon='E:/PythonProjects/smeta/rateapp.ico',
+    console=False,
+    icon=str(project_root / 'rateapp.ico'),
 )
