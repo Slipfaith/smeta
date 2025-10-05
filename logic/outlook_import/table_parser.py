@@ -7,6 +7,9 @@ from html.parser import HTMLParser
 from typing import List
 
 
+_DECODE_CANDIDATES = ("utf-8", "cp1251", "latin-1")
+
+
 class _SimpleTableParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -67,10 +70,23 @@ def _clean_text(value: str) -> str:
     return html.unescape(value).strip()
 
 
-def extract_first_table(html_content: str) -> List[List[str]]:
+def _ensure_text(html_content: str | bytes) -> str:
+    if isinstance(html_content, str):
+        return html_content
+    if isinstance(html_content, bytes):
+        for encoding in _DECODE_CANDIDATES:
+            try:
+                return html_content.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return html_content.decode("utf-8", errors="ignore")
+    raise TypeError("html_content must be str or bytes")
+
+
+def extract_first_table(html_content: str | bytes) -> List[List[str]]:
     """Return the first table found in ``html_content``."""
 
     parser = _SimpleTableParser()
-    parser.feed(html_content)
+    parser.feed(_ensure_text(html_content))
     parser.close()
     return parser.tables[0] if parser.tables else []
