@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import re
 from datetime import datetime
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -50,6 +50,11 @@ from logic.xml_parser_common import resolve_language_display
 from logic.project_io import (
     save_project as save_project_file,
     load_project as load_project_file,
+)
+from logic.outlook_import import (
+    OutlookMsgError,
+    map_message_to_project_info,
+    parse_msg_file,
 )
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
@@ -167,6 +172,59 @@ class DropArea(QScrollArea):
             event.ignore()
 
 
+class ProjectInfoDropArea(QGroupBox):
+    def __init__(self, title: str, callback, parent=None):
+        super().__init__(title, parent)
+        self._callback = callback
+        self.setAcceptDrops(True)
+
+    def _set_drag_state(self, active: bool):
+        self.setProperty("dragOver", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path.lower().endswith(".msg"):
+                    event.acceptProposedAction()
+                    self._set_drag_state(True)
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._set_drag_state(False)
+
+    def dropEvent(self, event):
+        self._set_drag_state(False)
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+
+        msg_paths: List[str] = []
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(".msg"):
+                msg_paths.append(path)
+
+        if not msg_paths:
+            event.ignore()
+            return
+
+        try:
+            self._callback(msg_paths)
+            event.acceptProposedAction()
+        except Exception:
+            event.ignore()
+
+
 class TranslationCostCalculator(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -278,7 +336,9 @@ class TranslationCostCalculator(QMainWindow):
 
         lang = self.gui_lang
 
-        self.project_group = QGroupBox(tr("Информация о проекте", lang))
+        self.project_group = ProjectInfoDropArea(
+            tr("Информация о проекте", lang), self.handle_project_info_drop
+        )
         p = QVBoxLayout()
         p.setSpacing(8)
         self.project_name_label = QLabel(tr("Название проекта", lang) + ":")
@@ -746,6 +806,99 @@ class TranslationCostCalculator(QMainWindow):
         lang = self.gui_lang
         self.tabs.insertTab(0, drop_area, tr("Языковые пары", lang))
         self.pairs_scroll = drop_area
+
+    def handle_project_info_drop(self, paths: List[str]):
+        lang = self.gui_lang
+        errors: List[str] = []
+
+        for path in paths:
+            try:
+                message = parse_msg_file(path)
+                result = map_message_to_project_info(message)
+                self._apply_project_info_result(result, path)
+                return
+            except (OutlookMsgError, RuntimeError) as exc:
+                errors.append(f"{os.path.basename(path)}: {exc}")
+
+        if errors:
+            QMessageBox.warning(
+                self,
+                tr("Ошибка обработки Outlook файла", lang),
+                "\n".join(errors),
+            )
+
+    def _apply_project_info_result(self, result, source_path: str):
+        lang = self.gui_lang
+        data = result.data
+
+        updated_fields: List[str] = []
+        manual_checks: List[str] = list(result.warnings)
+
+        def update_field(widget, value: Optional[str], label_key: str):
+            if value:
+                widget.setText(value)
+                updated_fields.append(tr(label_key, lang))
+
+        update_field(self.project_name_edit, data.project_name, "Название проекта")
+        update_field(self.client_name_edit, data.client_name, "Название клиента")
+        update_field(self.contact_person_edit, data.contact_name, "Контактное лицо")
+        update_field(self.email_edit, data.email, "Email")
+
+        if data.legal_entity:
+            idx = self.legal_entity_combo.findText(data.legal_entity, Qt.MatchFixedString)
+            if idx < 0:
+                target = data.legal_entity.strip().lower()
+                for i in range(self.legal_entity_combo.count()):
+                    text = self.legal_entity_combo.itemText(i).strip().lower()
+                    if text == target:
+                        idx = i
+                        break
+            if idx >= 0:
+                self.legal_entity_combo.setCurrentIndex(idx)
+                updated_fields.append(tr("Юрлицо", lang))
+            else:
+                manual_checks.append(f"{tr('Юрлицо', lang)}: {data.legal_entity}")
+
+        if data.currency_code:
+            idx = self.currency_combo.findText(data.currency_code, Qt.MatchFixedString)
+            if idx >= 0:
+                self.currency_combo.setCurrentIndex(idx)
+                updated_fields.append(tr("Валюта", lang))
+            else:
+                manual_checks.append(f"{tr('Валюта', lang)}: {data.currency_code}")
+
+        missing = [tr(name, lang) for name in result.missing_fields]
+
+        sender_parts: List[str] = []
+        if result.sender_name:
+            sender_parts.append(result.sender_name)
+        if result.sender_email:
+            sender_parts.append(result.sender_email)
+
+        message_lines: List[str] = []
+        message_lines.append(
+            f"{tr('Outlook письмо', lang)}: {os.path.basename(source_path)}"
+        )
+        if updated_fields:
+            message_lines.append(
+                f"{tr('Обновлены поля', lang)}: {', '.join(dict.fromkeys(updated_fields))}"
+            )
+        if missing:
+            message_lines.append(
+                f"{tr('Не удалось определить', lang)}: {', '.join(dict.fromkeys(missing))}"
+            )
+        if manual_checks:
+            message_lines.append(
+                f"{tr('Проверьте вручную', lang)}: {', '.join(dict.fromkeys(manual_checks))}"
+            )
+        if sender_parts:
+            message_lines.append(
+                f"{tr('Отправитель', lang)}: {' • '.join(dict.fromkeys(sender_parts))}"
+            )
+        if result.sent_at:
+            message_lines.append(f"{tr('Дата отправки', lang)}: {result.sent_at}")
+
+        QMessageBox.information(self, tr("Готово", lang), "\n".join(message_lines))
 
     def _hide_drop_hint(self):
         if getattr(self, "drop_hint_label", None):

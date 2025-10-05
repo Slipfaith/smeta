@@ -6,3 +6,4 @@ Pillow
 requests
 PySide6
 pywin32
+extract_msg
