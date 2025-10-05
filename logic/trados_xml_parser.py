@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
+from typing import Dict, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
 import re
 from pathlib import Path
@@ -295,13 +296,14 @@ def _parse_trados_report(
 
 def parse_reports(
     paths: List[str], unit: str = "Words"
-) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+) -> Tuple[Dict[str, Dict[str, float]], List[str], Dict[str, List[str]]]:
     """Парсит Trados и Smartcat XML отчёты и возвращает агрегированные объёмы."""
     print(f"Starting to parse {len(paths)} XML reports...")
     print(f"Unit: {unit}")
 
     results: Dict[str, Dict[str, float]] = {}
     warnings: List[str] = []
+    sources_map: Dict[str, Set[str]] = defaultdict(set)
     unit_attr = unit.lower()
     successfully_processed = 0
 
@@ -326,6 +328,7 @@ def parse_reports(
                     print(f"✓ Created new entry for pair: {pair_key}")
                 else:
                     print(f"→ Adding to existing pair: {pair_key}")
+                sources_map[pair_key].add(filename)
             _merge_pair_results(results, file_results)
         else:
             if not file_warnings:
@@ -335,6 +338,7 @@ def parse_reports(
             placeholder_name = placeholder or filename
             created_key = _ensure_placeholder_entry(results, placeholder_name, filename)
             print(f"  Added placeholder entry for '{created_key}'")
+            sources_map[created_key].add(filename)
 
         if processed:
             successfully_processed += 1
@@ -361,4 +365,6 @@ def parse_reports(
         for warning in warnings:
             print(f"  ❌ {warning}")
 
-    return results, warnings
+    sources = {pair: sorted(names) for pair, names in sources_map.items()}
+
+    return results, warnings, sources

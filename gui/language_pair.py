@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Union
+from typing import Any, Dict, Iterable, List, Union
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -37,6 +37,7 @@ class LanguagePairWidget(QWidget):
         self.currency_code = currency_code
         self.lang = lang
         self.only_new_repeats_mode = False
+        self._report_sources: List[str] = []
         # резерв для восстановления исходных значений объёмов/ставок
         self._backup_volumes = []
         self._backup_rates = []
@@ -56,6 +57,13 @@ class LanguagePairWidget(QWidget):
         header.addWidget(self.title_label)
         header.addWidget(self.title_edit, 1)
         layout.addLayout(header)
+
+        self.reports_label = QLabel()
+        self.reports_label.setWordWrap(True)
+        self.reports_label.setStyleSheet("color: #555; font-size: 11px;")
+        self.reports_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.reports_label.hide()
+        layout.addWidget(self.reports_label)
 
         self.services_layout = QVBoxLayout()
 
@@ -354,6 +362,7 @@ class LanguagePairWidget(QWidget):
             if item:
                 item.setText(tr(row_info["name"], lang))
         self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
+        self._update_reports_label()
 
     def set_pair_name(self, name: str):
         self.pair_name = name
@@ -444,7 +453,12 @@ class LanguagePairWidget(QWidget):
 
     # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
-        data = {"pair_name": self.pair_name, "services": {}}
+        data = {
+            "pair_name": self.pair_name,
+            "services": {},
+            "report_sources": self.report_sources(),
+            "only_new_repeats": self.only_new_repeats_mode,
+        }
         if self.translation_group.isChecked():
             data["services"]["translation"] = self._get_table_data(self.translation_group.table)
         return data
@@ -477,27 +491,46 @@ class LanguagePairWidget(QWidget):
             rows[idx]['deleted'] = False
             table.setRowHidden(idx, False)
 
-        if len(data) > table.rowCount():
-            for _ in range(len(data) - table.rowCount()):
-                r = table.rowCount()
-                table.insertRow(r)
-                table.setItem(r, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
-                table.setItem(r, 1, QTableWidgetItem("0"))
-                rate_item = QTableWidgetItem("0")
-                rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                table.setItem(r, 2, rate_item)
-                sum_item = QTableWidgetItem("0.00")
-                sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                table.setItem(r, 3, sum_item)
-                rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
+        data_by_key = {
+            row.get("key"): row for row in data if row.get("key") is not None
+        }
+        assigned_rows: List[Dict[str, Any] | None] = [None] * table.rowCount()
+        used_keys = set()
 
-        for row, row_data in enumerate(data):
-            if row < table.rowCount():
-                table.item(row, 0).setText(row_data.get("parameter", ""))
-                table.item(row, 1).setText(str(row_data.get("volume", 0)))
-                sep = "." if self.lang == "en" else None
-                table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
-                table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
+        for idx, row_cfg in enumerate(rows):
+            key = row_cfg.get("key")
+            if key in data_by_key:
+                assigned_rows[idx] = data_by_key[key]
+                used_keys.add(key)
+
+        remaining = [row for row in data if row.get("key") not in used_keys]
+
+        for idx in range(len(assigned_rows)):
+            if assigned_rows[idx] is None and remaining:
+                assigned_rows[idx] = remaining.pop(0)
+
+        while remaining:
+            r = table.rowCount()
+            table.insertRow(r)
+            table.setItem(r, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
+            table.setItem(r, 1, QTableWidgetItem("0"))
+            rate_item = QTableWidgetItem("0")
+            rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(r, 2, rate_item)
+            sum_item = QTableWidgetItem("0.00")
+            sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(r, 3, sum_item)
+            rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
+            assigned_rows.append(remaining.pop(0))
+
+        for row, row_data in enumerate(assigned_rows):
+            if row_data is None:
+                continue
+            table.item(row, 0).setText(row_data.get("parameter", ""))
+            table.item(row, 1).setText(str(row_data.get("volume", 0)))
+            sep = "." if self.lang == "en" else None
+            table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
+            table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
             rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
             rows[row]["key"] = row_data.get("key", rows[row].get("key"))
@@ -508,6 +541,35 @@ class LanguagePairWidget(QWidget):
         setattr(group, 'base_rate_row', base_rate_row)
         self.update_rates_and_sums(table, rows, base_rate_row)
         self._fit_table_height(table)
+
+    def set_report_sources(self, sources: Iterable[str], replace: bool = False) -> None:
+        if replace:
+            self._report_sources = []
+        existing = set(self._report_sources)
+        for name in sources:
+            cleaned = name.strip()
+            if cleaned and cleaned not in existing:
+                self._report_sources.append(cleaned)
+                existing.add(cleaned)
+        self._update_reports_label()
+
+    def clear_report_sources(self) -> None:
+        self._report_sources = []
+        self._update_reports_label()
+
+    def report_sources(self) -> List[str]:
+        return list(self._report_sources)
+
+    def _update_reports_label(self) -> None:
+        if not self._report_sources:
+            self.reports_label.hide()
+            self.reports_label.setToolTip("")
+            return
+        prefix = tr("Отчёты", self.lang)
+        joined = ", ".join(self._report_sources)
+        self.reports_label.setText(f"{prefix}: {joined}")
+        self.reports_label.setToolTip(joined)
+        self.reports_label.show()
 
     def set_basic_rate(self, value: float) -> None:
         """Set base translation rate and update dependent rows."""
