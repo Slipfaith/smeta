@@ -5,12 +5,6 @@ import re
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 
-import csv
-from pathlib import Path
-
-import langcodes
-import pycountry
-
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -52,91 +46,13 @@ from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
-from logic.language_codes import (
-    determine_short_code,
-    localise_territory_code,
-    replace_territory_with_code,
-)
+from logic.xml_parser_common import resolve_language_display
 from logic.project_io import (
     save_project as save_project_file,
     load_project as load_project_file,
 )
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
-
-# Mapping of language names (RU/EN, with optional regions) to both
-# English and Russian display forms. Loaded from languages/languages.csv.
-CSV_LANGUAGE_MAP: Dict[str, Dict[str, str]] = {}
-
-
-def _load_csv_language_map() -> None:
-    csv_path = Path(__file__).resolve().parents[1] / "languages" / "languages.csv"
-    try:
-        with open(csv_path, encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f, delimiter=";")
-            for row in reader:
-                code = row.get("Код", "").strip()
-                lang_en = row.get("Язык (EN)", "").strip()
-                country_en = row.get("Страна (EN)", "").strip()
-                lang_ru = row.get("Язык (RU)", "").strip()
-                country_ru = row.get("Страна (RU)", "").strip()
-
-                if not (lang_en or lang_ru):
-                    continue
-
-                country_code = determine_short_code(code, lang_en, country_en, country_ru)
-                display_en = f"{lang_en} ({country_code})" if country_code else lang_en
-
-                if not re.search("[А-Яа-я]", lang_ru):
-                    try:
-                        lang_code = code or langcodes.find(lang_en)
-                        lang_ru = langcodes.Language.get(lang_code).language_name("ru")
-                    except Exception:
-                        lang_ru = lang_en
-
-                if not country_ru and code and "-" in code:
-                    try:
-                        country_ru = langcodes.Language.get(code).territory_name("ru")
-                    except Exception:
-                        country_ru = country_en
-
-                country_code_ru = localise_territory_code(country_code, "ru")
-                if country_code_ru:
-                    display_ru = f"{lang_ru} ({country_code_ru})"
-                elif country_ru:
-                    display_ru = f"{lang_ru} ({country_ru})"
-                else:
-                    display_ru = lang_ru
-
-                display_ru = replace_territory_with_code(display_ru, "ru")
-
-                entry = {
-                    "en": display_en or display_ru or lang_en or lang_ru,
-                    "ru": display_ru or display_en or lang_ru or lang_en,
-                }
-
-                for key in filter(
-                    None,
-                    [
-                        lang_en.lower() if lang_en else None,
-                        display_en.lower() if display_en else None,
-                        f"{lang_en.lower()} ({country_en.lower()})"
-                        if lang_en and country_en
-                        else None,
-                        lang_ru.lower() if lang_ru else None,
-                        display_ru.lower() if display_ru else None,
-                        f"{lang_ru.lower()} ({country_ru.lower()})"
-                        if lang_ru and country_ru
-                        else None,
-                    ],
-                ):
-                    CSV_LANGUAGE_MAP[key] = entry
-    except FileNotFoundError:
-        pass
-
-
-_load_csv_language_map()
-
 
 class DropArea(QScrollArea):
     def __init__(self, callback, parent=None):
@@ -1026,46 +942,21 @@ class TranslationCostCalculator(QMainWindow):
 
     def _find_language_by_key(self, key: str) -> Dict[str, str]:
         norm = key.strip().lower()
-        if norm in CSV_LANGUAGE_MAP:
-            return CSV_LANGUAGE_MAP[norm]
         for lang in self._languages:
             if norm == lang["en"].lower() or norm == lang["ru"].lower():
                 return lang
 
-        try:
-            match_code = re.search(r"\(([A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?)\)$", key)
-            if match_code:
-                code = match_code.group(1).lower()
-                before = key[: match_code.start()].strip()
-                if "-" not in code and before:
-                    base_code = langcodes.find(before)
-                    tag = f"{base_code}-{code}".lower()
-                else:
-                    tag = code
-            else:
-                match = re.match(r"(.+?)\s*\(([^()]+)\)$", key)
-                if match:
-                    base = match.group(1).strip()
-                    region = match.group(2).strip()
-                    base_code = langcodes.find(base)
-                    try:
-                        region_code = pycountry.countries.lookup(region).alpha_2
-                    except LookupError:
-                        region_code = region
-                    tag = f"{base_code}-{region_code}".lower()
-                elif re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2,3})?", key):
-                    tag = key.lower()
-                else:
-                    tag = langcodes.find(key)
-            lang_obj = langcodes.Language.get(tag)
-            en_name = lang_obj.display_name("en").title()
-            en_name = shorten_locale(en_name, "en")
-            ru_name = lang_obj.display_name("ru")
-            ru_name = ru_name[0].upper() + ru_name[1:]
-            ru_name = shorten_locale(ru_name, "ru")
-            return {"en": en_name, "ru": ru_name}
-        except Exception:
-            return {"en": key, "ru": key}
+        ru_name = resolve_language_display(key, locale="ru")
+        en_name = resolve_language_display(key, locale="en")
+
+        if not en_name:
+            en_name = key
+        if not ru_name:
+            ru_name = key
+
+        en_name = shorten_locale(en_name, "en")
+        ru_name = shorten_locale(ru_name, "ru")
+        return {"en": en_name, "ru": ru_name}
 
     def _display_pair_name(self, pair_key: str) -> str:
         if " → " not in pair_key:

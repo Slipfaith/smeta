@@ -220,7 +220,8 @@ def _parse_trados_report(
 
         if not pair_key:
             warning_msg = (
-                f"{filename}: Could not determine language pair (src='{src_lang}', tgt='{tgt_lang}', taskinfo='{taskinfo_lang}')"
+                f"{filename}: Could not determine language pair (src='{src_lang}', tgt='{tgt_lang}', taskinfo='{taskinfo_lang}')."
+                " Please assign the correct language pair manually."
             )
             print(f"ERROR: {warning_msg}")
             warnings.append(warning_msg)
