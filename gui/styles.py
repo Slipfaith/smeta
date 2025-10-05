@@ -9,6 +9,10 @@ QGroupBox {
     margin-top: 1ex;
     padding-top: 10px;
 }
+QGroupBox[dragOver="true"] {
+    border: 2px dashed #2563eb;
+    background-color: #eff6ff;
+}
 QGroupBox::title {
     subcontrol-origin: margin;
     left: 10px;
