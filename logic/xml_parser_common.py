@@ -1,250 +1,174 @@
 from __future__ import annotations
 
-import csv
 import re
-from pathlib import Path
-from typing import Dict
 
 import langcodes
-import pycountry
 
 from .language_codes import (
-    determine_short_code,
+    country_to_code,
     localise_territory_code,
     replace_territory_with_code,
 )
 
 
-LANGUAGE_CODE_MAP: Dict[str, str] = {}
-LANGUAGE_NAME_MAP: Dict[str, str] = {}
-
-
-def _load_languages_csv() -> None:
-    """Загружает сопоставления кодов языков из languages/languages.csv."""
-
-    csv_path = Path(__file__).resolve().parents[1] / "languages" / "languages.csv"
-
-    try:
-        with open(csv_path, encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f, delimiter=";")
-            for row in reader:
-                code = row.get("Код", "").strip().lower()
-                lang_en = row.get("Язык (EN)", "").strip()
-                country_en = row.get("Страна (EN)", "").strip()
-                lang_ru = row.get("Язык (RU)", "").strip()
-                country_ru = row.get("Страна (RU)", "").strip()
-
-                if not lang_en:
-                    continue
-
-                country_code = determine_short_code(code, lang_en, country_en, country_ru)
-                display_en = f"{lang_en} ({country_code})" if country_code else lang_en
-
-                lang_ru_final = lang_ru if re.search("[А-Яа-я]", lang_ru) else ""
-                country_ru_final = (
-                    country_ru if re.search("[А-Яа-я]", country_ru) else ""
-                )
-
-                if not lang_ru_final:
-                    try:
-                        lang_code = code or langcodes.find(lang_en)
-                        lang_ru_final = langcodes.Language.get(lang_code).language_name("ru")
-                    except Exception:
-                        lang_ru_final = lang_en
-
-                if not country_ru_final and code and "-" in code:
-                    try:
-                        country_ru_final = langcodes.Language.get(code).territory_name("ru")
-                    except Exception:
-                        country_ru_final = country_en
-
-                country_code_ru = localise_territory_code(country_code, "ru")
-                if country_code_ru:
-                    display_ru = f"{lang_ru_final} ({country_code_ru})"
-                elif country_ru_final:
-                    display_ru = f"{lang_ru_final} ({country_ru_final})"
-                else:
-                    display_ru = lang_ru_final
-
-                display = display_ru or display_en
-                if display:
-                    display = display[0].upper() + display[1:]
-
-                if code:
-                    LANGUAGE_CODE_MAP[code] = display
-
-                for key in filter(
-                    None,
-                    [
-                        lang_en.lower(),
-                        display_en.lower(),
-                        f"{lang_en.lower()} ({country_en.lower()})"
-                        if lang_en and country_en
-                        else None,
-                        lang_ru.lower(),
-                        display_ru.lower(),
-                        f"{lang_ru.lower()} ({country_ru.lower()})"
-                        if lang_ru and country_ru
-                        else None,
-                        f"{lang_ru.lower()} ({country_ru_final.lower()})"
-                        if lang_ru and country_ru_final
-                        else None,
-                    ],
-                ):
-                    LANGUAGE_NAME_MAP[key] = display
-    except FileNotFoundError:
-        # Файл со списком языков отсутствует — будем использовать только стандартные методы
-        pass
-
-
-_load_languages_csv()
-
-
-def lookup_language(value: str) -> str:
-    """Возвращает отображаемое название языка из CSV по коду или имени."""
-
-    if not value:
-        return ""
-
-    norm = value.strip().lower()
-    code_key = norm.replace("_", "-")
-    return LANGUAGE_CODE_MAP.get(code_key) or LANGUAGE_NAME_MAP.get(norm, "")
+_SCRIPT_HINTS = {
+    "simplified": "Hans",
+    "traditional": "Hant",
+    "упрощ": "Hans",
+    "традиц": "Hant",
+}
 
 
 def norm_lang(code: str) -> str:
     if not code:
         return ""
-    return code.split("-")[0].upper()
+    return code.replace("_", "-").split("-")[0].upper()
 
 
-def _display_with_pycountry(normalized: str) -> str:
-    language_code = normalized
-    territory_part = ""
-    if "-" in normalized:
-        language_code, territory_part = normalized.split("-", 1)
+def _format_display(text: str) -> str:
+    if not text:
+        return ""
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    return stripped[0].upper() + stripped[1:]
 
+
+def _resolve_script_hint(hint: str) -> str:
+    lowered = hint.lower().strip().rstrip(".")
+    for key, script in _SCRIPT_HINTS.items():
+        if lowered == key or lowered.startswith(f"{key} ") or lowered.startswith(key):
+            return script
+    return ""
+
+
+def _language_tag_from_parts(base: str, region: str) -> str:
     try:
-        language = pycountry.languages.lookup(language_code)
+        base_tag = langcodes.find(base)
     except LookupError:
         return ""
 
-    base_code = getattr(language, "alpha_2", "") or getattr(language, "alpha_3", "")
+    base_lang = langcodes.Language.get(base_tag)
+    kwargs = {"language": base_lang.language or base_tag}
+    if base_lang.script:
+        kwargs["script"] = base_lang.script
+    if base_lang.territory:
+        kwargs["territory"] = base_lang.territory
 
-    if base_code:
+    script_hint = _resolve_script_hint(region)
+    if script_hint:
         try:
-            code_to_use = base_code
-            if territory_part:
-                code_to_use = f"{base_code}-{territory_part.upper()}"
-            result = langcodes.Language.get(code_to_use).display_name("ru")
-            return replace_territory_with_code(result, "ru")
+            kwargs["script"] = script_hint
+            return langcodes.Language.make(**kwargs).to_tag()
         except langcodes.LanguageTagError:
+            return ""
+
+    territory_code = country_to_code(region)
+    if territory_code:
+        try:
+            kwargs["territory"] = territory_code
+            return langcodes.Language.make(**kwargs).to_tag()
+        except langcodes.LanguageTagError:
+            return ""
+
+    return ""
+
+
+def _language_tag_from_value(value: str) -> str:
+    if not value:
+        return ""
+
+    stripped = value.strip()
+    if not stripped:
+        return ""
+
+    normalized = stripped.replace("_", "-")
+
+    try:
+        return langcodes.standardize_tag(normalized)
+    except Exception:
+        pass
+
+    match = re.match(r"(.+?)\s*\(([^()]+)\)$", stripped)
+    if match:
+        tag = _language_tag_from_parts(match.group(1).strip(), match.group(2).strip())
+        if tag:
+            return tag
+
+    match = re.search(r"([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,3})?)", stripped)
+    if match and len(stripped) <= 10:
+        try:
+            return langcodes.standardize_tag(match.group(1))
+        except Exception:
             pass
 
-    name = getattr(language, "name", "") or getattr(language, "common_name", "")
-    if not name:
-        names = getattr(language, "names", None)
-        if names:
-            name = names[0]
+    for sep in (",", "/", "-", "→"):
+        if sep in stripped:
+            parts = [part.strip() for part in stripped.split(sep) if part.strip()]
+            if len(parts) == 2:
+                tag = _language_tag_from_parts(parts[0], parts[1])
+                if tag:
+                    return tag
 
-    territory_display = ""
-    if territory_part:
-        territory_display = localise_territory_code(territory_part, "ru")
-        if not territory_display:
-            try:
-                territory = pycountry.countries.lookup(territory_part)
-                territory_display = territory.name
-            except LookupError:
-                territory_display = territory_part.upper()
-
-    if name and territory_display:
-        return f"{name} ({territory_display})"
-    return name or ""
+    try:
+        return langcodes.find(stripped)
+    except LookupError:
+        return ""
 
 
-def expand_language_code(code: str) -> str:
-    """Преобразует языковой код в человекочитаемое название (на русском)."""
+def expand_language_code(code: str, locale: str = "ru") -> str:
+    """Преобразует языковой код в человекочитаемое название."""
 
     if not code:
         return ""
 
     normalized = code.replace("_", "-")
 
-    csv_name = lookup_language(normalized)
-    if csv_name:
-        return csv_name
-
-    pycountry_display = _display_with_pycountry(normalized)
-    if pycountry_display:
-        return pycountry_display
-
     try:
-        result = langcodes.Language.get(normalized).display_name("ru")
-        return replace_territory_with_code(result, "ru")
+        tag = _language_tag_from_value(normalized) or normalized
+        language = langcodes.Language.get(tag)
+        result = language.display_name(locale)
+        return _format_display(replace_territory_with_code(result, locale))
     except langcodes.LanguageTagError:
-        simple_code = norm_lang(normalized)
-        return simple_code
+        return norm_lang(normalized)
 
 
-def normalize_language_name(name: str) -> str:
-    """Нормализует название или код языка и возвращает его на русском."""
+def normalize_language_name(name: str, locale: str = "ru") -> str:
+    """Нормализует название или код языка и возвращает его перевод."""
 
     if not name:
         return ""
 
     name = name.strip()
 
-    csv_name = lookup_language(name)
-    if csv_name:
-        return csv_name
-
     try:
-        result = langcodes.Language.get(name).display_name("ru")
-        return replace_territory_with_code(result, "ru")
-    except langcodes.LanguageTagError:
-        pass
-
-    try:
-        if "(" in name and ")" in name:
-            lang_part, region_part = name.split("(", 1)
-            lang_part = lang_part.strip()
-            region_part = region_part.strip(") ").strip()
-
-            if region_part.lower() in {"simplified", "traditional"}:
-                code = "zh-Hans" if region_part.lower() == "simplified" else "zh-Hant"
-            else:
-                lang = pycountry.languages.lookup(lang_part)
-                country = pycountry.countries.lookup(region_part)
-                code = f"{lang.alpha_2}-{country.alpha_2}"
-        else:
-            lang = pycountry.languages.lookup(name)
-            code = getattr(lang, "alpha_2", "") or getattr(lang, "alpha_3", "")
-
-        if code:
-            result = langcodes.Language.get(code).display_name("ru")
-            return replace_territory_with_code(result, "ru")
-    except LookupError:
-        try:
-            code = langcodes.find(name)
-            result = langcodes.Language.get(code).display_name("ru")
-            return replace_territory_with_code(result, "ru")
-        except Exception:
+        tag = _language_tag_from_value(name)
+        if not tag:
             return ""
+        result = langcodes.Language.get(tag).display_name(locale)
+        return _format_display(replace_territory_with_code(result, locale))
     except langcodes.LanguageTagError:
-        return ""
+        try:
+            match = langcodes.find(name)
+        except LookupError:
+            return ""
+        try:
+            result = langcodes.Language.get(match).display_name(locale)
+            return _format_display(replace_territory_with_code(result, locale))
+        except langcodes.LanguageTagError:
+            return ""
 
-    return ""
 
-
-def resolve_language_display(value: str) -> str:
+def resolve_language_display(value: str, locale: str = "ru") -> str:
     value = value.strip()
     if not value:
         return ""
 
-    display = expand_language_code(value)
+    display = expand_language_code(value, locale=locale)
     if display:
         return display
 
-    normalized = normalize_language_name(value)
+    normalized = normalize_language_name(value, locale=locale)
     if normalized:
         return normalized
 

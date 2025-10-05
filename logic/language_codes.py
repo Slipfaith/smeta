@@ -8,15 +8,13 @@ languages consistently (e.g. ``Malay (MY)`` instead of ``Malay (Malaysia)``).
 
 from __future__ import annotations
 
-import csv
 import re
 from contextlib import suppress
 from functools import lru_cache
-from pathlib import Path
 from typing import Dict
 
 from babel import Locale
-import pycountry
+import langcodes
 
 
 __all__ = [
@@ -44,17 +42,6 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip()).lower()
 
 
-@lru_cache(maxsize=None)
-def _alpha3_to_alpha2_map() -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
-    for country in pycountry.countries:
-        alpha2 = getattr(country, "alpha_2", "")
-        alpha3 = getattr(country, "alpha_3", "")
-        if alpha2 and alpha3:
-            mapping[alpha3.upper()] = alpha2.upper()
-    return mapping
-
-
 def _territory_from_code(code: str) -> str:
     """Extract a territory code from a locale identifier.
 
@@ -71,116 +58,59 @@ def _territory_from_code(code: str) -> str:
     if not normalized:
         return ""
 
-    parts = [part for part in normalized.split("-") if part]
-    if len(parts) <= 1:
-        return ""
-
-    for part in reversed(parts[1:]):
-        part_upper = part.upper()
-        if len(part_upper) == 2 and part_upper.isalpha():
-            return part_upper
-        if part.isdigit():
-            return part
-        if len(part_upper) == 3 and part_upper.isalpha():
-            alpha2 = _alpha3_to_alpha2_map().get(part_upper)
-            if alpha2:
-                return alpha2
-    return ""
-
-
-def _pycountry_country_lookup(name: str) -> str:
-    if not name:
-        return ""
     try:
-        country = pycountry.countries.lookup(name)
-    except LookupError:
+        lang = langcodes.Language.get(normalized)
+    except langcodes.LanguageTagError:
+        parts = [part for part in normalized.split("-") if part]
+        if len(parts) == 1 and len(parts[0]) == 2 and parts[0].isalpha():
+            return parts[0].upper()
         return ""
-    code = getattr(country, "alpha_2", "") or getattr(country, "alpha_3", "")
-    return code.upper() if code else ""
 
+    territory = lang.territory or ""
+    if territory:
+        return territory.upper()
 
-def _pycountry_language_lookup(value: str) -> str:
-    if not value:
-        return ""
-    try:
-        lang = pycountry.languages.lookup(value)
-    except LookupError:
-        return ""
-    for attr in ("alpha_2", "alpha_3", "bibliographic", "terminology"):
-        code = getattr(lang, attr, "")
-        if code:
-            return code.upper()
+    # Try to extract territory from maximised tag (e.g. ``pt`` -> ``PT``)
+    maximized = lang.maximize()
+    if maximized.territory:
+        return maximized.territory.upper()
+
     return ""
 
 
 @lru_cache(maxsize=None)
-def _country_alias_map() -> Dict[str, str]:
-    """Build a mapping of country names (RU/EN) to ISO codes.
-
-    The map is seeded from ``languages/languages.csv`` so that any custom
-    localisations present in the project are respected.
-    """
-
+def _territory_name_map() -> Dict[str, str]:
     mapping: Dict[str, str] = {}
-    csv_path = Path(__file__).resolve().parents[1] / "languages" / "languages.csv"
 
-    try:
-        with open(csv_path, encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f, delimiter=";")
-            for row in reader:
-                code = row.get("Код", "").strip()
-                country_en = row.get("Страна (EN)", "").strip()
-                country_ru = row.get("Страна (RU)", "").strip()
-
-                territory = _territory_from_code(code)
-                if not territory:
-                    territory = _pycountry_country_lookup(country_en)
-                if not territory:
-                    territory = _pycountry_country_lookup(country_ru)
-
-                if not territory:
-                    continue
-
-                if country_en:
-                    mapping[_normalize(country_en)] = territory
-                if country_ru:
-                    mapping[_normalize(country_ru)] = territory
-
-                # Names like "Latin, Azerbaijan" should also map to the
-                # underlying territory.  Adding the suffixes ensures lookups
-                # for either component succeed.
-                if country_en and "," in country_en:
-                    parts = [p.strip() for p in country_en.split(",") if p.strip()]
-                    for part in parts[1:]:
-                        mapping.setdefault(_normalize(part), territory)
-                if country_ru and "," in country_ru:
-                    parts = [p.strip() for p in country_ru.split(",") if p.strip()]
-                    for part in parts[1:]:
-                        mapping.setdefault(_normalize(part), territory)
-    except FileNotFoundError:
-        pass
-
-    return mapping
-
-
-@lru_cache(maxsize=None)
-def _babel_country_map() -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
     for lang in ("en", "ru"):
         try:
             locale = Locale(lang)
         except Exception:
             continue
+
         with suppress(Exception):
             for code, display in locale.territories.items():
+                if not code or not display:
+                    continue
                 mapping[_normalize(display)] = code.upper()
+                for part in re.split(r"[,/]| - ", display):
+                    cleaned = part.strip()
+                    if cleaned and cleaned != display:
+                        mapping.setdefault(_normalize(cleaned), code.upper())
+
         with suppress(Exception):
             short_map = locale._data.get("short_territories", {})
             for code, display in short_map.items():
+                if not code or not display:
+                    continue
                 mapping[_normalize(display)] = code.upper()
 
     for code, short in RU_TERRITORY_ABBREVIATIONS.items():
         mapping[_normalize(short)] = code
+
+    # Allow matching against plain codes ("US", "gb", "410").
+    for code in list(mapping.values()):
+        mapping.setdefault(_normalize(code), code)
 
     # Common unofficial abbreviations.
     mapping.setdefault("uk", "GB")
@@ -204,17 +134,17 @@ def country_to_code(name: str) -> str:
 
     norm = _normalize(stripped)
 
-    mapping = _country_alias_map()
+    mapping = _territory_name_map()
     if norm in mapping:
         return mapping[norm]
 
-    babel_map = _babel_country_map()
-    if norm in babel_map:
-        return babel_map[norm]
-
-    code = _pycountry_country_lookup(stripped)
-    if code:
-        return code
+    # Try to parse the string as a language tag and reuse the territory part.
+    try:
+        lang = langcodes.Language.get(stripped)
+        if lang.territory:
+            return lang.territory.upper()
+    except langcodes.LanguageTagError:
+        pass
 
     return ""
 
@@ -236,9 +166,21 @@ def _language_code_from_row(code: str, lang_en: str) -> str:
             continue
         seen.add(candidate_norm.lower())
 
-        code_value = _pycountry_language_lookup(candidate_norm)
-        if code_value:
-            return code_value
+        try:
+            lang = langcodes.Language.get(candidate_norm)
+            if lang.language:
+                return lang.language.upper()
+        except langcodes.LanguageTagError:
+            try:
+                match = langcodes.find(candidate_norm)
+            except LookupError:
+                continue
+            try:
+                lang = langcodes.Language.get(match)
+                if lang.language:
+                    return lang.language.upper()
+            except langcodes.LanguageTagError:
+                continue
 
     if candidates:
         base = candidates[0].split("-")[0]
