@@ -70,9 +70,27 @@ def _territory_from_code(code: str) -> str:
     if territory:
         return territory.upper()
 
+    base_language = (lang.language or "").lower()
+    if not base_language:
+        parts = [part for part in normalized.split("-") if part]
+        if parts:
+            base_language = parts[0].lower()
+
     # Try to extract territory from maximised tag (e.g. ``pt`` -> ``PT``)
     maximized = lang.maximize()
     if maximized.territory:
+        max_language = (maximized.language or "").lower()
+        if base_language and max_language and max_language != base_language:
+            if lang.script and base_language:
+                with suppress(langcodes.LanguageTagError):
+                    base_maximized = langcodes.Language.get(base_language).maximize()
+                    base_territory = base_maximized.territory or ""
+                    if (
+                        base_territory
+                        and (base_maximized.language or "").lower() == base_language
+                    ):
+                        return base_territory.upper()
+            return ""
         return maximized.territory.upper()
 
     return ""
