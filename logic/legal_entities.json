@@ -1,6 +1,16 @@
 {
-  "Артфест": "templates/Артфест.xlsx",
-  "Бикрон": "templates/Бикрон.xlsx",
-  "Логрус Айти": "templates/Логрус Айти.xlsx",
-  "Logrus IT": "templates/Logrus IT.xlsx"
+  "Артфест": {
+    "template": "templates/Артфест.xlsx",
+    "vat_enabled": true,
+    "default_vat": 20.0
+  },
+  "Бикрон": {
+    "template": "templates/Бикрон.xlsx"
+  },
+  "Логрус Айти": {
+    "template": "templates/Логрус Айти.xlsx"
+  },
+  "Logrus IT": {
+    "template": "templates/Logrus IT.xlsx"
+  }
 }

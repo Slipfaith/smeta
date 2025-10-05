@@ -146,6 +146,26 @@ class TranslationBlockRenderer(BlockRenderer):
 
     def prepare_items(self, pair: Dict[str, Any]) -> List[Dict[str, Any]]:
         translation_rows = (pair.get("services") or {}).get("translation", [])
+        only_new_mode = bool(
+            pair.get("only_new_repeats")
+            or pair.get("only_new_repeats_mode")
+        )
+        if only_new_mode:
+            items: List[Dict[str, Any]] = []
+            for row in translation_rows:
+                items.append(
+                    {
+                        "parameter": row.get("parameter")
+                        or tr(row.get("name"), self.exporter.lang),
+                        "unit": tr("Слово", self.exporter.lang),
+                        "volume": self.exporter._to_number(row.get("volume") or 0),
+                        "rate": self.exporter._to_number(row.get("rate") or 0),
+                        "multiplier": row.get("multiplier"),
+                        "is_base": bool(row.get("is_base")),
+                    }
+                )
+            return items
+
         data_map: Dict[str, Dict[str, Any]] = {}
         extras: List[Dict[str, Any]] = []
         default_keys = {cfg.get("key") for cfg in ServiceConfig.TRANSLATION_ROWS}

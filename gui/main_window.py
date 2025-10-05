@@ -50,7 +50,7 @@ from logic.user_config import load_languages, add_language
 from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
-from logic.legal_entities import load_legal_entities
+from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.language_codes import (
     determine_short_code,
@@ -266,6 +266,7 @@ class TranslationCostCalculator(QMainWindow):
             self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
         self.only_new_repeats_mode = False
         self.legal_entities = load_legal_entities()
+        self.legal_entity_meta = get_legal_entity_metadata()
         self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
         self.excel_dialog = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
@@ -707,11 +708,18 @@ class TranslationCostCalculator(QMainWindow):
     def on_legal_entity_changed(self, entity: str):
         if entity == self.legal_entity_placeholder:
             entity = ""
-        is_art = entity == "Артфест"
-        self.vat_spin.setEnabled(is_art)
-        if is_art and self.vat_spin.value() == 0:
-            self.vat_spin.setValue(20.0)
-        if not is_art:
+        meta = self.legal_entity_meta.get(entity, {}) if entity else {}
+        vat_enabled = bool(meta.get("vat_enabled"))
+        self.vat_spin.setEnabled(vat_enabled)
+        if vat_enabled:
+            default_vat = meta.get("default_vat", 0.0)
+            try:
+                default_vat_value = float(default_vat)
+            except (TypeError, ValueError):
+                default_vat_value = 0.0
+            if self.vat_spin.value() == 0.0 and default_vat_value > 0:
+                self.vat_spin.setValue(default_vat_value)
+        else:
             self.vat_spin.setValue(0.0)
 
     def create_right_panel(self) -> QWidget:
@@ -1206,7 +1214,7 @@ class TranslationCostCalculator(QMainWindow):
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         try:
-            data, warnings = parse_reports(paths)
+            data, warnings, report_sources = parse_reports(paths)
 
             if warnings:
                 warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(
@@ -1236,6 +1244,7 @@ class TranslationCostCalculator(QMainWindow):
                 data.items(), key=lambda kv: self._pair_sort_key(kv[0])
             ):
                 widget = self.language_pairs.get(pair_key)
+                sources_for_pair = report_sources.get(pair_key, [])
 
                 display_name = self._display_pair_name(pair_key)
                 tgt_key = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
@@ -1269,6 +1278,8 @@ class TranslationCostCalculator(QMainWindow):
                     widget.set_language("ru" if self.lang_display_ru else "en")
                     self.pair_headers[pair_key] = header_title
                     updated_pairs += 1
+
+                widget.set_report_sources(sources_for_pair, replace=replace)
 
                 if self.only_new_repeats_mode:
                     widget.set_only_new_and_repeats_mode(True)
@@ -1378,6 +1389,7 @@ class TranslationCostCalculator(QMainWindow):
                 else []
             ),
             "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
+            "only_new_repeats_mode": self.only_new_repeats_mode,
         }
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
@@ -1585,6 +1597,15 @@ class TranslationCostCalculator(QMainWindow):
             self.vat_spin.setValue(project_data.get("vat_rate", 20.0))
         self.on_legal_entity_changed(self.get_selected_legal_entity())
 
+        self.only_new_repeats_mode = project_data.get("only_new_repeats_mode", False)
+        if getattr(self, "only_new_repeats_btn", None):
+            if self.only_new_repeats_mode:
+                self.only_new_repeats_btn.setText(tr("Показать 4 строки", self.gui_lang))
+            else:
+                self.only_new_repeats_btn.setText(
+                    tr("Только новые слова и повторы", self.gui_lang)
+                )
+
         for w in self.language_pairs.values():
             w.setParent(None)
         self.language_pairs.clear()
@@ -1611,6 +1632,12 @@ class TranslationCostCalculator(QMainWindow):
             if "translation" in services:
                 widget.translation_group.setChecked(True)
                 widget.load_table_data(services["translation"])
+
+            widget.set_report_sources(pair_data.get("report_sources", []), replace=True)
+            pair_mode = pair_data.get("only_new_repeats")
+            if pair_mode is None:
+                pair_mode = self.only_new_repeats_mode
+            widget.set_only_new_and_repeats_mode(bool(pair_mode))
 
         self.update_pairs_list()
 
