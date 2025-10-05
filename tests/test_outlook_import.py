@@ -51,3 +51,13 @@ def test_map_message_handles_missing_table():
     assert "Название проекта" not in result.missing_fields  # project from subject
     assert "Название клиента" in result.missing_fields
     assert result.data.currency_code is None
+
+
+def test_map_message_handles_byte_html_body():
+    html_bytes = HTML_TABLE.encode("utf-8")
+    message = make_message(html=html_bytes)
+
+    result = map_message_to_project_info(message)
+
+    assert result.data.client_name == "ООО Клиент"
+    assert result.warnings == []
