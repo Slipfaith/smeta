@@ -1,4 +1,5 @@
-import unittest
+from __future__ import annotations
+
 from unittest.mock import patch
 
 from logic import language_codes
@@ -15,26 +16,71 @@ class _DummyLanguage:
         return self._maximized
 
 
-class TerritoryDetectionTests(unittest.TestCase):
-    def test_script_only_code_ignores_mismatched_language_territory(self):
-        base_maximized = _DummyLanguage(language="uz", territory="UZ", script="Latn")
-        base_language = _DummyLanguage(language="az", script="Latn", maximized=base_maximized)
-
-        fallback_maximized = _DummyLanguage(language="az", territory="AZ")
-        fallback_language = _DummyLanguage(language="az", maximized=fallback_maximized)
-
-        def fake_get(tag):
-            if tag == "az-Latn":
-                return base_language
-            if tag == "az":
-                return fallback_language
-            raise language_codes.langcodes.LanguageTagError
-
-        with patch.object(language_codes.langcodes.Language, "get", side_effect=fake_get):
-            short = language_codes.determine_short_code("az-Latn", "", "", "")
-
-        self.assertEqual(short, "AZ")
+def test_country_to_code_returns_existing_code():
+    assert language_codes.country_to_code("us") == "US"
 
 
-if __name__ == "__main__":  # pragma: no cover
-    unittest.main()
+def test_country_to_code_resolves_russian_abbreviation():
+    assert language_codes.country_to_code("США") == "US"
+
+
+def test_determine_short_code_prefers_territory_from_code():
+    assert language_codes.determine_short_code("en-US", "", "", "") == "US"
+
+
+def test_determine_short_code_falls_back_to_country_names():
+    code = language_codes.determine_short_code("", "", "Germany", "")
+    assert code == "DE"
+
+
+def test_determine_short_code_uses_language_when_no_territory():
+    code = language_codes.determine_short_code("", "Esperanto", "", "")
+    assert code == "EO"
+
+
+def test_determine_short_code_script_only_code_ignores_mismatched_language_territory():
+    base_maximized = _DummyLanguage(language="uz", territory="UZ", script="Latn")
+    base_language = _DummyLanguage(language="az", script="Latn", maximized=base_maximized)
+
+    fallback_maximized = _DummyLanguage(language="az", territory="AZ")
+    fallback_language = _DummyLanguage(language="az", maximized=fallback_maximized)
+
+    def fake_get(tag):
+        if tag == "az-Latn":
+            return base_language
+        if tag == "az":
+            return fallback_language
+        raise language_codes.langcodes.LanguageTagError
+
+    with patch.object(language_codes.langcodes.Language, "get", side_effect=fake_get):
+        short = language_codes.determine_short_code("az-Latn", "", "", "")
+
+    assert short == "AZ"
+
+
+def test_determine_short_code_returns_empty_for_script_only_when_no_fallback():
+    def fake_get(tag):
+        raise language_codes.langcodes.LanguageTagError
+
+    with patch.object(language_codes.langcodes.Language, "get", side_effect=fake_get):
+        short = language_codes.determine_short_code("zh-Hans", "", "", "")
+
+    assert short == ""
+
+
+def test_localise_territory_code_prefers_russian_abbreviations():
+    assert language_codes.localise_territory_code("US", "ru") == "США"
+
+
+def test_localise_territory_code_passthrough_for_other_languages():
+    assert language_codes.localise_territory_code("US", "en") == "US"
+
+
+def test_replace_territory_with_code_substitutes_first_parenthesis():
+    replaced = language_codes.replace_territory_with_code("Malay (Malaysia)", "en")
+    assert replaced == "Malay (MY)"
+
+
+def test_replace_territory_with_code_returns_original_when_unknown():
+    original = "Foo (Atlantis)"
+    assert language_codes.replace_territory_with_code(original, "en") == original
