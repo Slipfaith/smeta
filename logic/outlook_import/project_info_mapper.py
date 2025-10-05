@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from .msg_reader import OutlookMessage
 from .table_parser import extract_first_table
 
-_PROJECT_NAME_RE = re.compile(r"\[(?P<name>[^\[\]]+)\]")
+_SUBJECT_BRACKETS_RE = re.compile(r"\[[^\[\]]*\]")
 
 _KEY_NORMALIZATION = {
     "название клиента": "client_name",
@@ -121,9 +121,11 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
         warnings.append("Таблица в письме не найдена")
 
     project_name = None
-    match = _PROJECT_NAME_RE.search(message.subject)
-    if match:
-        project_name = match.group("name").strip()
+    if message.subject:
+        project_name = _SUBJECT_BRACKETS_RE.sub(" ", message.subject)
+        project_name = re.sub(r"\s+", " ", project_name).strip()
+        if not project_name:
+            project_name = None
 
     client_name = mapped_values.get("client_name")
 

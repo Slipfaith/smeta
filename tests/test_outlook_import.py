@@ -29,7 +29,7 @@ def test_map_message_extracts_project_fields():
     result = map_message_to_project_info(make_message())
 
     data = result.data
-    assert data.project_name == "Project Phoenix"
+    assert data.project_name == "Коммерческое предложение"
     assert data.client_name == "ООО Клиент"
     assert data.legal_entity == 'ООО "Логрус ИТ"'
     assert data.currency_code == "USD"
@@ -61,3 +61,12 @@ def test_map_message_handles_byte_html_body():
 
     assert result.data.client_name == "ООО Клиент"
     assert result.warnings == []
+
+
+def test_map_message_strips_bracket_tags_from_subject():
+    message = make_message()
+    message.subject = "[Tag] Новая тема [Internal]"
+
+    result = map_message_to_project_info(message)
+
+    assert result.data.project_name == "Новая тема"
