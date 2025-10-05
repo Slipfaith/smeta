@@ -250,11 +250,12 @@ class ProjectSetupWidget(QWidget):
     def set_currency(self, symbol: str, code: str):
         self.currency_symbol = symbol
         self.currency_code = code
+        rate_suffix = f" ({symbol})" if symbol else ""
         self.table.setHorizontalHeaderLabels([
             tr("Названия работ", self.lang),
             tr("Объем", self.lang),
-            f"{tr('Ставка', self.lang)} ({symbol})",
-            f"{tr('Сумма', self.lang)} ({symbol})",
+            f"{tr('Ставка', self.lang)}{rate_suffix}",
+            f"{tr('Сумма', self.lang)}{rate_suffix}",
         ])
         self.update_sums()
 

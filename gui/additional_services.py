@@ -42,12 +42,13 @@ class AdditionalServiceTable(QWidget):
         layout.addLayout(header)
 
         self.table = QTableWidget(1, 5)
+        symbol_suffix = f" ({self.currency_symbol})" if self.currency_symbol else ""
         self.table.setHorizontalHeaderLabels([
             tr("Параметр", self.lang),
             tr("Ед-ца", self.lang),
             tr("Объем", self.lang),
-            f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
-            f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
+            f"{tr('Ставка', self.lang)}{symbol_suffix}",
+            f"{tr('Сумма', self.lang)}{symbol_suffix}",
         ])
 
         header_view = self.table.horizontalHeader()
@@ -69,7 +70,10 @@ class AdditionalServiceTable(QWidget):
 
         layout.addWidget(self.table)
 
-        self.subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
+        subtotal_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+        self.subtotal_label = QLabel(
+            f"{tr('Промежуточная сумма', self.lang)}: 0.00{subtotal_suffix}"
+        )
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.subtotal_label)
 
@@ -132,8 +136,9 @@ class AdditionalServiceTable(QWidget):
                 self.table.setItem(r, 4, item)
             item.setText(format_amount(total, self.lang))
 
+        suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
         self.subtotal_label.setText(
-            f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
+            f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)}{suffix}"
         )
         self._subtotal = subtotal
         self.subtotal_changed.emit(subtotal)
@@ -186,12 +191,13 @@ class AdditionalServiceTable(QWidget):
     def set_currency(self, symbol: str, code: str) -> None:
         self.currency_symbol = symbol
         self.currency_code = code
+        symbol_suffix = f" ({symbol})" if symbol else ""
         self.table.setHorizontalHeaderLabels([
             tr("Параметр", self.lang),
             tr("Ед-ца", self.lang),
             tr("Объем", self.lang),
-            f"{tr('Ставка', self.lang)} ({symbol})",
-            f"{tr('Сумма', self.lang)} ({symbol})",
+            f"{tr('Ставка', self.lang)}{symbol_suffix}",
+            f"{tr('Сумма', self.lang)}{symbol_suffix}",
         ])
         self.update_sums()
 
