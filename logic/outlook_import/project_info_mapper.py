@@ -98,6 +98,18 @@ def _normalize_currency(value: str) -> Optional[str]:
     return None
 
 
+def _normalize_legal_entity(value: str) -> Optional[str]:
+    value = value.strip()
+    if not value:
+        return None
+
+    normalized = value.lower()
+    if normalized == "logrus it usa":
+        return "Logrus IT"
+
+    return value
+
+
 def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResult:
     table_rows: List[List[str]] = []
     warnings: List[str] = []
@@ -148,7 +160,10 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
     if not email and email_value and re.search(r"@", email_value):
         email = email_value
 
-    legal_entity = mapped_values.get("legal_entity")
+    legal_entity_value = mapped_values.get("legal_entity")
+    legal_entity = None
+    if legal_entity_value:
+        legal_entity = _normalize_legal_entity(legal_entity_value)
     currency_code = None
     currency_value = mapped_values.get("currency")
     if currency_value:

@@ -63,6 +63,14 @@ def test_map_message_handles_byte_html_body():
     assert result.warnings == []
 
 
+def test_map_message_normalizes_logrus_usa_entity():
+    html = HTML_TABLE.replace('ООО "Логрус ИТ"', 'Logrus IT USA')
+    result = map_message_to_project_info(make_message(html=html))
+
+    assert result.data.legal_entity == "Logrus IT"
+    assert "Юрлицо" not in result.missing_fields
+
+
 def test_map_message_strips_bracket_tags_from_subject():
     message = make_message()
     message.subject = "[Tag] Новая тема [Internal]"

@@ -248,7 +248,7 @@ class TranslationCostCalculator(QMainWindow):
         self.only_new_repeats_mode = False
         self.legal_entities = load_legal_entities()
         self.legal_entity_meta = get_legal_entity_metadata()
-        self.currency_symbol = CURRENCY_SYMBOLS.get("RUB", "₽")
+        self.currency_symbol = ""
         self.excel_dialog = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
         # Create the total label early so slots triggered during initialization
@@ -377,8 +377,11 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_label = QLabel(tr("Валюта", lang) + ":")
         p.addWidget(self.currency_label)
         self.currency_combo = QComboBox()
+        self.currency_placeholder = tr("Выберите валюту", lang)
+        self.currency_combo.addItem(self.currency_placeholder)
         self.currency_combo.addItems(["RUB", "EUR", "USD"])
-        self.currency_combo.currentTextChanged.connect(self.on_currency_changed)
+        self.currency_combo.setCurrentIndex(0)
+        self.currency_combo.currentIndexChanged.connect(self.on_currency_index_changed)
         p.addWidget(self.currency_combo)
         self.convert_btn = QPushButton(tr("Конвертировать в рубли", lang))
         self.convert_btn.clicked.connect(self.convert_to_rub)
@@ -400,7 +403,7 @@ class TranslationCostCalculator(QMainWindow):
         lay.addWidget(self.project_group)
         # Initial state: no legal entity selected
         self.on_legal_entity_changed("")
-        self.on_currency_changed(self.currency_combo.currentText())
+        self.on_currency_changed(self.get_current_currency_code())
 
         self.pairs_group = QGroupBox(tr("Языковые пары", lang))
         pg = QVBoxLayout()
@@ -579,6 +582,9 @@ class TranslationCostCalculator(QMainWindow):
         if self.legal_entity_combo.count() > 0:
             self.legal_entity_combo.setItemText(0, self.legal_entity_placeholder)
         self.currency_label.setText(tr("Валюта", lang) + ":")
+        self.currency_placeholder = tr("Выберите валюту", lang)
+        if self.currency_combo.count() > 0:
+            self.currency_combo.setItemText(0, self.currency_placeholder)
         self.convert_btn.setText(tr("Конвертировать в рубли", lang))
         self.vat_label.setText(tr("НДС, %", lang) + ":")
         self.language_names_label.setText(tr("Названия языков", lang) + ":")
@@ -645,6 +651,32 @@ class TranslationCostCalculator(QMainWindow):
         )
         QMessageBox.information(self, tr("О программе", lang), text)
 
+    def on_currency_index_changed(self, index: int):
+        code = self.currency_combo.itemText(index) if index > 0 else ""
+        self.on_currency_changed(code)
+
+    def get_current_currency_code(self) -> str:
+        index = self.currency_combo.currentIndex()
+        if index <= 0:
+            return ""
+        return self.currency_combo.itemText(index)
+
+    def set_currency_code(self, code: Optional[str]) -> bool:
+        if code:
+            normalized = str(code).strip().upper()
+            idx = self.currency_combo.findText(normalized, Qt.MatchFixedString)
+            if idx < 0:
+                for i in range(1, self.currency_combo.count()):
+                    text = self.currency_combo.itemText(i).strip().upper()
+                    if text == normalized:
+                        idx = i
+                        break
+            if idx >= 0:
+                self.currency_combo.setCurrentIndex(idx)
+                return True
+        self.currency_combo.setCurrentIndex(0)
+        return False
+
     def on_currency_changed(self, code: str):
         self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
         if getattr(self, "project_setup_widget", None):
@@ -654,7 +686,7 @@ class TranslationCostCalculator(QMainWindow):
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.set_currency(self.currency_symbol, code)
         if getattr(self, "convert_btn", None):
-            self.convert_btn.setEnabled(code not in ("RUB", "EUR"))
+            self.convert_btn.setEnabled(code == "USD")
 
     def get_selected_legal_entity(self) -> str:
         """Return currently selected legal entity or empty string if none."""
@@ -665,7 +697,7 @@ class TranslationCostCalculator(QMainWindow):
 
     def convert_to_rub(self):
         """Convert all rates from USD to RUB using user-provided rate."""
-        if self.currency_combo.currentText() != "USD":
+        if self.get_current_currency_code() != "USD":
             return
         lang = self.gui_lang
         rate, ok = QInputDialog.getDouble(
@@ -685,7 +717,7 @@ class TranslationCostCalculator(QMainWindow):
             w.convert_rates(rate)
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.convert_rates(rate)
-        self.currency_combo.setCurrentText("RUB")
+        self.set_currency_code("RUB")
         self.update_total()
 
     def on_legal_entity_changed(self, entity: str):
@@ -730,7 +762,7 @@ class TranslationCostCalculator(QMainWindow):
         self.project_setup_widget = ProjectSetupWidget(
             self.project_setup_fee_spin.value(),
             self.currency_symbol,
-            self.currency_combo.currentText(),
+            self.get_current_currency_code(),
             lang=est_lang,
         )
         self.project_setup_widget.remove_requested.connect(
@@ -780,7 +812,7 @@ class TranslationCostCalculator(QMainWindow):
 
         self.additional_services_widget = AdditionalServicesWidget(
             self.currency_symbol,
-            self.currency_combo.currentText(),
+            self.get_current_currency_code(),
             lang=est_lang,
         )
         self.additional_services_widget.subtotal_changed.connect(self.update_total)
@@ -845,16 +877,27 @@ class TranslationCostCalculator(QMainWindow):
             if value:
                 widget.setText(value)
                 updated_fields.append(tr(label_key, lang))
+            else:
+                widget.clear()
 
         update_field(self.project_name_edit, data.project_name, "Название проекта")
         update_field(self.client_name_edit, data.client_name, "Название клиента")
         update_field(self.contact_person_edit, data.contact_name, "Контактное лицо")
         update_field(self.email_edit, data.email, "Email")
 
-        if data.legal_entity:
-            idx = self.legal_entity_combo.findText(data.legal_entity, Qt.MatchFixedString)
+        legal_entity_value = (data.legal_entity or "").strip()
+        if legal_entity_value.lower() == "logrus it usa":
+            legal_entity_value = "Logrus IT"
+            data.legal_entity = legal_entity_value
+            if self.lang_mode_slider.value() != 0:
+                self.lang_mode_slider.setValue(0)
+
+        if legal_entity_value:
+            idx = self.legal_entity_combo.findText(
+                legal_entity_value, Qt.MatchFixedString
+            )
             if idx < 0:
-                target = data.legal_entity.strip().lower()
+                target = legal_entity_value.lower()
                 for i in range(self.legal_entity_combo.count()):
                     text = self.legal_entity_combo.itemText(i).strip().lower()
                     if text == target:
@@ -864,15 +907,19 @@ class TranslationCostCalculator(QMainWindow):
                 self.legal_entity_combo.setCurrentIndex(idx)
                 updated_fields.append(tr("Юрлицо", lang))
             else:
-                manual_checks.append(f"{tr('Юрлицо', lang)}: {data.legal_entity}")
+                self.legal_entity_combo.setCurrentIndex(0)
+                manual_checks.append(f"{tr('Юрлицо', lang)}: {legal_entity_value}")
+        else:
+            self.legal_entity_combo.setCurrentIndex(0)
 
         if data.currency_code:
-            idx = self.currency_combo.findText(data.currency_code, Qt.MatchFixedString)
-            if idx >= 0:
-                self.currency_combo.setCurrentIndex(idx)
+            if self.set_currency_code(data.currency_code):
                 updated_fields.append(tr("Валюта", lang))
             else:
+                self.set_currency_code(None)
                 manual_checks.append(f"{tr('Валюта', lang)}: {data.currency_code}")
+        else:
+            self.set_currency_code(None)
 
         missing = [tr(name, lang) for name in result.missing_fields]
 
@@ -882,30 +929,39 @@ class TranslationCostCalculator(QMainWindow):
         if result.sender_email:
             sender_parts.append(result.sender_email)
 
-        message_lines: List[str] = []
-        message_lines.append(
-            f"{tr('Outlook письмо', lang)}: {os.path.basename(source_path)}"
-        )
-        if updated_fields:
-            message_lines.append(
-                f"{tr('Обновлены поля', lang)}: {', '.join(dict.fromkeys(updated_fields))}"
-            )
-        if missing:
-            message_lines.append(
-                f"{tr('Не удалось определить', lang)}: {', '.join(dict.fromkeys(missing))}"
-            )
-        if manual_checks:
-            message_lines.append(
-                f"{tr('Проверьте вручную', lang)}: {', '.join(dict.fromkeys(manual_checks))}"
-            )
-        if sender_parts:
-            message_lines.append(
-                f"{tr('Отправитель', lang)}: {' • '.join(dict.fromkeys(sender_parts))}"
-            )
-        if result.sent_at:
-            message_lines.append(f"{tr('Дата отправки', lang)}: {result.sent_at}")
+        def format_section(title: str, values: List[str]) -> Optional[str]:
+            unique_values = list(dict.fromkeys(v for v in values if v))
+            if not unique_values:
+                return None
+            bullets = "\n  • ".join(unique_values)
+            return f"{title}:\n  • {bullets}"
 
-        QMessageBox.information(self, tr("Готово", lang), "\n".join(message_lines))
+        message_sections: List[str] = [
+            f"{tr('Outlook письмо', lang)}: {os.path.basename(source_path)}"
+        ]
+
+        section = format_section(tr("Обновлены поля", lang), updated_fields)
+        if section:
+            message_sections.append(section)
+
+        section = format_section(tr("Не удалось определить", lang), missing)
+        if section:
+            message_sections.append(section)
+
+        section = format_section(tr("Проверьте вручную", lang), manual_checks)
+        if section:
+            message_sections.append(section)
+
+        section = format_section(tr("Отправитель", lang), sender_parts)
+        if section:
+            message_sections.append(section)
+
+        if result.sent_at:
+            message_sections.append(f"{tr('Дата отправки', lang)}: {result.sent_at}")
+
+        QMessageBox.information(
+            self, tr("Готово", lang), "\n\n".join(message_sections)
+        )
 
     def _hide_drop_hint(self):
         if getattr(self, "drop_hint_label", None):
@@ -1074,7 +1130,7 @@ class TranslationCostCalculator(QMainWindow):
         widget = LanguagePairWidget(
             display_name,
             self.currency_symbol,
-            self.currency_combo.currentText(),
+            self.get_current_currency_code(),
             lang="ru" if self.lang_display_ru else "en",
         )
         widget.remove_requested.connect(
@@ -1308,7 +1364,7 @@ class TranslationCostCalculator(QMainWindow):
                     widget = LanguagePairWidget(
                         display_name,
                         self.currency_symbol,
-                        self.currency_combo.currentText(),
+                        self.get_current_currency_code(),
                         lang="ru" if self.lang_display_ru else "en",
                     )
                     widget.remove_requested.connect(
@@ -1426,7 +1482,7 @@ class TranslationCostCalculator(QMainWindow):
             "contact_person": self.contact_person_edit.text(),
             "email": self.email_edit.text(),
             "legal_entity": self.get_selected_legal_entity(),
-            "currency": self.currency_combo.currentText(),
+            "currency": self.get_current_currency_code(),
             "language_pairs": [],
             "additional_services": [],
             "pm_name": self.current_pm.get(
@@ -1499,7 +1555,7 @@ class TranslationCostCalculator(QMainWindow):
 
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
-        currency = self.currency_combo.currentText()
+        currency = self.get_current_currency_code()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.xlsx"
 
@@ -1513,7 +1569,7 @@ class TranslationCostCalculator(QMainWindow):
         template_path = self.legal_entities.get(entity_name)
         exporter = ExcelExporter(
             template_path,
-            currency=self.currency_combo.currentText(),
+            currency=self.get_current_currency_code(),
             lang=export_lang,
         )
         with Progress(parent=self) as progress:
@@ -1558,7 +1614,7 @@ class TranslationCostCalculator(QMainWindow):
                 return
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
-        currency = self.currency_combo.currentText()
+        currency = self.get_current_currency_code()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.pdf"
         file_path, _ = QFileDialog.getSaveFileName(
@@ -1643,7 +1699,8 @@ class TranslationCostCalculator(QMainWindow):
             else:
                 self.legal_entity_combo.setCurrentIndex(0)
         if hasattr(self, "currency_combo"):
-            self.currency_combo.setCurrentText(project_data.get("currency", "RUB"))
+            saved_currency = project_data.get("currency")
+            self.set_currency_code(saved_currency)
         if hasattr(self, "vat_spin"):
             self.vat_spin.setValue(project_data.get("vat_rate", 20.0))
         self.on_legal_entity_changed(self.get_selected_legal_entity())
@@ -1666,7 +1723,7 @@ class TranslationCostCalculator(QMainWindow):
             pair_key = pair_data["pair_name"]
             header_title = pair_data.get("header_title", pair_key)
             widget = LanguagePairWidget(
-                pair_key, self.currency_symbol, self.currency_combo.currentText()
+                pair_key, self.currency_symbol, self.get_current_currency_code()
             )
             widget.remove_requested.connect(
                 lambda w=widget: self._on_widget_remove_requested(w)
@@ -1698,7 +1755,7 @@ class TranslationCostCalculator(QMainWindow):
                 self.project_setup_widget = ProjectSetupWidget(
                     self.project_setup_fee_spin.value(),
                     self.currency_symbol,
-                    self.currency_combo.currentText(),
+                    self.get_current_currency_code(),
                 )
                 self.project_setup_widget.remove_requested.connect(
                     self.remove_project_setup_widget
