@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import re
+import traceback
 from datetime import datetime
 from typing import Dict, List, Any, Tuple, Optional
 
@@ -221,7 +222,13 @@ class ProjectInfoDropArea(QGroupBox):
         try:
             self._callback(msg_paths)
             event.acceptProposedAction()
-        except Exception:
+        except Exception as exc:
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "Ошибка обработки Outlook файла",
+                str(exc) or "Не удалось обработать перетащенный .msg файл.",
+            )
             event.ignore()
 
 
