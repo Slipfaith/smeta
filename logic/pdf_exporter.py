@@ -1,5 +1,4 @@
 import os
-import logging
 import tempfile
 from typing import Dict, Any
 
@@ -10,7 +9,9 @@ from .excel_process import (
     unregister_excel_instance,
 )
 
-logger = logging.getLogger("PdfExporter")
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def export_to_pdf(
@@ -30,9 +31,8 @@ def export_to_pdf(
             if not xlsx_to_pdf(xlsx_path, output_path, lang=lang):
                 raise RuntimeError("Не удалось конвертировать в PDF")
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("PDF export failed")
-        print(f"[PdfExporter] Ошибка экспорта PDF: {e}")
         return False
 
 

@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
 
+from logger import get_logger
+
 from .service_config import ServiceConfig
 from .xml_parser_common import expand_language_code, resolve_language_display
 
 
 ROW_NAMES = ServiceConfig.ROW_NAMES
 SMARTCAT_NS = "urn:schemas-microsoft-com:office:spreadsheet"
+
+
+logger = get_logger(__name__)
 
 
 def is_smartcat_report(path: str) -> bool:
@@ -44,7 +49,7 @@ def parse_smartcat_report(
     path: str, unit: str
 ) -> Tuple[Dict[str, Dict[str, float]], List[str], bool, str]:
     filename = Path(path).name
-    print(f"Detected Smartcat report: {path}")
+    logger.info("Detected Smartcat report: %s", path)
 
     results: Dict[str, Dict[str, float]] = {}
     warnings: List[str] = []
@@ -55,17 +60,17 @@ def parse_smartcat_report(
         tree = ET.parse(path)
     except ET.ParseError as exc:
         msg = f"{filename}: XML Parse Error - {exc}"
-        print(f"ERROR: {msg}")
+        logger.error(msg)
         warnings.append(msg)
         return results, warnings, processed, placeholder
     except Exception as exc:
         msg = f"{filename}: Unexpected error - {exc}"
-        print(f"ERROR: {msg}")
+        logger.exception(msg)
         warnings.append(msg)
         return results, warnings, processed, placeholder
 
     root = tree.getroot()
-    print(f"Root element: {root.tag}")
+    logger.debug("Root element: %s", root.tag)
 
     target_lang = _extract_smartcat_target_language(root)
     if not target_lang:
@@ -73,16 +78,16 @@ def parse_smartcat_report(
     if target_lang:
         placeholder = target_lang
     pair_key = target_lang or placeholder
-    print(f"Smartcat target language: '{pair_key}'")
+    logger.info("Smartcat target language: '%s'", pair_key)
 
     statistics_rows: List[Tuple[str, float]] = []
     for worksheet in root.findall(f"{{{SMARTCAT_NS}}}Worksheet"):
         sheet_name = worksheet.get(f"{{{SMARTCAT_NS}}}Name", "") or "<unnamed>"
-        print(f"  Inspecting worksheet: {sheet_name}")
+        logger.debug("  Inspecting worksheet: %s", sheet_name)
         rows = _worksheet_to_rows(worksheet)
         statistics_rows = _find_smartcat_statistics(rows, unit)
         if statistics_rows:
-            print(f"  → Statistics found in worksheet '{sheet_name}'")
+            logger.info("  → Statistics found in worksheet '%s'", sheet_name)
             break
 
     values = {name: 0.0 for name in ROW_NAMES}
@@ -93,9 +98,9 @@ def parse_smartcat_report(
         for label, number in statistics_rows:
             category = _categorize_smartcat_row(label)
             if not category:
-                print(f"    Skipping row '{label}'")
+                logger.debug("    Skipping row '%s'", label)
                 continue
-            print(f"    {label} -> {category}: {number}")
+            logger.debug("    %s -> %s: %s", label, category, number)
             values[category] += number
     else:
         fallback_values, fallback_found = _parse_smartcat_task_statistics(root, unit)
@@ -105,7 +110,7 @@ def parse_smartcat_report(
 
     if not statistics_found:
         msg = f"{filename}: Не удалось извлечь статистику Smartcat"
-        print(f"WARNING: {msg}")
+        logger.warning(msg)
         warnings.append(msg)
         return results, warnings, processed, pair_key
 
@@ -114,10 +119,10 @@ def parse_smartcat_report(
 
     if total > 0:
         processed = True
-        print(f"✓ Smartcat report processed: {pair_key} total {total}")
+        logger.info("Smartcat report processed: %s total %s", pair_key, total)
     else:
         msg = f"{filename}: Статистика Smartcat не содержит слов"
-        print(f"WARNING: {msg}")
+        logger.warning(msg)
         warnings.append(msg)
 
     return results, warnings, processed, pair_key
@@ -560,7 +565,7 @@ def _parse_smartcat_analyse_element(
 def _parse_smartcat_task_statistics(
     root: ET.Element, unit: str
 ) -> Tuple[Dict[str, float], bool]:
-    print("  Attempting Smartcat task-format parsing...")
+    logger.debug("  Attempting Smartcat task-format parsing...")
 
     values = {name: 0.0 for name in ROW_NAMES}
     processed_any = False
@@ -568,18 +573,20 @@ def _parse_smartcat_task_statistics(
 
     file_elements = _iter_elements_by_name(root, "file")
     if file_elements:
-        print(f"  Found {len(file_elements)} file elements in Smartcat report")
+        logger.info("  Found %s file elements in Smartcat report", len(file_elements))
         for idx, file_elem in enumerate(file_elements, 1):
             file_name = file_elem.get("name") or file_elem.get("path") or f"file_{idx}"
-            print(f"    Processing file {idx}/{len(file_elements)}: {file_name}")
+            logger.info(
+                "    Processing file %s/%s: %s", idx, len(file_elements), file_name
+            )
             analyse = _find_child_by_name(file_elem, "analyse")
             if analyse is None:
-                print("      No <analyse> element found")
+                logger.warning("      No <analyse> element found")
                 continue
 
             analyse_values, has_data = _parse_smartcat_analyse_element(analyse, unit)
             if not has_data:
-                print("      Analyse element contained no data")
+                logger.debug("      Analyse element contained no data")
                 continue
 
             processed_any = True
@@ -588,8 +595,8 @@ def _parse_smartcat_task_statistics(
                 amount = analyse_values[name]
                 if amount > 0:
                     values[name] += amount
-                    print(
-                        f"      {name}: +{amount} (now {values[name]})"
+                    logger.debug(
+                        "      %s: +%s (now %s)", name, amount, values[name]
                     )
 
         if processed_any:
@@ -601,20 +608,22 @@ def _parse_smartcat_task_statistics(
         if id(elem) not in processed_ids
     ]
     if analyse_elements:
-        print(f"  Found {len(analyse_elements)} analyse elements for fallback parsing")
+        logger.info(
+            "  Found %s analyse elements for fallback parsing", len(analyse_elements)
+        )
         for idx, analyse in enumerate(analyse_elements, 1):
             analyse_values, has_data = _parse_smartcat_analyse_element(analyse, unit)
             if not has_data:
                 continue
 
             processed_any = True
-            print(f"    Analyse block #{idx}")
+            logger.info("    Analyse block #%s", idx)
             for name in ROW_NAMES:
                 amount = analyse_values[name]
                 if amount > 0:
                     values[name] += amount
-                    print(
-                        f"      {name}: +{amount} (now {values[name]})"
+                    logger.debug(
+                        "      %s: +%s (now %s)", name, amount, values[name]
                     )
 
     return values, processed_any
