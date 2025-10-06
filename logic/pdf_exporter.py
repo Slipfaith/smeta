@@ -4,7 +4,11 @@ import tempfile
 from typing import Dict, Any
 
 from .excel_exporter import ExcelExporter
-from .excel_process import temporary_separators
+from .excel_process import (
+    temporary_separators,
+    register_excel_instance,
+    unregister_excel_instance,
+)
 
 logger = logging.getLogger("PdfExporter")
 
@@ -45,6 +49,7 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
         import win32com.client  # type: ignore
 
         excel = win32com.client.Dispatch("Excel.Application")
+        register_excel_instance(excel)
         excel.Visible = False
         excel.DisplayAlerts = False
 
@@ -65,5 +70,6 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
                 excel.Quit()
             except Exception:
                 pass
+            unregister_excel_instance(excel)
 
     return success
