@@ -13,11 +13,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
 )
-from .utils import format_rate, _to_float, format_amount
+from logic.number_format import (
+    format_rate,
+    parse_number,
+    format_amount,
+    with_currency_suffix,
+)
 from logic.translation_config import tr
+from .rate_currency_mixin import RateCurrencyMixin
 
 
-class AdditionalServiceTable(QWidget):
+class AdditionalServiceTable(QWidget, RateCurrencyMixin):
     """One editable table of additional services."""
 
     remove_requested = Signal()
@@ -42,13 +48,12 @@ class AdditionalServiceTable(QWidget):
         layout.addLayout(header)
 
         self.table = QTableWidget(1, 5)
-        symbol_suffix = f" ({self.currency_symbol})" if self.currency_symbol else ""
         self.table.setHorizontalHeaderLabels([
             tr("Параметр", self.lang),
             tr("Ед-ца", self.lang),
             tr("Объем", self.lang),
-            f"{tr('Ставка', self.lang)}{symbol_suffix}",
-            f"{tr('Сумма', self.lang)}{symbol_suffix}",
+            with_currency_suffix(tr("Ставка", self.lang), self.currency_symbol),
+            with_currency_suffix(tr("Сумма", self.lang), self.currency_symbol),
         ])
 
         header_view = self.table.horizontalHeader()
@@ -115,17 +120,13 @@ class AdditionalServiceTable(QWidget):
     def update_sums(self) -> None:
         subtotal = 0.0
         for r in range(self.table.rowCount()):
-            volume = _to_float(self._text(r, 2))
+            volume = parse_number(self._text(r, 2))
             rate_item = self.table.item(r, 3)
             rate_text = rate_item.text() if rate_item else "0"
-            if self.lang == "en":
-                sep = "."
-            else:
-                sep = "," if "," in rate_text else "."
-            rate = _to_float(rate_text)
+            rate = parse_number(rate_text)
             self.table.blockSignals(True)
             if rate_item:
-                rate_item.setText(format_rate(rate_text, sep))
+                rate_item.setText(format_rate(rate_text))
             self.table.blockSignals(False)
             total = volume * rate
             subtotal += total
@@ -157,8 +158,8 @@ class AdditionalServiceTable(QWidget):
             rows.append({
                 "parameter": self._text(r, 0),
                 "unit": self._text(r, 1),
-                "volume": _to_float(self._text(r, 2)),
-                "rate": _to_float(self._text(r, 3)),
+                "volume": parse_number(self._text(r, 2)),
+                "rate": parse_number(self._text(r, 3)),
             })
 
         if not any(row["parameter"] or row["volume"] or row["rate"] for row in rows):
@@ -180,8 +181,7 @@ class AdditionalServiceTable(QWidget):
                 val = row.get(key, "0" if col >= 2 else "")
                 item = QTableWidgetItem(str(val))
                 if col == 3:
-                    sep = "." if self.lang == "en" else None
-                    item.setText(format_rate(val, sep))
+                    item.setText(format_rate(val))
                 self.table.setItem(r, col, item)
             total_item = QTableWidgetItem("0.00")
             total_item.setFlags(Qt.ItemIsEnabled)
@@ -191,26 +191,18 @@ class AdditionalServiceTable(QWidget):
     def set_currency(self, symbol: str, code: str) -> None:
         self.currency_symbol = symbol
         self.currency_code = code
-        symbol_suffix = f" ({symbol})" if symbol else ""
         self.table.setHorizontalHeaderLabels([
             tr("Параметр", self.lang),
             tr("Ед-ца", self.lang),
             tr("Объем", self.lang),
-            f"{tr('Ставка', self.lang)}{symbol_suffix}",
-            f"{tr('Сумма', self.lang)}{symbol_suffix}",
+            with_currency_suffix(tr("Ставка", self.lang), symbol),
+            with_currency_suffix(tr("Сумма", self.lang), symbol),
         ])
         self.update_sums()
 
-    def convert_rates(self, multiplier: float) -> None:
-        """Multiply all rate values by *multiplier* and update totals."""
+    def iter_rate_items(self):
         for r in range(self.table.rowCount()):
-            item = self.table.item(r, 3)
-            if item is None:
-                continue
-            rate = _to_float(item.text())
-            sep = '.' if self.lang == 'en' else ','
-            item.setText(format_rate(rate * multiplier, sep))
-        self.update_sums()
+            yield self.table.item(r, 3)
 
     def set_language(self, lang: str) -> None:
         self.lang = lang

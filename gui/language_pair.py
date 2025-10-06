@@ -20,10 +20,16 @@ import copy
 
 from logic.service_config import ServiceConfig
 from logic.translation_config import tr
-from .utils import format_rate, _to_float, format_amount
+from logic.number_format import (
+    format_rate,
+    format_amount,
+    parse_number,
+    with_currency_suffix,
+)
+from .rate_currency_mixin import RateCurrencyMixin
 
 
-class LanguagePairWidget(QWidget):
+class LanguagePairWidget(QWidget, RateCurrencyMixin):
     """Виджет для одной языковой пары (только Перевод)"""
 
     remove_requested = Signal()
@@ -299,7 +305,7 @@ class LanguagePairWidget(QWidget):
             total_new = 0.0
             for idx in range(min(3, table.rowCount())):
                 try:
-                    total_new += _to_float(self._backup_volumes[idx])
+                    total_new += parse_number(self._backup_volumes[idx])
                 except ValueError:
                     pass
             if table.item(0, 1):
@@ -386,7 +392,7 @@ class LanguagePairWidget(QWidget):
                     base_sep = "."
                 else:
                     base_sep = "," if "," in base_text else "."
-                base_rate = _to_float(base_text)
+                base_rate = parse_number(base_text)
                 table.blockSignals(True)
                 table.item(base_rate_row, 2).setText(self._format_rate(base_text, base_sep))
                 table.blockSignals(False)
@@ -409,14 +415,14 @@ class LanguagePairWidget(QWidget):
                         table.item(row, 2).setText(self._format_rate(auto_rate, base_sep))
                         table.blockSignals(False)
 
-                volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
+                volume = parse_number(table.item(row, 1).text() if table.item(row, 1) else "0")
                 rate_item = table.item(row, 2)
                 rate_text = rate_item.text() if rate_item else "0"
                 if self.lang == "en":
                     sep = "."
                 else:
                     sep = "," if "," in rate_text else "."
-                rate = _to_float(rate_text)
+                rate = parse_number(rate_text)
                 table.blockSignals(True)
                 rate_item.setText(self._format_rate(rate_text, sep))
                 table.blockSignals(False)
@@ -473,9 +479,9 @@ class LanguagePairWidget(QWidget):
                 "key": rows_cfg[row].get("key"),
                 "name": rows_cfg[row].get("name"),
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
-                "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
-                "rate":   _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
-                "total":  _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
+                "volume": parse_number(table.item(row, 1).text() if table.item(row, 1) else "0"),
+                "rate":   parse_number(table.item(row, 2).text() if table.item(row, 2) else "0"),
+                "total":  parse_number(table.item(row, 3).text() if table.item(row, 3) else "0"),
                 "is_base": rows_cfg[row].get("is_base", False),
                 "multiplier": rows_cfg[row].get("multiplier"),
             })
@@ -594,8 +600,8 @@ class LanguagePairWidget(QWidget):
             self.translation_group.table.setHorizontalHeaderLabels([
                 tr("Параметр", self.lang),
                 tr("Объем", self.lang),
-                f"{tr('Ставка', self.lang)} ({symbol})",
-                f"{tr('Сумма', self.lang)} ({symbol})",
+                with_currency_suffix(tr('Ставка', self.lang), symbol),
+                with_currency_suffix(tr('Сумма', self.lang), symbol),
             ])
             self.update_rates_and_sums(
                 self.translation_group.table,
@@ -603,20 +609,23 @@ class LanguagePairWidget(QWidget):
                 getattr(self.translation_group, 'base_rate_row')
             )
 
-    def convert_rates(self, multiplier: float):
-        """Multiply all rate values by *multiplier* and update totals."""
+    def iter_rate_items(self):
         group = getattr(self, 'translation_group', None)
         if not group or not hasattr(group, 'table'):
-            return
+            return []
         table: QTableWidget = group.table
         rows = group.rows_config
         for row in range(table.rowCount()):
             if rows[row].get('deleted'):
                 continue
-            item = table.item(row, 2)
-            if item is None:
-                continue
-            rate = _to_float(item.text())
-            sep = '.' if self.lang == 'en' else ','
-            item.setText(self._format_rate(rate * multiplier, sep))
-        self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
+            yield table.item(row, 2)
+
+    def _after_rates_converted(self) -> None:
+        group = getattr(self, 'translation_group', None)
+        if not group or not hasattr(group, 'table'):
+            return
+        self.update_rates_and_sums(
+            group.table,
+            group.rows_config,
+            getattr(group, 'base_rate_row'),
+        )
