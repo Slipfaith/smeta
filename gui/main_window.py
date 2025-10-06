@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import re
 import traceback
@@ -1585,7 +1587,7 @@ class TranslationCostCalculator(QMainWindow):
                 project_data, file_path, progress_callback=progress.on_progress
             )
         if success:
-            QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+            self._show_file_saved_message(file_path)
         else:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
 
@@ -1661,7 +1663,7 @@ class TranslationCostCalculator(QMainWindow):
                         return
                     progress.set_value(100)
                     shutil.copyfile(pdf_path, file_path)
-                QMessageBox.information(self, "Успех", f"Файл сохранен: {file_path}")
+                self._show_file_saved_message(file_path)
             except Exception as e:
                 QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
 
@@ -1681,6 +1683,39 @@ class TranslationCostCalculator(QMainWindow):
             QMessageBox.information(self, "Успех", f"Проект сохранен: {file_path}")
         else:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить проект")
+
+    def _show_file_saved_message(self, file_path: str) -> None:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle("Успех")
+        msg_box.setText(f"Файл сохранен:\n{file_path}")
+        open_button = msg_box.addButton("Открыть папку", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.setDefaultButton(QMessageBox.Ok)
+        msg_box.exec()
+        if msg_box.clickedButton() == open_button:
+            self._reveal_file_in_explorer(file_path)
+
+    def _reveal_file_in_explorer(self, file_path: str) -> None:
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "Ошибка", "Файл не найден для открытия в проводнике")
+            return
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.run(
+                    ["explorer", f"/select,{os.path.normpath(file_path)}"], check=False
+                )
+            elif sys.platform == "darwin":
+                subprocess.run(["open", "-R", file_path], check=False)
+            else:
+                directory = os.path.dirname(file_path) or "."
+                subprocess.run(["xdg-open", directory], check=False)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                f"Не удалось открыть проводник:\n{exc}",
+            )
 
     def load_project(self):
         file_path, _ = QFileDialog.getOpenFileName(

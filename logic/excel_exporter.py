@@ -399,7 +399,7 @@ class ExcelExporter:
 
     def _fit_sheet_to_page(self, ws: Worksheet) -> None:
         ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.page_setup.fitToHeight = 1
+        ws.page_setup.fitToHeight = 0
         ws.page_setup.fitToWidth = 1
         self._set_print_area(ws)
 
