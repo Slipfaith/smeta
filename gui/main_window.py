@@ -5,6 +5,7 @@ import sys
 import re
 import traceback
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional, Callable
 
 from PySide6.QtWidgets import (
@@ -29,8 +30,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QProgressDialog,
 )
-from PySide6.QtCore import Qt, QTimer, QThread, QObject
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtCore import Qt, QTimer, QThread, QObject, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
 
 from logic.progress import Progress
 from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
@@ -62,6 +63,7 @@ from logic.outlook_import import (
     map_message_to_project_info,
     parse_msg_file,
 )
+from logger import get_log_file_path
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -308,9 +310,14 @@ class TranslationCostCalculator(QMainWindow):
         self.check_updates_action.triggered.connect(self.manual_update_check)
         self.update_menu.addAction(self.check_updates_action)
 
+        self.help_menu = self.menuBar().addMenu(tr("Справка", lang))
+        self.open_logs_action = QAction(tr("Открыть папку логов", lang), self)
+        self.open_logs_action.triggered.connect(self.open_log_folder)
+        self.help_menu.addAction(self.open_logs_action)
+
         self.about_action = QAction(tr("О программе", lang), self)
         self.about_action.triggered.connect(self.show_about_dialog)
-        self.menuBar().addAction(self.about_action)
+        self.help_menu.addAction(self.about_action)
 
         self.language_menu = self.menuBar().addMenu(tr("Язык", lang))
         self.lang_action_group = QActionGroup(self)
@@ -640,6 +647,8 @@ class TranslationCostCalculator(QMainWindow):
         self.pm_action.setText(tr("Проджект менеджер", lang))
         self.update_menu.setTitle(tr("Обновление", lang))
         self.check_updates_action.setText(tr("Проверить обновления", lang))
+        self.help_menu.setTitle(tr("Справка", lang))
+        self.open_logs_action.setText(tr("Открыть папку логов", lang))
         self.about_action.setText(tr("О программе", lang))
         self.language_menu.setTitle(tr("Язык", lang))
         self.lang_ru_action.setText(tr("Русский", lang))
@@ -1365,9 +1374,15 @@ class TranslationCostCalculator(QMainWindow):
                 details,
             )
 
-        def handle_progress(_percent: int, message: str):
+        def handle_progress(percent: int, message: str):
+            if progress.minimum() == 0 and progress.maximum() == 0:
+                progress.setRange(0, 100)
+            if percent >= 0:
+                progress.setValue(min(max(percent, 0), 100))
             if message:
                 self._update_busy_dialog(progress, message)
+            else:
+                QApplication.processEvents()
 
         self._run_worker(
             worker,
@@ -1548,9 +1563,33 @@ class TranslationCostCalculator(QMainWindow):
         msg_box.setIcon(QMessageBox.Critical)
         msg_box.setWindowTitle(title)
         msg_box.setText(message)
+        log_path = get_log_file_path()
+        if log_path:
+            msg_box.setInformativeText(
+                tr("Путь к логам: {0}", self.gui_lang).format(str(log_path))
+            )
         if details:
             msg_box.setDetailedText(details)
         msg_box.exec()
+
+    def open_log_folder(self) -> None:
+        log_path = get_log_file_path()
+        folder = Path(log_path).parent
+        lang = self.gui_lang
+        if not folder.exists():
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", lang),
+                tr("Папка логов не найдена", lang),
+            )
+            return
+
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", lang),
+                tr("Не удалось открыть папку логов", lang),
+            )
 
     def _run_worker(
         self,
@@ -1591,6 +1630,10 @@ class TranslationCostCalculator(QMainWindow):
                 close_method = getattr(progress_dialog, "close", None)
                 if callable(close_method):
                     close_method()
+                    QApplication.processEvents()
+                delete_method = getattr(progress_dialog, "deleteLater", None)
+                if callable(delete_method):
+                    delete_method()
                 try:
                     self._active_progress_dialogs.remove(progress_dialog)
                 except ValueError:
