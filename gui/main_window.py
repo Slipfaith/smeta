@@ -723,6 +723,14 @@ class TranslationCostCalculator(QMainWindow):
     def on_legal_entity_changed(self, entity: str):
         if entity == self.legal_entity_placeholder:
             entity = ""
+
+        normalized_entity = entity.strip() if entity else ""
+        if (
+            normalized_entity.lower() == "logrus it"
+            and self.lang_mode_slider.value() == 1
+        ):
+            self.lang_mode_slider.setValue(0)
+
         meta = self.legal_entity_meta.get(entity, {}) if entity else {}
         vat_enabled = bool(meta.get("vat_enabled"))
         self.vat_spin.setEnabled(vat_enabled)
