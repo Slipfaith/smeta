@@ -1,6 +1,5 @@
 # logic/excel_exporter.py
 import os
-import logging
 import re
 import textwrap
 from typing import Dict, Any, List, Optional, Tuple, Callable
@@ -17,6 +16,7 @@ from resource_utils import resource_path
 from .service_config import ServiceConfig
 from .translation_config import tr
 from .excel_process import apply_separators
+from logger import get_logger
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -301,14 +301,9 @@ class ExcelExporter:
         self.ps_hdr_titles = {k: tr(v, lang) for k, v in PS_HDR_TITLES.items()}
         self.add_hdr_titles = {k: tr(v, lang) for k, v in ADD_HDR_TITLES.items()}
         self.subtotal_title = f"{tr('Промежуточная сумма', lang)} ({currency}):"
-        self.logger = logging.getLogger("ExcelExporter")
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.propagate = False
-        if not self.logger.handlers:
-            handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-            formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
+        if log_path:
+            self.logger.debug("Legacy log path parameter provided: %s", log_path)
         self.logger.debug(
             "Initialized ExcelExporter with template %s", self.template_path
         )
@@ -584,9 +579,8 @@ class ExcelExporter:
 
             self.logger.info("Export completed successfully")
             return True
-        except Exception as e:
+        except Exception:
             self.logger.exception("Export failed")
-            print(f"[ExcelExporter] Ошибка экспорта: {e}")
             return False
 
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------
