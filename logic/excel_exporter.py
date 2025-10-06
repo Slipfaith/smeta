@@ -16,6 +16,11 @@ from resource_utils import resource_path
 from .service_config import ServiceConfig
 from .translation_config import tr
 from .excel_process import apply_separators
+from .number_format import (
+    parse_number,
+    rate_decimal_places,
+    amount_decimal_places,
+)
 from logger import get_logger
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
@@ -294,8 +299,8 @@ class ExcelExporter:
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
         self.currency = currency
         self.currency_symbol = CURRENCY_SYMBOLS.get(currency, "")
-        self.rate_fmt = self._currency_format(3)
-        self.total_fmt = self._currency_format(2)
+        self.rate_fmt = self._currency_format(rate_decimal_places())
+        self.total_fmt = self._currency_format(amount_decimal_places())
         self.lang = lang
         self.hdr_titles = {k: tr(v, lang) for k, v in HDR_TITLES.items()}
         self.ps_hdr_titles = {k: tr(v, lang) for k, v in PS_HDR_TITLES.items()}
@@ -341,8 +346,20 @@ class ExcelExporter:
 
     def _to_number(self, value: Any) -> Any:
         if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 0.0
+            if stripped.startswith("="):
+                return value
+            normalized = stripped.replace(" ", "")
+            if any(ch.isalpha() for ch in normalized):
+                return value
+            if normalized.count('.') > 1 or normalized.count(',') > 1:
+                return value
+            if '.' in normalized and ',' in normalized:
+                return value
             try:
-                return float(value.replace(",", "."))
+                return parse_number(stripped)
             except ValueError:
                 return value
         return value
@@ -361,17 +378,21 @@ class ExcelExporter:
                     ref, mult = m.groups()
                     try:
                         base = cell.parent[ref].value
-                        if isinstance(base, str):
-                            base = float(base.replace(",", "."))
-                        num = float(base) * float(mult.replace(",", "."))
+                        base_val = self._to_number(base)
+                        mult_val = self._to_number(mult)
+                        if isinstance(base_val, (int, float)) and isinstance(mult_val, (int, float)):
+                            num = float(base_val) * float(mult_val)
+                        else:
+                            num = None
                     except Exception:
                         num = None
                 else:
                     num = None
             else:
-                try:
-                    num = float(val.replace(",", "."))
-                except ValueError:
+                parsed = self._to_number(val)
+                if isinstance(parsed, (int, float)):
+                    num = float(parsed)
+                else:
                     num = None
         elif isinstance(val, (int, float)):
             num = float(val)

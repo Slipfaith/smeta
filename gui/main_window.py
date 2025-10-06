@@ -39,7 +39,8 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
-from gui.utils import shorten_locale, format_amount
+from gui.utils import shorten_locale
+from logic.number_format import format_amount
 from gui.rates_import_dialog import ExcelRatesDialog
 from gui.background_workers import (
     ExcelExportWorker,
