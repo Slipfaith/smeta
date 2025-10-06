@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 
 from gui.main_window import TranslationCostCalculator
-from logic.excel_process import close_excel_processes
+from logic.excel_process import close_tracked_excel_instances
 
 def main() -> int:
     app = QApplication(sys.argv)
@@ -25,5 +25,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     finally:
-        # Ensure no hanging Excel processes remain if the application crashes.
-        close_excel_processes()
+        # Ensure that only Excel instances started by the application are closed.
+        close_tracked_excel_instances()

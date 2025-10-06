@@ -4,35 +4,120 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from typing import Optional, Tuple
+from typing import Dict, Optional, Set
 
 try:
     import psutil  # type: ignore
 except Exception:  # pragma: no cover - psutil might be missing
     psutil = None  # type: ignore
 
+# Track PIDs of Excel instances created by the application so we can
+# gracefully shut them down when the program exits.
+excel_instances: Set[int] = set()
+_tracked_excel_objects: Dict[int, object] = {}
 
-def close_excel_processes() -> None:
-    """Attempt to terminate all running Excel processes on Windows.
 
-    This helper is used as a safety net to ensure that stray Excel instances
-    do not hang in memory if something goes wrong in the application.  It is
-    a no-op on non-Windows systems or when :mod:`psutil` is not available.
-    """
-    if sys.platform != "win32" or psutil is None:
+def _get_excel_pid(excel: object) -> Optional[int]:
+    """Return the process ID of an Excel.Application COM object."""
+
+    if sys.platform != "win32":
+        return None
+
+    try:
+        hwnd = getattr(excel, "Hwnd")
+    except Exception:
+        return None
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        pid = wintypes.DWORD()
+        result = ctypes.windll.user32.GetWindowThreadProcessId(  # type: ignore[attr-defined]
+            hwnd, ctypes.byref(pid)
+        )
+        if result == 0:
+            return None
+        return int(pid.value)
+    except Exception:  # pragma: no cover - Windows specific
+        return None
+
+
+def register_excel_instance(excel: object) -> None:
+    """Register an Excel instance created by the application."""
+
+    pid = _get_excel_pid(excel)
+    if pid is None:
         return
 
-    for proc in psutil.process_iter(["name"]):
-        name: Optional[str] = proc.info.get("name")
-        if name and name.lower() == "excel.exe":
+    excel_instances.add(pid)
+    _tracked_excel_objects[pid] = excel
+
+
+def unregister_excel_instance(excel: object) -> None:
+    """Remove an Excel instance from the registry if it is tracked."""
+
+    pid = _get_excel_pid(excel)
+    if pid is None:
+        return
+
+    excel_instances.discard(pid)
+    _tracked_excel_objects.pop(pid, None)
+
+
+def close_tracked_excel_instances() -> None:
+    """Attempt to close only the Excel instances started by the app."""
+
+    if sys.platform != "win32":
+        excel_instances.clear()
+        _tracked_excel_objects.clear()
+        return
+
+    for pid in list(excel_instances):
+        excel = _tracked_excel_objects.get(pid)
+
+        if psutil is not None:
             try:
-                proc.terminate()
-                proc.wait(timeout=5)
+                if not psutil.pid_exists(pid):
+                    excel_instances.discard(pid)
+                    _tracked_excel_objects.pop(pid, None)
+                    continue
             except Exception:
+                pass
+
+        if excel is None:
+            excel_instances.discard(pid)
+            continue
+
+        try:
+            workbooks = getattr(excel, "Workbooks", None)
+            if workbooks is not None:
                 try:
-                    proc.kill()
-                except Exception:
-                    pass
+                    for workbook in list(workbooks):  # type: ignore[arg-type]
+                        try:
+                            workbook.Close(False)
+                        except Exception:
+                            pass
+                except TypeError:
+                    try:
+                        count = workbooks.Count  # type: ignore[attr-defined]
+                    except Exception:
+                        count = 0
+                    for index in range(1, count + 1):
+                        try:
+                            workbooks(index).Close(False)  # type: ignore[call-arg]
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        try:
+            excel.Quit()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        excel_instances.discard(pid)
+        _tracked_excel_objects.pop(pid, None)
 
 
 @contextmanager
@@ -84,6 +169,7 @@ def apply_separators(xlsx_path: str, lang: str) -> bool:
         import win32com.client  # type: ignore
 
         excel = win32com.client.Dispatch("Excel.Application")
+        register_excel_instance(excel)
         excel.Visible = False
         excel.DisplayAlerts = False
 
@@ -104,3 +190,4 @@ def apply_separators(xlsx_path: str, lang: str) -> bool:
                 excel.Quit()
             except Exception:
                 pass
+            unregister_excel_instance(excel)
