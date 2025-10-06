@@ -1,12 +1,11 @@
+import copy
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import re
 import traceback
 from datetime import datetime
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Callable
 
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -28,8 +27,9 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QInputDialog,
     QApplication,
+    QProgressDialog,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QThread, QObject
 from PySide6.QtGui import QAction, QActionGroup
 
 from logic.progress import Progress
@@ -41,10 +41,12 @@ from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
 from gui.utils import shorten_locale, format_amount
 from gui.rates_import_dialog import ExcelRatesDialog
-from logic.excel_exporter import ExcelExporter
-from logic.pdf_exporter import xlsx_to_pdf
+from gui.background_workers import (
+    ExcelExportWorker,
+    ParseReportsWorker,
+    PdfExportWorker,
+)
 from logic.user_config import load_languages, add_language
-from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
@@ -253,6 +255,10 @@ class TranslationCostCalculator(QMainWindow):
         self.currency_symbol = ""
         self.excel_dialog = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
+        self._active_threads: List[QThread] = []
+        self._active_workers: List[QObject] = []
+        self._active_progress_dialogs: List[Any] = []
+        self._parsing_in_progress = False
         # Create the total label early so slots triggered during initialization
         # (e.g. vat spin value changes) can safely update it.
         self.total_label = QLabel()
@@ -1330,160 +1336,289 @@ class TranslationCostCalculator(QMainWindow):
                 widget.set_basic_rate(match.rates.get(rate_key, 0))
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
-        try:
-            data, warnings, report_sources = parse_reports(paths)
+        if self._parsing_in_progress:
+            QMessageBox.information(
+                self,
+                "Обработка файлов",
+                "Дождитесь завершения текущей операции.",
+            )
+            return
 
-            if warnings:
-                warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(
-                    warnings
+        self._parsing_in_progress = True
+        progress = self._create_busy_dialog(
+            "Обработка отчетов",
+            "Анализ отчетов...",
+        )
+
+        worker = ParseReportsWorker(paths)
+
+        def handle_finished(data, warnings, report_sources):
+            self._parsing_in_progress = False
+            self._apply_parsed_reports(data, warnings, report_sources, replace)
+
+        def handle_error(message: str, details: str):
+            self._parsing_in_progress = False
+            self._show_worker_error(
+                "Ошибка обработки файлов",
+                f"Не удалось обработать файлы: {message}",
+                details,
+            )
+
+        def handle_progress(_percent: int, message: str):
+            if message:
+                self._update_busy_dialog(progress, message)
+
+        self._run_worker(
+            worker,
+            handle_finished,
+            handle_error,
+            progress_dialog=progress,
+            progress_handler=handle_progress,
+        )
+
+    def _apply_parsed_reports(
+        self,
+        data: Dict[str, Any],
+        warnings: List[str],
+        report_sources: Dict[str, List[str]],
+        replace: bool,
+    ) -> None:
+        if warnings:
+            warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(
+                warnings
+            )
+            QMessageBox.warning(self, "Предупреждение", warning_msg)
+
+        if not data:
+            QMessageBox.warning(
+                self,
+                "Результат обработки",
+                "В XML файлах не найдено данных о языковых парах.\n"
+                "Возможные причины:\n"
+                "1. XML файлы имеют нестандартную структуру\n"
+                "2. Не найдены элементы LanguageDirection\n"
+                "3. Отсутствуют данные о языках или объемах\n"
+                "Проверьте консоль для детальной информации.",
+            )
+            return
+
+        self._hide_drop_hint()
+
+        added_pairs = 0
+        updated_pairs = 0
+
+        for pair_key, volumes in sorted(
+            data.items(), key=lambda kv: self._pair_sort_key(kv[0])
+        ):
+            widget = self.language_pairs.get(pair_key)
+            sources_for_pair = report_sources.get(pair_key, [])
+
+            display_name = self._display_pair_name(pair_key)
+            tgt_key = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
+            lang_info = self._find_language_by_key(tgt_key)
+            header_title = (
+                lang_info["ru"] if self.lang_display_ru else lang_info["en"]
+            )
+
+            if widget is None:
+                widget = LanguagePairWidget(
+                    display_name,
+                    self.currency_symbol,
+                    self.get_current_currency_code(),
+                    lang="ru" if self.lang_display_ru else "en",
                 )
-                QMessageBox.warning(self, "Предупреждение", warning_msg)
-
-            if not data:
-                QMessageBox.warning(
-                    self,
-                    "Результат обработки",
-                    "В XML файлах не найдено данных о языковых парах.\n"
-                    "Возможные причины:\n"
-                    "1. XML файлы имеют нестандартную структуру\n"
-                    "2. Не найдены элементы LanguageDirection\n"
-                    "3. Отсутствуют данные о языках или объемах\n"
-                    "Проверьте консоль для детальной информации.",
+                widget.remove_requested.connect(
+                    lambda w=widget: self._on_widget_remove_requested(w)
                 )
-                return
-
-            self._hide_drop_hint()
-
-            added_pairs = 0
-            updated_pairs = 0
-
-            for pair_key, volumes in sorted(
-                data.items(), key=lambda kv: self._pair_sort_key(kv[0])
-            ):
-                widget = self.language_pairs.get(pair_key)
-                sources_for_pair = report_sources.get(pair_key, [])
-
-                display_name = self._display_pair_name(pair_key)
-                tgt_key = pair_key.split(" → ")[1] if " → " in pair_key else pair_key
-                lang_info = self._find_language_by_key(tgt_key)
-                header_title = (
-                    lang_info["ru"] if self.lang_display_ru else lang_info["en"]
+                widget.subtotal_changed.connect(self.update_total)
+                widget.name_changed.connect(
+                    lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
                 )
+                self.language_pairs[pair_key] = widget
+                self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
+                self.pair_headers[pair_key] = header_title
+                added_pairs += 1
+            else:
+                widget.set_pair_name(display_name)
+                widget.set_language("ru" if self.lang_display_ru else "en")
+                self.pair_headers[pair_key] = header_title
+                updated_pairs += 1
 
-                if widget is None:
-                    widget = LanguagePairWidget(
-                        display_name,
-                        self.currency_symbol,
-                        self.get_current_currency_code(),
-                        lang="ru" if self.lang_display_ru else "en",
-                    )
-                    widget.remove_requested.connect(
-                        lambda w=widget: self._on_widget_remove_requested(w)
-                    )
-                    widget.subtotal_changed.connect(self.update_total)
-                    widget.name_changed.connect(
-                        lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
-                    )
-                    self.language_pairs[pair_key] = widget
-                    self.pairs_layout.insertWidget(
-                        self.pairs_layout.count() - 1, widget
-                    )
-                    self.pair_headers[pair_key] = header_title
-                    added_pairs += 1
+            widget.set_report_sources(sources_for_pair, replace=replace)
+
+            if self.only_new_repeats_mode:
+                widget.set_only_new_and_repeats_mode(True)
+
+            group = widget.translation_group
+            table = group.table
+            group.setChecked(True)
+
+            if self.only_new_repeats_mode:
+                new_total = 0
+                repeat_total = 0
+                repeat_name = "Перевод, повторы и 100% совпадения (30%)"
+                for row_name, add_val in volumes.items():
+                    if row_name == repeat_name:
+                        repeat_total += add_val
+                    else:
+                        new_total += add_val
+                repeat_row = table.rowCount() - 1
+                if replace:
+                    table.item(0, 1).setText(str(new_total))
+                    table.item(repeat_row, 1).setText(str(repeat_total))
                 else:
-                    widget.set_pair_name(display_name)
-                    widget.set_language("ru" if self.lang_display_ru else "en")
-                    self.pair_headers[pair_key] = header_title
-                    updated_pairs += 1
+                    try:
+                        prev_new = float(
+                            table.item(0, 1).text() if table.item(0, 1) else "0"
+                        )
+                    except ValueError:
+                        prev_new = 0
+                    try:
+                        prev_rep = float(
+                            table.item(repeat_row, 1).text()
+                            if table.item(repeat_row, 1)
+                            else "0"
+                        )
+                    except ValueError:
+                        prev_rep = 0
+                    table.item(0, 1).setText(str(prev_new + new_total))
+                    table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
+            else:
+                for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
+                    row_name = row_info["name"]
+                    add_val = volumes.get(row_name, 0)
 
-                widget.set_report_sources(sources_for_pair, replace=replace)
-
-                if self.only_new_repeats_mode:
-                    widget.set_only_new_and_repeats_mode(True)
-
-                group = widget.translation_group
-                table = group.table
-                group.setChecked(True)
-
-                if self.only_new_repeats_mode:
-                    new_total = 0
-                    repeat_total = 0
-                    repeat_name = "Перевод, повторы и 100% совпадения (30%)"
-                    for row_name, add_val in volumes.items():
-                        if row_name == repeat_name:
-                            repeat_total += add_val
-                        else:
-                            new_total += add_val
-                    total_volume = new_total + repeat_total
-                    repeat_row = table.rowCount() - 1
                     if replace:
-                        table.item(0, 1).setText(str(new_total))
-                        table.item(repeat_row, 1).setText(str(repeat_total))
+                        table.item(idx, 1).setText(str(add_val))
                     else:
                         try:
-                            prev_new = float(
-                                table.item(0, 1).text() if table.item(0, 1) else "0"
-                            )
-                        except ValueError:
-                            prev_new = 0
-                        try:
-                            prev_rep = float(
-                                table.item(repeat_row, 1).text()
-                                if table.item(repeat_row, 1)
+                            prev_text = (
+                                table.item(idx, 1).text()
+                                if table.item(idx, 1)
                                 else "0"
                             )
-                        except ValueError:
-                            prev_rep = 0
-                        table.item(0, 1).setText(str(prev_new + new_total))
-                        table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
-                else:
-                    total_volume = 0
-                    for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
-                        row_name = row_info["name"]
-                        add_val = volumes.get(row_name, 0)
-                        total_volume += add_val
-
-                        if replace:
+                            prev = float(prev_text or "0")
+                            new_val = prev + add_val
+                            table.item(idx, 1).setText(str(new_val))
+                        except (ValueError, TypeError):
                             table.item(idx, 1).setText(str(add_val))
-                        else:
-                            try:
-                                prev_text = (
-                                    table.item(idx, 1).text()
-                                    if table.item(idx, 1)
-                                    else "0"
-                                )
-                                prev = float(prev_text or "0")
-                                new_val = prev + add_val
-                                table.item(idx, 1).setText(str(new_val))
-                            except (ValueError, TypeError):
-                                table.item(idx, 1).setText(str(add_val))
 
-                widget.update_rates_and_sums(
-                    table, group.rows_config, group.base_rate_row
-                )
-
-            sorted_items = sorted(
-                self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0])
+            widget.update_rates_and_sums(
+                table, group.rows_config, group.base_rate_row
             )
-            for w in self.language_pairs.values():
-                self.pairs_layout.removeWidget(w)
-            for _, w in sorted_items:
-                self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, w)
-            self.language_pairs = dict(sorted_items)
 
-            self.update_pairs_list()
-            self.update_total()
+        sorted_items = sorted(
+            self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0])
+        )
+        for w in self.language_pairs.values():
+            self.pairs_layout.removeWidget(w)
+        for _, w in sorted_items:
+            self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, w)
+        self.language_pairs = dict(sorted_items)
 
-            result_msg = f"Обработка завершена!\n\n"
-            if added_pairs > 0:
-                result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
-            if updated_pairs > 0:
-                result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
-            result_msg += f"\nВсего обработано языковых пар: {len(data)}"
+        self.update_pairs_list()
+        self.update_total()
 
-        except Exception as e:
-            error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
-            QMessageBox.critical(self, "Ошибка", error_msg)
+        # ``result_msg`` previously displayed processing summary; keep it for
+        # potential future use even though the UI now updates immediately.
+        result_msg = f"Обработка завершена!\n\n"
+        if added_pairs > 0:
+            result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
+        if updated_pairs > 0:
+            result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
+        result_msg += f"\nВсего обработано языковых пар: {len(data)}"
+
+    def _create_busy_dialog(self, title: str, message: str) -> QProgressDialog:
+        dialog = QProgressDialog(message, None, 0, 0, self)
+        dialog.setWindowTitle(title)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.setMinimumDuration(0)
+        dialog.setRange(0, 0)
+        dialog.show()
+        return dialog
+
+    def _update_busy_dialog(self, dialog: QProgressDialog, message: str) -> None:
+        dialog.setLabelText(message)
+        QApplication.processEvents()
+
+    def _show_worker_error(self, title: str, message: str, details: str = "") -> None:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        if details:
+            msg_box.setDetailedText(details)
+        msg_box.exec()
+
+    def _run_worker(
+        self,
+        worker: QObject,
+        on_finished: Callable[..., None],
+        on_error: Callable[[str, str], None],
+        *,
+        progress_dialog: Optional[Any] = None,
+        progress_handler: Optional[Callable[[int, str], None]] = None,
+    ) -> None:
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        self._active_threads.append(thread)
+        self._active_workers.append(worker)
+        if progress_dialog is not None:
+            self._active_progress_dialogs.append(progress_dialog)
+
+        if progress_handler and hasattr(worker, "progress"):
+            worker.progress.connect(progress_handler)  # type: ignore[attr-defined]
+        elif progress_dialog is not None and hasattr(worker, "progress"):
+            if hasattr(progress_dialog, "on_progress"):
+                handler = progress_dialog.on_progress  # type: ignore[assignment]
+            else:
+                handler = lambda percent, message: self._update_busy_dialog(  # noqa: E731
+                    progress_dialog, message
+                )
+            worker.progress.connect(handler)  # type: ignore[attr-defined]
+
+        cleanup_done = False
+
+        def cleanup() -> None:
+            nonlocal cleanup_done
+            if cleanup_done:
+                return
+            cleanup_done = True
+            if progress_dialog is not None:
+                close_method = getattr(progress_dialog, "close", None)
+                if callable(close_method):
+                    close_method()
+                try:
+                    self._active_progress_dialogs.remove(progress_dialog)
+                except ValueError:
+                    pass
+            thread.quit()
+            thread.wait()
+            worker.deleteLater()
+            thread.deleteLater()
+            try:
+                self._active_threads.remove(thread)
+            except ValueError:
+                pass
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
+        def handle_finished(*args) -> None:
+            cleanup()
+            on_finished(*args)
+
+        def handle_error(message: str, details: str) -> None:
+            cleanup()
+            on_error(message, details)
+
+        worker.finished.connect(handle_finished)  # type: ignore[attr-defined]
+        worker.error.connect(handle_error)  # type: ignore[attr-defined]
+        thread.started.connect(worker.run)  # type: ignore[attr-defined]
+        thread.start()
 
     def collect_project_data(self) -> Dict[str, Any]:
         data = {
@@ -1577,19 +1712,40 @@ class TranslationCostCalculator(QMainWindow):
 
         entity_name = self.get_selected_legal_entity()
         template_path = self.legal_entities.get(entity_name)
-        exporter = ExcelExporter(
+        project_copy = copy.deepcopy(project_data)
+
+        progress = Progress(parent=self)
+        progress.set_label("Подготовка файла...")
+        progress.set_value(0)
+
+        worker = ExcelExportWorker(
+            project_copy,
+            file_path,
             template_path,
             currency=self.get_current_currency_code(),
             lang=export_lang,
         )
-        with Progress(parent=self) as progress:
-            success = exporter.export_to_excel(
-                project_data, file_path, progress_callback=progress.on_progress
+
+        def on_finished(path: str) -> None:
+            self._show_file_saved_message(path)
+
+        def on_error(message: str, details: str) -> None:
+            self._show_worker_error(
+                "Ошибка",
+                f"Не удалось сохранить файл: {message}",
+                details,
             )
-        if success:
-            self._show_file_saved_message(file_path)
-        else:
-            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
+
+        def on_progress(percent: int, message: str) -> None:
+            progress.on_progress(percent, message or "Сохранение...")
+
+        self._run_worker(
+            worker,
+            on_finished,
+            on_error,
+            progress_dialog=progress,
+            progress_handler=on_progress,
+        )
 
     def save_pdf(self):
         export_lang = "ru" if self.lang_display_ru else "en"
@@ -1633,39 +1789,41 @@ class TranslationCostCalculator(QMainWindow):
         if not file_path:
             return
         template_path = self.legal_entities.get(self.get_selected_legal_entity())
-        exporter = ExcelExporter(
+        project_copy = copy.deepcopy(project_data)
+
+        progress = Progress(parent=self)
+        progress.set_label("Подготовка файла...")
+        progress.set_value(0)
+
+        worker = PdfExportWorker(
+            project_copy,
+            file_path,
             template_path,
             currency=currency,
             lang=export_lang,
         )
-        with Progress(parent=self) as progress:
-            def on_excel_progress(percent: int, message: str) -> None:
-                progress.on_progress(int(percent * 0.8), message)
 
-            try:
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
-                    pdf_path = os.path.join(tmpdir, "quotation.pdf")
-                    if not exporter.export_to_excel(
-                        project_data,
-                        xlsx_path,
-                        fit_to_page=True,
-                        progress_callback=on_excel_progress,
-                    ):
-                        QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
-                        return
-                    progress.set_label("Конвертация в PDF")
-                    progress.set_value(80)
-                    if not xlsx_to_pdf(xlsx_path, pdf_path, lang=export_lang):
-                        QMessageBox.critical(
-                            self, "Ошибка", "Не удалось конвертировать в PDF"
-                        )
-                        return
-                    progress.set_value(100)
-                    shutil.copyfile(pdf_path, file_path)
-                self._show_file_saved_message(file_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
+        def on_finished(path: str) -> None:
+            self._show_file_saved_message(path)
+
+        def on_error(message: str, details: str) -> None:
+            self._show_worker_error(
+                "Ошибка",
+                f"Не удалось сохранить PDF: {message}",
+                details,
+            )
+
+        def on_progress(percent: int, message: str) -> None:
+            label = message or ("Конвертация в PDF" if percent >= 80 else "Подготовка файла...")
+            progress.on_progress(percent, label)
+
+        self._run_worker(
+            worker,
+            on_finished,
+            on_error,
+            progress_dialog=progress,
+            progress_handler=on_progress,
+        )
 
     def save_project(self):
         if not self.project_name_edit.text().strip():

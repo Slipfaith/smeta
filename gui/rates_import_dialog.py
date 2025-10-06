@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -14,13 +14,16 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QProgressDialog,
 )
 
 from logic import rates_importer
+from gui.background_workers import RatesImportWorker
 
 
 class ExcelRatesDialog(QDialog):
@@ -39,6 +42,9 @@ class ExcelRatesDialog(QDialog):
 
         self._rates: Dict[Tuple[str, str], Dict[str, float]] = {}
         self._name_to_code: Dict[str, str] = {}
+        self._loader_thread: Optional[QThread] = None
+        self._loader_worker: Optional[RatesImportWorker] = None
+        self._loading_dialog: Optional[QProgressDialog] = None
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -189,7 +195,7 @@ class ExcelRatesDialog(QDialog):
             QPushButton:pressed {
                 background-color: #005a9e;
             }
-            
+
             QTableWidget {
                 gridline-color: #e1e1e1;
                 background-color: white;
@@ -197,7 +203,7 @@ class ExcelRatesDialog(QDialog):
                 border: 1px solid #cccccc;
                 selection-background-color: #cce8ff;
             }
-            
+
             QTableWidget::item {
                 padding: 4px 6px;
                 border: none;
@@ -223,6 +229,13 @@ class ExcelRatesDialog(QDialog):
             }
         """)
 
+    def _set_loading_state(self, loading: bool) -> None:
+        self.file_edit.setEnabled(not loading)
+        self.currency_combo.setEnabled(not loading)
+        self.rate_combo.setEnabled(not loading)
+        self.apply_combo.setEnabled(not loading)
+        self.table.setEnabled(not loading)
+
     def showEvent(self, event):
         super().showEvent(event)
         if self.file_edit.text():
@@ -247,24 +260,87 @@ class ExcelRatesDialog(QDialog):
             self.table.setRowCount(0)
             return
 
+        if self._loader_thread is not None:
+            return
+
         currency = self.currency_combo.currentText()
         rate_type = self.rate_combo.currentText()
 
-        try:
-            rates = rates_importer.load_rates_from_excel(path, currency, rate_type)
-            self._rates = rates
-            self.status_label.setText(f"Loaded {len(rates)} pairs")
-            self.status_label.setStyleSheet("color: #107c10;")
-        except Exception as exc:
-            self.table.setRowCount(0)
-            self.status_label.setText(f"Error: {str(exc)[:30]}...")
-            self.status_label.setStyleSheet("color: #d13438;")
-            return
+        self.status_label.setText("Loading...")
+        self.status_label.setStyleSheet("color: #666666;")
+        self.table.setRowCount(0)
+        self.table.clearSpans()
+        self._set_loading_state(True)
 
+        dialog = QProgressDialog("Импорт ставок...", None, 0, 0, self)
+        dialog.setWindowTitle("Загрузка ставок")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.setMinimumDuration(0)
+        dialog.setRange(0, 0)
+        dialog.show()
+        self._loading_dialog = dialog
+
+        worker = RatesImportWorker(path, currency, rate_type)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        self._loader_thread = thread
+        self._loader_worker = worker
+
+        cleanup_done = False
+
+        def cleanup() -> None:
+            nonlocal cleanup_done
+            if cleanup_done:
+                return
+            cleanup_done = True
+            self._set_loading_state(False)
+            if self._loading_dialog is not None:
+                self._loading_dialog.close()
+                self._loading_dialog = None
+            thread.quit()
+            thread.wait()
+            worker.deleteLater()
+            thread.deleteLater()
+            self._loader_thread = None
+            self._loader_worker = None
+
+        def handle_finished(rates: Dict[Tuple[str, str], Dict[str, float]]) -> None:
+            cleanup()
+            self._apply_loaded_rates(rates)
+
+        def handle_error(message: str, details: str) -> None:
+            cleanup()
+            self._rates = {}
+            self._name_to_code = {}
+            self.status_label.setText(f"Error: {message}")
+            self.status_label.setStyleSheet("color: #d13438;")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle("Ошибка импорта")
+            msg_box.setText(f"Не удалось загрузить ставки: {message}")
+            if details:
+                msg_box.setDetailedText(details)
+            msg_box.exec()
+
+        worker.finished.connect(handle_finished)
+        worker.error.connect(handle_error)
+        thread.started.connect(worker.run)
+        thread.start()
+
+    def _apply_loaded_rates(
+        self, rates: Dict[Tuple[str, str], Dict[str, float]]
+    ) -> None:
+        self._rates = rates
+        self.status_label.setText(f"Loaded {len(rates)} pairs")
+        self.status_label.setStyleSheet("color: #107c10;")
         self.table.clearSpans()
 
         if self._pairs:
-            matches: List[rates_importer.PairMatch] = rates_importer.match_pairs(self._pairs, rates)
+            matches: List[rates_importer.PairMatch] = rates_importer.match_pairs(
+                self._pairs, rates
+            )
         else:
             matches = [
                 rates_importer.PairMatch(
