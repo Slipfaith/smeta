@@ -14,6 +14,16 @@ from .xml_parser_common import expand_language_code, resolve_language_display
 ROW_NAMES = ServiceConfig.ROW_NAMES
 SMARTCAT_NS = "urn:schemas-microsoft-com:office:spreadsheet"
 
+# Excel XML reports sometimes contain cells with an ``ss:Index`` attribute that
+# jumps to a very large column number (for example ``1048576`` which is the
+# last column in a modern Excel worksheet).  The previous implementation tried
+# to fill the gap between the current column and the requested index by
+# repeatedly appending empty strings.  When the gap was huge this resulted in a
+# loop that created hundreds of thousands of placeholders and effectively froze
+# the GUI while Smartcat reports were being parsed.  We therefore cap the
+# number of placeholders that can be generated for a single gap.
+MAX_SMARTCAT_INDEX_GAP = 1000
+
 
 logger = get_logger(__name__)
 
@@ -196,10 +206,19 @@ def _worksheet_to_rows(worksheet: ET.Element) -> List[List[str]]:
             if index_attr:
                 try:
                     index = int(index_attr) - 1
-                    while len(values) < index:
-                        values.append("")
                 except ValueError:
-                    pass
+                    index = None
+                if index is not None and index >= 0:
+                    gap = index - len(values)
+                    if gap > 0:
+                        if gap > MAX_SMARTCAT_INDEX_GAP:
+                            logger.debug(
+                                "Truncating Smartcat index gap from %s to %s",
+                                gap,
+                                MAX_SMARTCAT_INDEX_GAP,
+                            )
+                            gap = MAX_SMARTCAT_INDEX_GAP
+                        values.extend("" for _ in range(gap))
 
             data_elem = cell.find(f"{{{SMARTCAT_NS}}}Data")
             text = ""
