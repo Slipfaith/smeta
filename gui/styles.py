@@ -47,9 +47,9 @@ QTableWidget {
     border-radius: 4px;
 }
 QToolTip {
-    color: #ffffff;
-    background-color: #333333;
-    border: 1px solid #555555;
+    color: #111111;
+    background-color: #ffffff;
+    border: 1px solid #d1d5db;
     padding: 3px;
 }
 """
