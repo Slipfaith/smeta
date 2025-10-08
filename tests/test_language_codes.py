@@ -76,6 +76,11 @@ def test_localise_territory_code_passthrough_for_other_languages():
     assert language_codes.localise_territory_code("US", "en") == "US"
 
 
+def test_localise_territory_code_uses_russian_localised_name_when_available():
+    assert language_codes.localise_territory_code("IT", "ru") == "Италия"
+    assert language_codes.localise_territory_code("ID", "ru") == "Индонезия"
+
+
 def test_replace_territory_with_code_substitutes_first_parenthesis():
     replaced = language_codes.replace_territory_with_code("Malay (Malaysia)", "en")
     assert replaced == "Malay (MY)"
