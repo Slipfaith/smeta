@@ -337,7 +337,7 @@ class ExcelExporter:
         self.ps_hdr_titles = {k: tr(v, lang) for k, v in PS_HDR_TITLES.items()}
         self.add_hdr_titles = {k: tr(v, lang) for k, v in ADD_HDR_TITLES.items()}
         self.subtotal_title = f"{tr('Промежуточная сумма', lang)} ({currency}):"
-        self.discount_title = tr("Сумма скидки", lang)
+        self.discount_title = tr("Скидка", lang)
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
@@ -1046,7 +1046,7 @@ class ExcelExporter:
                 )
                 if c not in (col_param, col_total):
                     ws.cell(t_subtotal_row, c, None)
-            discount_label = f"{self.discount_title} (-{discount_str}%):"
+            discount_label = f"{self.discount_title} {discount_str}%"
             ws.cell(t_subtotal_row, col_param, discount_label)
             discount_cell = ws.cell(
                 t_subtotal_row,
@@ -1224,8 +1224,8 @@ class ExcelExporter:
                                     ws.cell(r + 1, c2), ws.cell(r, c2)
                                 )
                                 ws.cell(r, c2).value = None
-                            label_col = c - 1 if c > 1 else c
-                            ws.cell(r, label_col, f"{self.discount_title}:")
+                            label_col = 1
+                            ws.cell(r, label_col, f"{self.discount_title}")
                             discount_cell = ws.cell(r, c, discount_formula)
                             discount_cell.number_format = self.total_fmt
                             for c2 in range(1, ws.max_column + 1):
