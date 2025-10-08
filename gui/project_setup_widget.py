@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QHBoxLayout,
     QAbstractItemView,
+    QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, Signal
 from .utils import format_rate, _to_float, format_amount
@@ -30,6 +31,7 @@ class ProjectSetupWidget(QWidget):
         self.currency_code = currency_code
         self.lang = lang
         self._subtotal = 0.0
+        self._discount_percent = 0.0
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
@@ -121,6 +123,24 @@ class ProjectSetupWidget(QWidget):
         self.subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         vbox.addWidget(self.subtotal_label)
+
+        discount_layout = QHBoxLayout()
+        self.discount_label = QLabel(tr("Скидка, %", self.lang))
+        self.discount_spin = QDoubleSpinBox()
+        self.discount_spin.setRange(0, 100)
+        self.discount_spin.setDecimals(1)
+        self.discount_spin.setSingleStep(1.0)
+        self.discount_spin.setValue(0.0)
+        self.discount_spin.valueChanged.connect(self._on_discount_changed)
+        discount_layout.addWidget(self.discount_label)
+        discount_layout.addWidget(self.discount_spin)
+        discount_layout.addStretch()
+        self.discounted_label = QLabel(
+            f"{tr('Сумма со скидкой', self.lang)}: 0.00 {self.currency_symbol}"
+        )
+        self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        discount_layout.addWidget(self.discounted_label)
+        vbox.addLayout(discount_layout)
 
         group.setLayout(vbox)
         layout.addWidget(group)
@@ -227,6 +247,12 @@ class ProjectSetupWidget(QWidget):
         self.table.setEnabled(checked)
         self.subtotal_label.setEnabled(checked)
         self.title_label.setEnabled(checked)
+        if hasattr(self, "discount_spin"):
+            self.discount_spin.setEnabled(checked)
+        if hasattr(self, "discount_label"):
+            self.discount_label.setEnabled(checked)
+        if hasattr(self, "discounted_label"):
+            self.discounted_label.setEnabled(checked)
         self.update_sums()
 
     # ---------- calculations ----------
@@ -262,6 +288,7 @@ class ProjectSetupWidget(QWidget):
                 f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
             )
             self._subtotal = subtotal
+            self._update_discount_label()
             self.subtotal_changed.emit(self.get_subtotal())
             self._fit_table_height(self.table)
         except Exception:
@@ -269,7 +296,36 @@ class ProjectSetupWidget(QWidget):
 
     # ---------- accessors ----------
     def get_subtotal(self) -> float:
-        return self._subtotal if self.is_enabled() else 0.0
+        if not self.is_enabled():
+            return 0.0
+        return self._subtotal * (1 - self._discount_percent / 100.0)
+
+    def _update_discount_label(self) -> None:
+        if hasattr(self, "discount_label"):
+            self.discount_label.setText(tr("Скидка, %", self.lang))
+        if hasattr(self, "discounted_label"):
+            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+            effective = self.get_subtotal()
+            self.discounted_label.setText(
+                f"{tr('Сумма со скидкой', self.lang)}: {format_amount(effective, self.lang)}{suffix}"
+            )
+
+    def _on_discount_changed(self, value: float) -> None:
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def get_discount_percent(self) -> float:
+        return self._discount_percent
+
+    def set_discount_percent(self, value: float) -> None:
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        if hasattr(self, "discount_spin"):
+            self.discount_spin.blockSignals(True)
+            self.discount_spin.setValue(self._discount_percent)
+            self.discount_spin.blockSignals(False)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
 
     def get_data(self) -> List[Dict[str, Any]]:
         if not self.is_enabled():
@@ -341,4 +397,6 @@ class ProjectSetupWidget(QWidget):
         item = self.table.item(0, 0)
         if item:
             item.setText(tr("Запуск и управление проектом", lang))
+        if hasattr(self, "discount_label"):
+            self.discount_label.setText(tr("Скидка, %", lang))
         self.update_sums()

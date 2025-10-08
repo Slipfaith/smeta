@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QAbstractItemView,
+    QDoubleSpinBox,
 )
 from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
@@ -30,6 +31,7 @@ class AdditionalServiceTable(QWidget):
         self.currency_code = currency_code
         self.lang = lang
         self._subtotal = 0.0
+        self._discount_percent = 0.0
         self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
@@ -79,6 +81,24 @@ class AdditionalServiceTable(QWidget):
         )
         self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.subtotal_label)
+
+        discount_layout = QHBoxLayout()
+        self.discount_label = QLabel(tr("Скидка, %", self.lang))
+        self.discount_spin = QDoubleSpinBox()
+        self.discount_spin.setRange(0, 100)
+        self.discount_spin.setDecimals(1)
+        self.discount_spin.setSingleStep(1.0)
+        self.discount_spin.setValue(0.0)
+        self.discount_spin.valueChanged.connect(self._on_discount_changed)
+        discount_layout.addWidget(self.discount_label)
+        discount_layout.addWidget(self.discount_spin)
+        discount_layout.addStretch()
+        self.discounted_label = QLabel(
+            f"{tr('Сумма со скидкой', self.lang)}: 0.00{subtotal_suffix}"
+        )
+        self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        discount_layout.addWidget(self.discounted_label)
+        layout.addLayout(discount_layout)
 
         self.setLayout(layout)
         self.update_sums()
@@ -172,14 +192,42 @@ class AdditionalServiceTable(QWidget):
             f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)}{suffix}"
         )
         self._subtotal = subtotal
-        self.subtotal_changed.emit(subtotal)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
 
     def _text(self, row: int, col: int) -> str:
         item = self.table.item(row, col)
         return item.text() if item else "0"
 
     def get_subtotal(self) -> float:
-        return self._subtotal
+        return self._subtotal * (1 - self._discount_percent / 100.0)
+
+    def _update_discount_label(self) -> None:
+        suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+        if hasattr(self, "discount_label"):
+            self.discount_label.setText(tr("Скидка, %", self.lang))
+        if hasattr(self, "discounted_label"):
+            effective = self.get_subtotal()
+            self.discounted_label.setText(
+                f"{tr('Сумма со скидкой', self.lang)}: {format_amount(effective, self.lang)}{suffix}"
+            )
+
+    def _on_discount_changed(self, value: float) -> None:
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def get_discount_percent(self) -> float:
+        return self._discount_percent
+
+    def set_discount_percent(self, value: float) -> None:
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        if hasattr(self, "discount_spin"):
+            self.discount_spin.blockSignals(True)
+            self.discount_spin.setValue(self._discount_percent)
+            self.discount_spin.blockSignals(False)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
 
     # --------------------------------------------------------------- data i/o
     def get_data(self) -> Dict:
@@ -198,6 +246,7 @@ class AdditionalServiceTable(QWidget):
         return {
             "header_title": self.header_edit.text(),
             "rows": rows,
+            "discount_percent": self.get_discount_percent(),
         }
 
     def load_data(self, data: Dict) -> None:
@@ -218,6 +267,7 @@ class AdditionalServiceTable(QWidget):
             total_item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(r, 4, total_item)
         self.update_sums()
+        self.set_discount_percent(data.get("discount_percent", 0.0))
 
     def set_currency(self, symbol: str, code: str) -> None:
         self.currency_symbol = symbol
@@ -246,6 +296,8 @@ class AdditionalServiceTable(QWidget):
     def set_language(self, lang: str) -> None:
         self.lang = lang
         self.header_edit.setText(tr("Дополнительные услуги", lang))
+        if hasattr(self, "discount_label"):
+            self.discount_label.setText(tr("Скидка, %", lang))
         self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
 
