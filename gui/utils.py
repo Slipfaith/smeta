@@ -3,10 +3,12 @@ import re
 
 from babel import Locale
 
-from logic.language_codes import RU_TERRITORY_ABBREVIATIONS
+from logic.language_codes import RU_TERRITORY_ABBREVIATIONS, country_to_code
 
 
 RU_SHORT_TERRITORIES = RU_TERRITORY_ABBREVIATIONS
+
+_TERRITORY_RE = re.compile(r"\s*\(([^()]+)\)")
 
 
 def format_rate(value: Union[int, float, str], sep: str | None = None) -> str:
@@ -52,6 +54,22 @@ def _to_float(value: str) -> float:
         return float((value or "0").replace(",", "."))
     except ValueError:
         return 0.0
+
+
+def strip_territory(text: str) -> str:
+    """Remove territory names/codes in parentheses when recognised."""
+
+    if not text:
+        return text
+
+    def _repl(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        if country_to_code(inner):
+            return ""
+        return match.group(0)
+
+    cleaned = _TERRITORY_RE.sub(_repl, text)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
 def shorten_locale(text: str, lang: str) -> str:
