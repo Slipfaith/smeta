@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMenu,
     QAbstractItemView,
+    QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -43,6 +44,7 @@ class LanguagePairWidget(QWidget):
         self._backup_volumes = []
         self._backup_rates = []
         self._subtotal = 0.0
+        self._discount_percent = 0.0
         self.setup_ui()
 
     # ---------------- UI ----------------
@@ -70,7 +72,7 @@ class LanguagePairWidget(QWidget):
 
         # Только Перевод
         self.translation_group = self.create_service_group("Перевод", ServiceConfig.TRANSLATION_ROWS)
-        self.translation_group.toggled.connect(lambda _: self.subtotal_changed.emit(self.get_subtotal()))
+        self.translation_group.toggled.connect(self._on_group_toggled)
         self.services_layout.addWidget(self.translation_group)
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
@@ -191,11 +193,31 @@ class LanguagePairWidget(QWidget):
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(show_menu)
 
-        # Промежуточная сумма
-        subtotal_label = QLabel(f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}")
+        # Промежуточная сумма и скидка
+        subtotal_label = QLabel(
+            f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}"
+        )
         subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtotal_label.setObjectName("subtotal_label")
         vbox.addWidget(subtotal_label)
+
+        discount_layout = QHBoxLayout()
+        discount_label = QLabel(tr("Скидка, %", self.lang))
+        discount_spin = QDoubleSpinBox()
+        discount_spin.setRange(0, 100)
+        discount_spin.setDecimals(1)
+        discount_spin.setSingleStep(1.0)
+        discount_spin.setValue(0.0)
+        discount_spin.valueChanged.connect(self._on_discount_changed)
+        discount_layout.addWidget(discount_label)
+        discount_layout.addWidget(discount_spin)
+        discount_layout.addStretch()
+        discounted_label = QLabel(
+            f"{tr('Сумма со скидкой', self.lang)}: 0.00 {self.currency_symbol}"
+        )
+        discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        discount_layout.addWidget(discounted_label)
+        vbox.addLayout(discount_layout)
 
         group.setLayout(vbox)
 
@@ -204,6 +226,9 @@ class LanguagePairWidget(QWidget):
         setattr(group, 'rows_config', rows)
         setattr(group, 'base_rate_row', base_rate_row)
         setattr(group, 'subtotal_label', subtotal_label)
+        setattr(group, 'discount_spin', discount_spin)
+        setattr(group, 'discount_label', discount_label)
+        setattr(group, 'discounted_label', discounted_label)
 
         # начальный пересчёт + авто-раскрытие высоты
         self.update_rates_and_sums(table, rows, base_rate_row)
@@ -386,6 +411,55 @@ class LanguagePairWidget(QWidget):
         table.setMinimumHeight(total)
         table.setMaximumHeight(total)
 
+    def _on_group_toggled(self, checked: bool):
+        group = getattr(self, "translation_group", None)
+        if not group:
+            return
+        for attr in ("subtotal_label", "discount_spin", "discounted_label", "discount_label"):
+            widget = getattr(group, attr, None)
+            if widget:
+                widget.setEnabled(checked)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def _on_discount_changed(self, value: float):
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def _update_discount_label(self):
+        group = getattr(self, "translation_group", None)
+        if not group:
+            return
+        subtotal_label: QLabel | None = getattr(group, "subtotal_label", None)
+        if subtotal_label:
+            subtotal_label.setText(
+                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(self._subtotal, self.lang)} {self.currency_symbol}"
+            )
+        discounted_label: QLabel | None = getattr(group, "discounted_label", None)
+        discount_label: QLabel | None = getattr(group, "discount_label", None)
+        if discount_label:
+            discount_label.setText(tr("Скидка, %", self.lang))
+        if discounted_label:
+            effective = self._subtotal * (1 - self._discount_percent / 100.0)
+            discounted_label.setText(
+                f"{tr('Сумма со скидкой', self.lang)}: {format_amount(effective, self.lang)} {self.currency_symbol}"
+            )
+
+    def get_discount_percent(self) -> float:
+        return self._discount_percent
+
+    def set_discount_percent(self, value: float) -> None:
+        self._discount_percent = max(0.0, min(100.0, float(value)))
+        group = getattr(self, "translation_group", None)
+        spin: QDoubleSpinBox | None = getattr(group, "discount_spin", None) if group else None
+        if spin:
+            spin.blockSignals(True)
+            spin.setValue(self._discount_percent)
+            spin.blockSignals(False)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
     def set_language(self, lang: str):
         self.lang = lang
         self.title_label.setText(f"{tr('Языковая пара', lang)}:")
@@ -399,6 +473,9 @@ class LanguagePairWidget(QWidget):
             f"{tr('Ставка', lang)} ({self.currency_symbol})",
             f"{tr('Сумма', lang)} ({self.currency_symbol})",
         ])
+        discount_label: QLabel | None = getattr(group, "discount_label", None)
+        if discount_label:
+            discount_label.setText(tr("Скидка, %", lang))
         rows = group.rows_config
         for i, row_info in enumerate(rows):
             item = table.item(i, 0)
@@ -471,13 +548,8 @@ class LanguagePairWidget(QWidget):
                 subtotal += total
 
             # обновить «Промежуточную сумму»
-            parent_group: QGroupBox = self.translation_group
-            lbl: QLabel = getattr(parent_group, 'subtotal_label', None)
-            if lbl:
-                lbl.setText(
-                    f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
-                )
             self._subtotal = subtotal
+            self._update_discount_label()
             self.subtotal_changed.emit(self.get_subtotal())
 
             # после любых изменений гарантируем отсутствие локального скролла
@@ -492,7 +564,9 @@ class LanguagePairWidget(QWidget):
             self._fit_table_height(self.translation_group.table)
 
     def get_subtotal(self) -> float:
-        return self._subtotal if self.translation_group.isChecked() else 0.0
+        if not self.translation_group.isChecked():
+            return 0.0
+        return self._subtotal * (1 - self._discount_percent / 100.0)
 
     # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
@@ -501,6 +575,7 @@ class LanguagePairWidget(QWidget):
             "services": {},
             "report_sources": self.report_sources(),
             "only_new_repeats": self.only_new_repeats_mode,
+            "discount_percent": self.get_discount_percent(),
         }
         if self.translation_group.isChecked():
             data["services"]["translation"] = self._get_table_data(self.translation_group.table)

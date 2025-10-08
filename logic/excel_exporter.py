@@ -114,12 +114,16 @@ class BlockRenderer:
     def prepare_items(self, data: Any) -> List[Dict[str, Any]]:  # pragma: no cover - override
         raise NotImplementedError
 
+    def discount_percent(self, data: Any) -> float:  # pragma: no cover - override
+        return 0.0
+
     def render(
         self, ws: Worksheet, start_row: int, data: Any
     ) -> Tuple[int, Optional[str]]:
         template_ws = self.template_sheet(ws)
         items = self.prepare_items(data)
         title = self.header_title(data)
+        discount = self.discount_percent(data)
         return self.exporter._render_block(
             ws,
             template_ws,
@@ -130,6 +134,7 @@ class BlockRenderer:
             items,
             self.titles,
             title,
+            discount_percent=discount,
         )
 
 
@@ -237,6 +242,9 @@ class TranslationBlockRenderer(BlockRenderer):
 
         return items
 
+    def discount_percent(self, pair: Dict[str, Any]) -> float:
+        return float(pair.get("discount_percent", 0.0) or 0.0)
+
 
 class ProjectSetupRenderer(BlockRenderer):
     def __init__(self, exporter: "ExcelExporter") -> None:
@@ -250,10 +258,14 @@ class ProjectSetupRenderer(BlockRenderer):
             return wb["ProjectSetup"]
         return ws
 
-    def header_title(self, data: List[Dict[str, Any]]) -> str:
+    def header_title(self, data: Any) -> str:
         return tr("Запуск и управление проектом", self.exporter.lang)
 
-    def prepare_items(self, items_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def prepare_items(self, data: Any) -> List[Dict[str, Any]]:
+        if isinstance(data, dict):
+            items_list = data.get("rows", [])
+        else:
+            items_list = data
         items: List[Dict[str, Any]] = []
         for it in items_list:
             items.append(
@@ -265,6 +277,11 @@ class ProjectSetupRenderer(BlockRenderer):
                 }
             )
         return items
+
+    def discount_percent(self, data: Any) -> float:
+        if isinstance(data, dict):
+            return float(data.get("discount_percent", 0.0) or 0.0)
+        return 0.0
 
 
 class AdditionalServicesRenderer(BlockRenderer):
@@ -295,6 +312,9 @@ class AdditionalServicesRenderer(BlockRenderer):
                 }
             )
         return items
+
+    def discount_percent(self, block: Dict[str, Any]) -> float:
+        return float(block.get("discount_percent", 0.0) or 0.0)
 
 
 class ExcelExporter:
@@ -853,6 +873,7 @@ class ExcelExporter:
         rows: List[Dict[str, Any]],
         titles: Dict[str, str],
         header_title: Optional[str] = None,
+        discount_percent: float = 0.0,
     ) -> Tuple[int, Optional[str]]:
         tpl_start = self._find_first(template_ws, start_ph)
         if not tpl_start:
@@ -991,19 +1012,28 @@ class ExcelExporter:
             total_cell = ws.cell(rr, col_total, f"={qtyL}{rr}*{rateL}{rr}")
             total_cell.number_format = self.total_fmt
 
+        discount_value = max(0.0, min(100.0, float(discount_percent or 0.0)))
+        subtotal_label = self.subtotal_title
+        if discount_value > 0:
+            discount_str = format(discount_value, "g")
+            subtotal_label = f"{self.subtotal_title} (-{discount_str}%)"
+
         for c in range(first_col, last_col + 1):
             if ws.cell(t_subtotal_row, c).value == end_ph:
-                ws.cell(t_subtotal_row, c, self.subtotal_title)
+                ws.cell(t_subtotal_row, c, subtotal_label)
                 break
 
-        if r == t_first_data:
-            subtotal_cell = ws.cell(t_subtotal_row, col_total, 0)
-        else:
-            subtotal_cell = ws.cell(
-                t_subtotal_row,
-                col_total,
-                f"=SUM({totalL}{t_first_data}:{totalL}{r - 1})",
-            )
+        subtotal_formula = "0"
+        if r != t_first_data:
+            subtotal_formula = f"SUM({totalL}{t_first_data}:{totalL}{r - 1})"
+        if discount_value > 0:
+            discount_str = format(discount_value, "g")
+            subtotal_formula = f"({subtotal_formula})*(1-{discount_str}/100)"
+        subtotal_cell = ws.cell(
+            t_subtotal_row,
+            col_total,
+            f"={subtotal_formula}",
+        )
         subtotal_cell.number_format = self.total_fmt
 
         return t_subtotal_row, f"{totalL}{t_subtotal_row}"
@@ -1045,11 +1075,18 @@ class ExcelExporter:
     def _render_project_setup_table(
         self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
     ) -> Tuple[int, Optional[str]]:
-        items: List[Dict[str, Any]] = project_data.get("project_setup", [])
+        setup_data = project_data.get("project_setup", [])
+        discount = project_data.get("project_setup_discount_percent", 0.0)
+        if isinstance(setup_data, dict):
+            items: List[Dict[str, Any]] = setup_data.get("rows", [])
+            discount = setup_data.get("discount_percent", discount)
+        else:
+            items = setup_data
         if not items:
             return start_row - 1, None
         renderer = ProjectSetupRenderer(self)
-        last_row, cell = renderer.render(ws, start_row, items)
+        payload = {"rows": items, "discount_percent": discount}
+        last_row, cell = renderer.render(ws, start_row, payload)
         return last_row, cell
 
     def _render_additional_services_tables(

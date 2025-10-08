@@ -1557,6 +1557,11 @@ class TranslationCostCalculator(QMainWindow):
                 and self.project_setup_widget.is_enabled()
                 else []
             ),
+            "project_setup_discount_percent": (
+                self.project_setup_widget.get_discount_percent()
+                if self.project_setup_widget
+                else 0.0
+            ),
             "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
             "only_new_repeats_mode": self.only_new_repeats_mode,
         }
@@ -1841,11 +1846,13 @@ class TranslationCostCalculator(QMainWindow):
             if pair_mode is None:
                 pair_mode = self.only_new_repeats_mode
             widget.set_only_new_and_repeats_mode(bool(pair_mode))
+            widget.set_discount_percent(pair_data.get("discount_percent", 0.0))
 
         self._update_language_names("ru" if self.lang_display_ru else "en")
 
         ps_rows = project_data.get("project_setup")
         ps_enabled = project_data.get("project_setup_enabled")
+        ps_discount = project_data.get("project_setup_discount_percent", 0.0)
         if ps_rows is not None or ps_enabled is not None:
             if not self.project_setup_widget:
                 self.project_setup_widget = ProjectSetupWidget(
@@ -1860,9 +1867,18 @@ class TranslationCostCalculator(QMainWindow):
                     self.on_project_setup_item_changed
                 )
                 self.pairs_layout.insertWidget(0, self.project_setup_widget)
-            rows_to_load = ps_rows or []
+            if isinstance(ps_rows, dict):
+                rows_to_load = ps_rows.get("rows", [])
+                ps_discount = ps_rows.get("discount_percent", ps_discount)
+            elif isinstance(ps_rows, list):
+                rows_to_load = ps_rows
+            elif ps_rows is None:
+                rows_to_load = []
+            else:
+                rows_to_load = list(ps_rows) if ps_rows else []
             enabled_flag = True if ps_enabled is None else bool(ps_enabled)
             self.project_setup_widget.load_data(rows_to_load, enabled=enabled_flag)
+            self.project_setup_widget.set_discount_percent(ps_discount)
             fee_value = project_data.get("project_setup_fee")
             if rows_to_load:
                 first_vol = rows_to_load[0].get("volume")
