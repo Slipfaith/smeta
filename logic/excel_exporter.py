@@ -146,6 +146,20 @@ class TranslationBlockRenderer(BlockRenderer):
 
     def prepare_items(self, pair: Dict[str, Any]) -> List[Dict[str, Any]]:
         translation_rows = (pair.get("services") or {}).get("translation", [])
+        deleted_keys = set()
+        deleted_names = set()
+        filtered_rows: List[Dict[str, Any]] = []
+        for row in translation_rows:
+            if row.get("deleted"):
+                key = row.get("key")
+                if key is not None:
+                    deleted_keys.add(key)
+                name = row.get("name")
+                if name:
+                    deleted_names.add(str(name))
+                continue
+            filtered_rows.append(row)
+        translation_rows = filtered_rows
         only_new_mode = bool(
             pair.get("only_new_repeats")
             or pair.get("only_new_repeats_mode")
@@ -193,6 +207,8 @@ class TranslationBlockRenderer(BlockRenderer):
         items: List[Dict[str, Any]] = []
         for cfg in ServiceConfig.TRANSLATION_ROWS:
             key = cfg.get("key")
+            if key in deleted_keys or cfg.get("name") in deleted_names:
+                continue
             src = data_map.get(key, {})
             items.append(
                 {

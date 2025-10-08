@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QHBoxLayout,
     QPushButton,
+    QAbstractItemView,
 )
 from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
@@ -50,6 +51,8 @@ class AdditionalServiceTable(QWidget):
             f"{tr('Ставка', self.lang)}{symbol_suffix}",
             f"{tr('Сумма', self.lang)}{symbol_suffix}",
         ])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -88,13 +91,22 @@ class AdditionalServiceTable(QWidget):
         menu = QMenu(self.table)
         add_act = menu.addAction(tr("Добавить строку", self.lang))
         del_act = menu.addAction(tr("Удалить строку", self.lang))
+        del_selected_act = menu.addAction(tr("Удалить выбранные строки", self.lang))
         if self.table.rowCount() <= 1:
             del_act.setEnabled(False)
+            del_selected_act.setEnabled(False)
+        selected_rows = {
+            index.row() for index in self.table.selectedIndexes()
+        }
+        if len(selected_rows) <= 1:
+            del_selected_act.setEnabled(False)
         action = menu.exec(self.table.mapToGlobal(pos))
         if action == add_act:
             self.add_row_after(row)
         elif action == del_act:
             self.remove_row(row)
+        elif action == del_selected_act:
+            self.remove_selected_rows()
 
     def add_row_after(self, row: int) -> None:
         insert_at = row + 1
@@ -110,6 +122,25 @@ class AdditionalServiceTable(QWidget):
         if self.table.rowCount() > 1 and row >= 0:
             self.table.removeRow(row)
             self.update_sums()
+
+    def remove_selected_rows(self) -> None:
+        rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        if not rows:
+            return
+        remaining = self.table.rowCount()
+        removable = sorted(r for r in rows if 0 <= r < remaining)
+        if not removable:
+            return
+        max_removable = max(0, remaining - 1)
+        if max_removable == 0:
+            return
+        if len(removable) > max_removable:
+            removable = removable[-max_removable:]
+        for row in sorted(removable, reverse=True):
+            self.table.removeRow(row)
+        if self.table.rowCount() == 0:
+            self.add_row_after(-1)
+        self.update_sums()
 
     # ------------------------------------------------------------ calculations
     def update_sums(self) -> None:
