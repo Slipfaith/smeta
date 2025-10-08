@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from contextlib import suppress
 from functools import lru_cache
-from typing import Dict
+from typing import Dict, Tuple
 
 from babel import Locale
 import langcodes
@@ -30,6 +30,47 @@ __all__ = [
 # by default.  The keys are ISO alpha-2 codes and the values are the display
 # strings that should be used in Russian UI contexts.
 RU_TERRITORY_ABBREVIATIONS = {"US": "США", "RU": "РФ"}
+
+
+@lru_cache(maxsize=None)
+def _locale_territory_info(lang: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Return full and short territory names for ``lang`` locale."""
+
+    if not lang:
+        return {}, {}
+
+    normalized = lang.replace("-", "_")
+
+    try:
+        locale = Locale.parse(normalized)
+    except Exception:
+        base = normalized.split("_")[0]
+        if not base:
+            return {}, {}
+        try:
+            locale = Locale.parse(base)
+        except Exception:
+            return {}, {}
+
+    territories: Dict[str, str] = {}
+    short_map: Dict[str, str] = {}
+
+    with suppress(Exception):
+        territories = {
+            code.upper(): name
+            for code, name in locale.territories.items()
+            if code and name
+        }
+
+    with suppress(Exception):
+        short_data = locale._data.get("short_territories", {})
+        short_map = {
+            code.upper(): name
+            for code, name in short_data.items()
+            if code and name
+        }
+
+    return territories, short_map
 
 
 _CODE_PATTERN = re.compile(r"^[A-Za-z]{2,3}$|^\d{3}$")
@@ -235,9 +276,28 @@ def localise_territory_code(code: str, lang: str) -> str:
 
     if not code:
         return ""
-    if lang.lower().startswith("ru"):
-        return RU_TERRITORY_ABBREVIATIONS.get(code, code)
-    return code
+
+    normalized = code.upper()
+    lang = (lang or "").strip()
+    if not lang:
+        return normalized
+
+    lang_lower = lang.lower()
+
+    if lang_lower.startswith("ru"):
+        custom = RU_TERRITORY_ABBREVIATIONS.get(normalized)
+        if custom:
+            return custom
+
+        territories, short_map = _locale_territory_info(lang_lower)
+        if normalized in short_map:
+            return short_map[normalized]
+        if normalized in territories:
+            return territories[normalized]
+        return normalized
+
+    _, short_map = _locale_territory_info(lang_lower)
+    return short_map.get(normalized, normalized)
 
 
 def replace_territory_with_code(text: str, lang: str) -> str:
