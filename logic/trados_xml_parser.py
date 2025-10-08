@@ -18,7 +18,14 @@ def _extract_languages_from_filename(filename: str) -> Tuple[str, str]:
     """Извлекает языки из имени файла типа 'Analyze Files en-US_ru-RU(23).xml'."""
     print(f"Extracting languages from filename: {filename}")
 
-    pattern = r"([a-z]{2,3}(?:-[A-Z]{2})?)[_-]([a-z]{2,3}(?:-[A-Z]{2})?)"
+    # Allow matching extended BCP 47 subtags (e.g. ``es-419``) where the
+    # territory part may include digits such as the UN M.49 codes that Trados
+    # uses for "Latin America".  Previously the pattern only permitted
+    # two-letter country codes which meant that reports like
+    # ``Analyze Files en-US_es-419.xml`` failed to detect the target language
+    # entirely.  Broadening the character class keeps backwards compatibility
+    # while covering the new format.
+    pattern = r"([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)[_-]([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)"
     match = re.search(pattern, filename, re.IGNORECASE)
 
     if match:
