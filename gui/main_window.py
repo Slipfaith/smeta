@@ -243,7 +243,6 @@ class TranslationCostCalculator(QMainWindow):
         self.lang_display_ru: bool = True  # Controls language for quotation/Excel
         self.gui_lang: str = "ru"  # Controls application GUI language
         self.show_territory_codes: bool = True
-        self.show_territory_codes_tables: bool = True
         self._languages: List[Dict[str, str]] = load_languages()
         self.pm_managers, self.pm_last_index = load_pm_history()
         if 0 <= self.pm_last_index < len(self.pm_managers):
@@ -441,20 +440,6 @@ class TranslationCostCalculator(QMainWindow):
         codes_layout.addStretch()
         pg.addLayout(codes_layout)
 
-        table_codes_layout = QHBoxLayout()
-        self.show_territory_codes_tables_checkbox = QCheckBox(
-            tr("Показывать территориальные коды в таблицах", lang)
-        )
-        self.show_territory_codes_tables_checkbox.setChecked(
-            self.show_territory_codes_tables
-        )
-        self.show_territory_codes_tables_checkbox.stateChanged.connect(
-            self.on_show_territory_codes_tables_changed
-        )
-        table_codes_layout.addWidget(self.show_territory_codes_tables_checkbox)
-        table_codes_layout.addStretch()
-        pg.addLayout(table_codes_layout)
-
         add_pair = QHBoxLayout()
         self.source_lang_combo = self._make_lang_combo()
         self.source_lang_combo.setEditable(True)
@@ -596,14 +581,6 @@ class TranslationCostCalculator(QMainWindow):
         lang = "ru" if self.lang_display_ru else "en"
         self._update_language_names(lang)
 
-    def on_show_territory_codes_tables_changed(self, state: int):
-        show = state == Qt.Checked
-        if self.show_territory_codes_tables == show:
-            return
-        self.show_territory_codes_tables = show
-        lang = "ru" if self.lang_display_ru else "en"
-        self._update_language_names(lang)
-
     def _update_language_names(self, lang: str):
         """Update language names in GUI widgets and Excel headers."""
         self.populate_lang_combo(self.source_lang_combo)
@@ -619,7 +596,7 @@ class TranslationCostCalculator(QMainWindow):
             _, right_key = self._extract_pair_parts(pair_key)
             if right_key:
                 lang_info = self._find_language_by_key(
-                    right_key, show_codes=self.show_territory_codes_tables
+                    right_key, show_codes=self.show_territory_codes
                 )
                 self.pair_headers[pair_key] = lang_info[lang]
             else:
@@ -647,10 +624,6 @@ class TranslationCostCalculator(QMainWindow):
         if hasattr(self, "show_territory_codes_checkbox"):
             self.show_territory_codes_checkbox.setText(
                 tr("Показывать территориальные коды", lang)
-            )
-        if hasattr(self, "show_territory_codes_tables_checkbox"):
-            self.show_territory_codes_tables_checkbox.setText(
-                tr("Показывать территориальные коды в таблицах", lang)
             )
         self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
         self.current_pairs_label.setText(tr("Текущие пары", lang) + ":")
@@ -1210,17 +1183,17 @@ class TranslationCostCalculator(QMainWindow):
 
         locale = "ru" if self.lang_display_ru else "en"
         display_name = (
-            f"{self._prepare_language_label(src['text'], locale, show_codes=self.show_territory_codes_tables)} - "
-            f"{self._prepare_language_label(tgt['text'], locale, show_codes=self.show_territory_codes_tables)}"
+            f"{self._prepare_language_label(src['text'], locale, show_codes=self.show_territory_codes)} - "
+            f"{self._prepare_language_label(tgt['text'], locale, show_codes=self.show_territory_codes)}"
         )
         if tgt["dict"]:
             name = tgt["ru"] if self.lang_display_ru else tgt["en"]
             header_title = self._prepare_language_label(
-                name, locale, show_codes=self.show_territory_codes_tables
+                name, locale, show_codes=self.show_territory_codes
             )
         else:
             header_title = self._prepare_language_label(
-                tgt["text"], locale, show_codes=self.show_territory_codes_tables
+                tgt["text"], locale, show_codes=self.show_territory_codes
             )
         self.pair_headers[pair_key] = header_title
 
@@ -1306,13 +1279,13 @@ class TranslationCostCalculator(QMainWindow):
         lang = "ru" if self.lang_display_ru else "en"
         if not right_key:
             return self._prepare_language_label(
-                left_key, lang, show_codes=self.show_territory_codes_tables
+                left_key, lang, show_codes=self.show_territory_codes
             )
         left = self._find_language_by_key(
-            left_key, show_codes=self.show_territory_codes_tables
+            left_key, show_codes=self.show_territory_codes
         )
         right = self._find_language_by_key(
-            right_key, show_codes=self.show_territory_codes_tables
+            right_key, show_codes=self.show_territory_codes
         )
         return f"{left[lang]} - {right[lang]}"
 
@@ -1491,7 +1464,7 @@ class TranslationCostCalculator(QMainWindow):
                 _, tgt_key = self._extract_pair_parts(pair_key)
                 lang_info = self._find_language_by_key(
                     tgt_key or pair_key,
-                    show_codes=self.show_territory_codes_tables,
+                    show_codes=self.show_territory_codes,
                 )
                 header_title = (
                     lang_info["ru"] if self.lang_display_ru else lang_info["en"]
