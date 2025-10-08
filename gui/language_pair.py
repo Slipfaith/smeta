@@ -194,13 +194,6 @@ class LanguagePairWidget(QWidget):
         table.customContextMenuRequested.connect(show_menu)
 
         # Промежуточная сумма и скидка
-        subtotal_label = QLabel(
-            f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}"
-        )
-        subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        subtotal_label.setObjectName("subtotal_label")
-        vbox.addWidget(subtotal_label)
-
         discount_layout = QHBoxLayout()
         discount_label = QLabel(tr("Скидка, %", self.lang))
         discount_spin = QDoubleSpinBox()
@@ -213,11 +206,18 @@ class LanguagePairWidget(QWidget):
         discount_layout.addWidget(discount_spin)
         discount_layout.addStretch()
         discounted_label = QLabel(
-            f"{tr('Сумма со скидкой', self.lang)}: 0.00 {self.currency_symbol}"
+            f"{tr('Сумма скидки', self.lang)}: 0.00 {self.currency_symbol}"
         )
         discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         discount_layout.addWidget(discounted_label)
         vbox.addLayout(discount_layout)
+
+        subtotal_label = QLabel(
+            f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}"
+        )
+        subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        subtotal_label.setObjectName("subtotal_label")
+        vbox.addWidget(subtotal_label)
 
         group.setLayout(vbox)
 
@@ -433,17 +433,26 @@ class LanguagePairWidget(QWidget):
             return
         subtotal_label: QLabel | None = getattr(group, "subtotal_label", None)
         if subtotal_label:
+            suffix_total = (
+                f" {self.currency_symbol}" if self.currency_symbol else ""
+            )
+            effective_total = self.get_subtotal()
             subtotal_label.setText(
-                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(self._subtotal, self.lang)} {self.currency_symbol}"
+                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(effective_total, self.lang)}{suffix_total}"
             )
         discounted_label: QLabel | None = getattr(group, "discounted_label", None)
         discount_label: QLabel | None = getattr(group, "discount_label", None)
         if discount_label:
             discount_label.setText(tr("Скидка, %", self.lang))
         if discounted_label:
-            effective = self._subtotal * (1 - self._discount_percent / 100.0)
+            discount_amount = self._subtotal * (self._discount_percent / 100.0)
+            if not group.isChecked():
+                discount_amount = 0.0
+            suffix_discount = (
+                f" {self.currency_symbol}" if self.currency_symbol else ""
+            )
             discounted_label.setText(
-                f"{tr('Сумма со скидкой', self.lang)}: {format_amount(effective, self.lang)} {self.currency_symbol}"
+                f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix_discount}"
             )
 
     def get_discount_percent(self) -> float:
@@ -476,6 +485,12 @@ class LanguagePairWidget(QWidget):
         discount_label: QLabel | None = getattr(group, "discount_label", None)
         if discount_label:
             discount_label.setText(tr("Скидка, %", lang))
+        discounted_label: QLabel | None = getattr(group, "discounted_label", None)
+        if discounted_label:
+            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+            discounted_label.setText(
+                f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
+            )
         rows = group.rows_config
         for i, row_info in enumerate(rows):
             item = table.item(i, 0)
@@ -568,6 +583,11 @@ class LanguagePairWidget(QWidget):
             return 0.0
         return self._subtotal * (1 - self._discount_percent / 100.0)
 
+    def get_discount_amount(self) -> float:
+        if not self.translation_group.isChecked():
+            return 0.0
+        return self._subtotal * (self._discount_percent / 100.0)
+
     # ---------------- Data ----------------
     def get_data(self) -> Dict[str, Any]:
         data = {
@@ -576,6 +596,7 @@ class LanguagePairWidget(QWidget):
             "report_sources": self.report_sources(),
             "only_new_repeats": self.only_new_repeats_mode,
             "discount_percent": self.get_discount_percent(),
+            "discount_amount": self.get_discount_amount(),
         }
         if self.translation_group.isChecked():
             data["services"]["translation"] = self._get_table_data(self.translation_group.table)
