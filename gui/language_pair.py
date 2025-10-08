@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QHBoxLayout,
     QMenu,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -97,6 +98,8 @@ class LanguagePairWidget(QWidget):
             f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
             f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
         ])
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         # ВАЖНО: никаких локальных скроллов — всё видно сразу
         table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -144,6 +147,9 @@ class LanguagePairWidget(QWidget):
             add_act = menu.addAction(tr("Добавить строку", self.lang))
             del_act = menu.addAction(tr("Удалить строку", self.lang))
             restore_act = menu.addAction(tr("Восстановить строку", self.lang))
+            del_selected_act = menu.addAction(
+                tr("Удалить выбранные строки", self.lang)
+            )
 
             fuzzy_menu = menu.addMenu(tr("Фаззи", self.lang))
             fuzzy_actions = {}
@@ -158,6 +164,18 @@ class LanguagePairWidget(QWidget):
                 restore_act.setEnabled(False)
             if sum(1 for r in rows if not r.get("deleted")) <= 1:
                 del_act.setEnabled(False)
+            selected_rows = {
+                index.row() for index in table.selectedIndexes()
+            }
+            selectable = [
+                r
+                for r in selected_rows
+                if 0 <= r < len(rows) and not rows[r].get("deleted")
+            ]
+            if len(selectable) <= 1 or sum(
+                1 for r in rows if not r.get("deleted")
+            ) - len(selectable) < 1:
+                del_selected_act.setEnabled(False)
             action = menu.exec(table.mapToGlobal(pos))
             if action == add_act:
                 self._add_row_after(table, rows, group, row)
@@ -165,6 +183,8 @@ class LanguagePairWidget(QWidget):
                 self._delete_row(table, rows, group, row)
             elif action == restore_act:
                 self._restore_row(table, rows, group, row)
+            elif action == del_selected_act:
+                self._delete_selected_rows(table, rows, group)
             elif action in fuzzy_actions:
                 self._add_row_after(table, rows, group, row, fuzzy_actions[action])
 
@@ -267,6 +287,29 @@ class LanguagePairWidget(QWidget):
         if base_rate_row == row:
             base_rate_row = None
             setattr(group, 'base_rate_row', base_rate_row)
+        self.update_rates_and_sums(table, rows, base_rate_row)
+
+    def _delete_selected_rows(
+        self, table: QTableWidget, rows: List[Dict], group: QGroupBox
+    ):
+        selected = sorted({index.row() for index in table.selectedIndexes()})
+        active = [idx for idx, cfg in enumerate(rows) if not cfg.get("deleted")]
+        removable = [
+            r for r in selected if 0 <= r < len(rows) and not rows[r].get("deleted")
+        ]
+        if len(removable) <= 1:
+            return
+        max_remove = len(active) - 1
+        if max_remove <= 0:
+            return
+        if len(removable) > max_remove:
+            removable = removable[-max_remove:]
+        base_rate_row = getattr(group, 'base_rate_row', None)
+        for row in removable:
+            self._set_row_deleted(table, rows, row, True)
+            if base_rate_row == row:
+                base_rate_row = None
+        setattr(group, 'base_rate_row', base_rate_row)
         self.update_rates_and_sums(table, rows, base_rate_row)
 
     def _restore_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
@@ -467,17 +510,17 @@ class LanguagePairWidget(QWidget):
         out = []
         rows_cfg = self.translation_group.rows_config
         for row in range(min(table.rowCount(), len(rows_cfg))):
-            if rows_cfg[row].get('deleted'):
-                continue
+            row_cfg = rows_cfg[row]
             out.append({
-                "key": rows_cfg[row].get("key"),
-                "name": rows_cfg[row].get("name"),
+                "key": row_cfg.get("key"),
+                "name": row_cfg.get("name"),
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
                 "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
-                "rate":   _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
-                "total":  _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
-                "is_base": rows_cfg[row].get("is_base", False),
-                "multiplier": rows_cfg[row].get("multiplier"),
+                "rate": _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
+                "total": _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
+                "is_base": row_cfg.get("is_base", False),
+                "multiplier": row_cfg.get("multiplier"),
+                "deleted": row_cfg.get("deleted", False),
             })
         return out
 
@@ -535,6 +578,9 @@ class LanguagePairWidget(QWidget):
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
             rows[row]["key"] = row_data.get("key", rows[row].get("key"))
             rows[row]["name"] = row_data.get("name", rows[row].get("name"))
+            deleted_flag = row_data.get("deleted", False)
+            rows[row]["deleted"] = deleted_flag
+            self._set_row_deleted(table, rows, row, deleted_flag)
             if rows[row].get("is_base"):
                 base_rate_row = row
 

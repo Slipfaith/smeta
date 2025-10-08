@@ -1274,7 +1274,8 @@ class TranslationCostCalculator(QMainWindow):
                         "rate": 0.0,
                         "total": 0.0,
                     }
-                ]
+                ],
+                enabled=True,
             )
 
         self.clear_language_pairs()
@@ -1500,9 +1501,15 @@ class TranslationCostCalculator(QMainWindow):
             ),
             "pm_email": self.current_pm.get("email", ""),
             "project_setup_fee": self.project_setup_fee_spin.value(),
+            "project_setup_enabled": (
+                self.project_setup_widget.is_enabled()
+                if self.project_setup_widget
+                else False
+            ),
             "project_setup": (
                 self.project_setup_widget.get_data()
                 if self.project_setup_widget
+                and self.project_setup_widget.is_enabled()
                 else []
             ),
             "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
@@ -1793,7 +1800,8 @@ class TranslationCostCalculator(QMainWindow):
         self.update_pairs_list()
 
         ps_rows = project_data.get("project_setup")
-        if ps_rows:
+        ps_enabled = project_data.get("project_setup_enabled")
+        if ps_rows is not None or ps_enabled is not None:
             if not self.project_setup_widget:
                 self.project_setup_widget = ProjectSetupWidget(
                     self.project_setup_fee_spin.value(),
@@ -1807,11 +1815,20 @@ class TranslationCostCalculator(QMainWindow):
                     self.on_project_setup_item_changed
                 )
                 self.pairs_layout.insertWidget(0, self.project_setup_widget)
-            self.project_setup_widget.load_data(ps_rows)
-            first_vol = ps_rows[0].get("volume", 0)
-            self.project_setup_fee_spin.blockSignals(True)
-            self.project_setup_fee_spin.setValue(first_vol)
-            self.project_setup_fee_spin.blockSignals(False)
+            rows_to_load = ps_rows or []
+            enabled_flag = True if ps_enabled is None else bool(ps_enabled)
+            self.project_setup_widget.load_data(rows_to_load, enabled=enabled_flag)
+            fee_value = project_data.get("project_setup_fee")
+            if rows_to_load:
+                first_vol = rows_to_load[0].get("volume")
+                if isinstance(first_vol, (int, float)):
+                    fee_value = first_vol
+            if isinstance(fee_value, (int, float)):
+                self.project_setup_fee_spin.blockSignals(True)
+                self.project_setup_fee_spin.setValue(fee_value)
+                self.project_setup_fee_spin.blockSignals(False)
+                if self.project_setup_widget:
+                    self.project_setup_widget.set_volume(fee_value)
         else:
             fee = project_data.get("project_setup_fee")
             if isinstance(fee, (int, float)):

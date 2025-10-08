@@ -1,8 +1,17 @@
 from typing import List, Dict, Any
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QSizePolicy, QMenu, QHBoxLayout
+    QWidget,
+    QVBoxLayout,
+    QGroupBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QLabel,
+    QHeaderView,
+    QSizePolicy,
+    QMenu,
+    QHBoxLayout,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Qt, Signal
 from .utils import format_rate, _to_float, format_amount
@@ -33,7 +42,8 @@ class ProjectSetupWidget(QWidget):
         layout.addLayout(header)
 
         group = QGroupBox()
-        group.setCheckable(False)
+        group.setCheckable(True)
+        group.setChecked(True)
         vbox = QVBoxLayout()
 
         self.table = QTableWidget(1, 4)
@@ -47,6 +57,8 @@ class ProjectSetupWidget(QWidget):
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.table.setWordWrap(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         self.table.setItem(0, 0, QTableWidgetItem(tr("Запуск и управление проектом", self.lang)))
         self.table.setItem(0, 1, QTableWidgetItem(str(initial_volume)))
@@ -75,12 +87,24 @@ class ProjectSetupWidget(QWidget):
             add_act = menu.addAction(tr("Добавить строку", self.lang))
             del_act = menu.addAction(tr("Удалить строку", self.lang))
             restore_act = menu.addAction(tr("Восстановить строку", self.lang))
+            del_selected_act = menu.addAction(
+                tr("Удалить выбранные строки", self.lang)
+            )
             if self.rows_deleted[row]:
                 del_act.setEnabled(False)
             else:
                 restore_act.setEnabled(False)
             if sum(1 for d in self.rows_deleted if not d) <= 1:
                 del_act.setEnabled(False)
+            selectable = [
+                idx
+                for idx in {index.row() for index in self.table.selectedIndexes()}
+                if 0 <= idx < len(self.rows_deleted) and not self.rows_deleted[idx]
+            ]
+            if len(selectable) <= 1 or sum(
+                1 for d in self.rows_deleted if not d
+            ) - len(selectable) < 1:
+                del_selected_act.setEnabled(False)
             action = menu.exec(self.table.mapToGlobal(pos))
             if action == add_act:
                 self.add_row_after(row)
@@ -88,6 +112,8 @@ class ProjectSetupWidget(QWidget):
                 self.remove_row_at(row)
             elif action == restore_act:
                 self.restore_row_at(row)
+            elif action == del_selected_act:
+                self.remove_selected_rows()
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
@@ -99,7 +125,9 @@ class ProjectSetupWidget(QWidget):
         group.setLayout(vbox)
         layout.addWidget(group)
         self.setLayout(layout)
+        group.toggled.connect(self._on_group_toggled)
 
+        self.group_box = group
         self._fit_table_height(self.table)
         self.update_sums()
         self.set_language(self.lang)
@@ -141,6 +169,25 @@ class ProjectSetupWidget(QWidget):
             self._set_row_deleted(row, True)
             self.update_sums()
 
+    def remove_selected_rows(self):
+        active_indices = [i for i, deleted in enumerate(self.rows_deleted) if not deleted]
+        selected = sorted({index.row() for index in self.table.selectedIndexes()})
+        removable = [
+            row
+            for row in selected
+            if 0 <= row < len(self.rows_deleted) and not self.rows_deleted[row]
+        ]
+        if len(removable) <= 1:
+            return
+        max_remove = len(active_indices) - 1
+        if max_remove <= 0:
+            return
+        if len(removable) > max_remove:
+            removable = removable[-max_remove:]
+        for row in removable:
+            self._set_row_deleted(row, True)
+        self.update_sums()
+
     def restore_row_at(self, row: int):
         if row >= 0 and self.rows_deleted[row]:
             self._set_row_deleted(row, False)
@@ -171,6 +218,15 @@ class ProjectSetupWidget(QWidget):
         self.table.blockSignals(True)
         item.setText(f"{value}")
         self.table.blockSignals(False)
+        self.update_sums()
+
+    def is_enabled(self) -> bool:
+        return self.group_box.isChecked()
+
+    def _on_group_toggled(self, checked: bool):
+        self.table.setEnabled(checked)
+        self.subtotal_label.setEnabled(checked)
+        self.title_label.setEnabled(checked)
         self.update_sums()
 
     # ---------- calculations ----------
@@ -206,16 +262,18 @@ class ProjectSetupWidget(QWidget):
                 f"{tr('Промежуточная сумма', self.lang)}: {format_amount(subtotal, self.lang)} {self.currency_symbol}"
             )
             self._subtotal = subtotal
-            self.subtotal_changed.emit(subtotal)
+            self.subtotal_changed.emit(self.get_subtotal())
             self._fit_table_height(self.table)
         except Exception:
             pass
 
     # ---------- accessors ----------
     def get_subtotal(self) -> float:
-        return self._subtotal
+        return self._subtotal if self.is_enabled() else 0.0
 
     def get_data(self) -> List[Dict[str, Any]]:
+        if not self.is_enabled():
+            return []
         data: List[Dict[str, Any]] = []
         for row in range(self.table.rowCount()):
             if self.rows_deleted[row]:
@@ -228,7 +286,9 @@ class ProjectSetupWidget(QWidget):
             })
         return data
 
-    def load_data(self, rows: List[Dict[str, Any]]):
+    def load_data(self, rows: List[Dict[str, Any]], enabled: bool | None = None):
+        if enabled is not None:
+            self.group_box.setChecked(enabled)
         self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         self.rows_deleted = [False] * len(rows)
@@ -246,6 +306,8 @@ class ProjectSetupWidget(QWidget):
         self.table.blockSignals(False)
         self._fit_table_height(self.table)
         self.update_sums()
+        if enabled is not None:
+            self._on_group_toggled(self.group_box.isChecked())
 
     def set_currency(self, symbol: str, code: str):
         self.currency_symbol = symbol
