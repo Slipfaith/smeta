@@ -543,6 +543,11 @@ class TranslationCostCalculator(QMainWindow):
         prev_text = combo.currentText() if combo.isEditable() else ""
         prev_idx = combo.currentIndex()
         prev_obj = combo.itemData(prev_idx) if prev_idx >= 0 else None
+        typed_over_selection = False
+        if combo.isEditable() and prev_idx >= 0 and prev_text:
+            current_item_text = combo.itemText(prev_idx)
+            if current_item_text.strip() != prev_text.strip():
+                typed_over_selection = True
 
         combo.blockSignals(True)
         combo.clear()
@@ -554,7 +559,7 @@ class TranslationCostCalculator(QMainWindow):
             combo.addItem(label, lang)
         combo.blockSignals(False)
 
-        if isinstance(prev_obj, dict):
+        if isinstance(prev_obj, dict) and not typed_over_selection:
             for i in range(combo.count()):
                 d = combo.itemData(i)
                 if (
