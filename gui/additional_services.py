@@ -75,13 +75,6 @@ class AdditionalServiceTable(QWidget):
 
         layout.addWidget(self.table)
 
-        subtotal_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-        self.subtotal_label = QLabel(
-            f"{tr('Промежуточная сумма', self.lang)}: 0.00{subtotal_suffix}"
-        )
-        self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(self.subtotal_label)
-
         discount_layout = QHBoxLayout()
         self.discount_label = QLabel(tr("Скидка, %", self.lang))
         self.discount_spin = QDoubleSpinBox()
@@ -94,11 +87,18 @@ class AdditionalServiceTable(QWidget):
         discount_layout.addWidget(self.discount_spin)
         discount_layout.addStretch()
         self.discounted_label = QLabel(
-            f"{tr('Сумма со скидкой', self.lang)}: 0.00{subtotal_suffix}"
+            f"{tr('Сумма скидки', self.lang)}: 0.00{f' {self.currency_symbol}' if self.currency_symbol else ''}"
         )
         self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         discount_layout.addWidget(self.discounted_label)
         layout.addLayout(discount_layout)
+
+        subtotal_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+        self.subtotal_label = QLabel(
+            f"{tr('Промежуточная сумма', self.lang)}: 0.00{subtotal_suffix}"
+        )
+        self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self.subtotal_label)
 
         self.setLayout(layout)
         self.update_sums()
@@ -202,14 +202,22 @@ class AdditionalServiceTable(QWidget):
     def get_subtotal(self) -> float:
         return self._subtotal * (1 - self._discount_percent / 100.0)
 
+    def get_discount_amount(self) -> float:
+        return self._subtotal * (self._discount_percent / 100.0)
+
     def _update_discount_label(self) -> None:
         suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
         if hasattr(self, "discount_label"):
             self.discount_label.setText(tr("Скидка, %", self.lang))
+        discount_amount = self._subtotal * (self._discount_percent / 100.0)
+        effective_total = self.get_subtotal()
         if hasattr(self, "discounted_label"):
-            effective = self.get_subtotal()
             self.discounted_label.setText(
-                f"{tr('Сумма со скидкой', self.lang)}: {format_amount(effective, self.lang)}{suffix}"
+                f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix}"
+            )
+        if hasattr(self, "subtotal_label"):
+            self.subtotal_label.setText(
+                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(effective_total, self.lang)}{suffix}"
             )
 
     def _on_discount_changed(self, value: float) -> None:
@@ -247,6 +255,7 @@ class AdditionalServiceTable(QWidget):
             "header_title": self.header_edit.text(),
             "rows": rows,
             "discount_percent": self.get_discount_percent(),
+            "discount_amount": self.get_discount_amount(),
         }
 
     def load_data(self, data: Dict) -> None:
@@ -298,6 +307,11 @@ class AdditionalServiceTable(QWidget):
         self.header_edit.setText(tr("Дополнительные услуги", lang))
         if hasattr(self, "discount_label"):
             self.discount_label.setText(tr("Скидка, %", lang))
+        if hasattr(self, "discounted_label"):
+            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+            self.discounted_label.setText(
+                f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
+            )
         self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
 
@@ -390,4 +404,7 @@ class AdditionalServicesWidget(QWidget):
 
     def get_subtotal(self) -> float:
         return self._subtotal
+
+    def get_discount_amount(self) -> float:
+        return sum(tbl.get_discount_amount() for tbl in self.tables)
 
