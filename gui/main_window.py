@@ -31,18 +31,13 @@ from gui.styles import APP_STYLE
 from gui.utils import format_amount, format_language_display
 from gui.rates_import_dialog import ExcelRatesDialog
 from logic.user_config import add_language, load_languages
-from logic.trados_xml_parser import parse_reports
+from logic.importers import import_project_info, import_xml_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.language_pairs import LanguagePairsMixin
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.xml_parser_common import resolve_language_display
-from logic.outlook_import import (
-    OutlookMsgError,
-    map_message_to_project_info,
-    parse_msg_file,
-)
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -419,16 +414,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def handle_project_info_drop(self, paths: List[str]):
         lang = self.gui_lang
-        errors: List[str] = []
-
-        for path in paths:
-            try:
-                message = parse_msg_file(path)
-                result = map_message_to_project_info(message)
-                self._apply_project_info_result(result, path)
-                return
-            except (OutlookMsgError, RuntimeError) as exc:
-                errors.append(f"{os.path.basename(path)}: {exc}")
+        result, errors = import_project_info(paths)
 
         if errors:
             QMessageBox.warning(
@@ -437,12 +423,17 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 "\n".join(errors),
             )
 
-    def _apply_project_info_result(self, result, source_path: str):
+        if not result:
+            return
+
+        self._apply_project_info_payload(result)
+
+    def _apply_project_info_payload(self, payload: Dict[str, Any]):
         lang = self.gui_lang
-        data = result.data
+        data = payload.get("data", {})
 
         updated_fields: List[str] = []
-        manual_checks: List[str] = list(result.warnings)
+        manual_checks: List[str] = list(payload.get("warnings", []))
 
         def update_field(widget, value: Optional[str], label_key: str):
             if value:
@@ -451,17 +442,14 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             else:
                 widget.clear()
 
-        update_field(self.project_name_edit, data.project_name, "Название проекта")
-        update_field(self.client_name_edit, data.client_name, "Название клиента")
-        update_field(self.contact_person_edit, data.contact_name, "Контактное лицо")
-        update_field(self.email_edit, data.email, "Email")
+        update_field(self.project_name_edit, data.get("project_name"), "Название проекта")
+        update_field(self.client_name_edit, data.get("client_name"), "Название клиента")
+        update_field(self.contact_person_edit, data.get("contact_name"), "Контактное лицо")
+        update_field(self.email_edit, data.get("email"), "Email")
 
-        legal_entity_value = (data.legal_entity or "").strip()
-        if legal_entity_value.lower() == "logrus it usa":
-            legal_entity_value = "Logrus IT"
-            data.legal_entity = legal_entity_value
-            if self.lang_mode_slider.value() != 0:
-                self.lang_mode_slider.setValue(0)
+        legal_entity_value = (data.get("legal_entity") or "").strip()
+        if payload.get("flags", {}).get("force_ru_mode") and self.lang_mode_slider.value() != 0:
+            self.lang_mode_slider.setValue(0)
 
         if legal_entity_value:
             idx = self.legal_entity_combo.findText(
@@ -483,22 +471,24 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         else:
             self.legal_entity_combo.setCurrentIndex(0)
 
-        if data.currency_code:
-            if self.set_currency_code(data.currency_code):
+        currency_code = data.get("currency_code")
+        if currency_code:
+            if self.set_currency_code(currency_code):
                 updated_fields.append(tr("Валюта", lang))
             else:
                 self.set_currency_code(None)
-                manual_checks.append(f"{tr('Валюта', lang)}: {data.currency_code}")
+                manual_checks.append(f"{tr('Валюта', lang)}: {currency_code}")
         else:
             self.set_currency_code(None)
 
-        missing = [tr(name, lang) for name in result.missing_fields]
+        missing = [tr(name, lang) for name in payload.get("missing_fields", [])]
 
+        sender = payload.get("sender", {})
         sender_parts: List[str] = []
-        if result.sender_name:
-            sender_parts.append(result.sender_name)
-        if result.sender_email:
-            sender_parts.append(result.sender_email)
+        if sender.get("name"):
+            sender_parts.append(sender["name"])
+        if sender.get("email"):
+            sender_parts.append(sender["email"])
 
         def format_section(title: str, values: List[str]) -> Optional[str]:
             unique_values = list(dict.fromkeys(v for v in values if v))
@@ -508,7 +498,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             return f"{title}:\n  • {bullets}"
 
         message_sections: List[str] = [
-            f"{tr('Outlook письмо', lang)}: {os.path.basename(source_path)}"
+            f"{tr('Outlook письмо', lang)}: {os.path.basename(payload.get('source_path', ''))}"
         ]
 
         section = format_section(tr("Обновлены поля", lang), updated_fields)
@@ -527,8 +517,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if section:
             message_sections.append(section)
 
-        if result.sent_at:
-            message_sections.append(f"{tr('Дата отправки', lang)}: {result.sent_at}")
+        sent_at = sender.get("sent_at")
+        if sent_at:
+            message_sections.append(f"{tr('Дата отправки', lang)}: {sent_at}")
 
         QMessageBox.information(
             self, tr("Готово", lang), "\n\n".join(message_sections)
@@ -876,174 +867,175 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 widget.set_basic_rate(match.rates.get(rate_key, 0))
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
-        try:
-            data, warnings, report_sources = parse_reports(paths)
+        result, errors = import_xml_reports(paths)
 
-            if warnings:
-                warning_msg = "Предупреждения при обработке файлов:\n" + "\n".join(
-                    warnings
+        if errors:
+            QMessageBox.critical(self, "Ошибка", "\n".join(errors))
+            return
+
+        warnings = result.get("warnings", [])
+        if warnings:
+            warning_msg = "Предупреждения при обработке файлов:\n" + "\n".join(warnings)
+            QMessageBox.warning(self, "Предупреждение", warning_msg)
+
+        data = result.get("data", {})
+        report_sources = result.get("report_sources", {})
+
+        if not data:
+            QMessageBox.warning(
+                self,
+                "Результат обработки",
+                "В XML файлах не найдено данных о языковых парах.\n"
+                "Возможные причины:\n"
+                "1. XML файлы имеют нестандартную структуру\n"
+                "2. Не найдены элементы LanguageDirection\n"
+                "3. Отсутствуют данные о языках или объемах\n"
+                "Проверьте консоль для детальной информации.",
+            )
+            return
+
+        self._hide_drop_hint()
+
+        added_pairs = 0
+        updated_pairs = 0
+
+        for pair_key, volumes in sorted(
+            data.items(), key=lambda kv: self._pair_sort_key(kv[0])
+        ):
+            widget = self.language_pairs.get(pair_key)
+            sources_for_pair = report_sources.get(pair_key, [])
+
+            left_raw, right_raw = self._extract_pair_parts(pair_key)
+            self._store_pair_language_inputs(
+                pair_key,
+                {"text": left_raw, "dict": False, "key": left_raw},
+                {"text": right_raw, "dict": False, "key": right_raw},
+            )
+
+            display_name = self._display_pair_name(pair_key)
+            _, tgt_key = self._extract_pair_parts(pair_key)
+            target_entry = self._pair_language_inputs.get(pair_key, {}).get("target")
+            if target_entry:
+                lang_labels = self._labels_from_entry(target_entry)
+                header_title = (
+                    lang_labels["ru"] if self.lang_display_ru else lang_labels["en"]
                 )
-                QMessageBox.warning(self, "Предупреждение", warning_msg)
-
-            if not data:
-                QMessageBox.warning(
-                    self,
-                    "Результат обработки",
-                    "В XML файлах не найдено данных о языковых парах.\n"
-                    "Возможные причины:\n"
-                    "1. XML файлы имеют нестандартную структуру\n"
-                    "2. Не найдены элементы LanguageDirection\n"
-                    "3. Отсутствуют данные о языках или объемах\n"
-                    "Проверьте консоль для детальной информации.",
-                )
-                return
-
-            self._hide_drop_hint()
-
-            added_pairs = 0
-            updated_pairs = 0
-
-            for pair_key, volumes in sorted(
-                data.items(), key=lambda kv: self._pair_sort_key(kv[0])
-            ):
-                widget = self.language_pairs.get(pair_key)
-                sources_for_pair = report_sources.get(pair_key, [])
-
-                left_raw, right_raw = self._extract_pair_parts(pair_key)
-                self._store_pair_language_inputs(
-                    pair_key,
-                    {"text": left_raw, "dict": False, "key": left_raw},
-                    {"text": right_raw, "dict": False, "key": right_raw},
+            else:
+                lang_info = self._find_language_by_key(tgt_key or pair_key)
+                header_title = (
+                    lang_info["ru"] if self.lang_display_ru else lang_info["en"]
                 )
 
-                display_name = self._display_pair_name(pair_key)
-                _, tgt_key = self._extract_pair_parts(pair_key)
-                target_entry = self._pair_language_inputs.get(pair_key, {}).get("target")
-                if target_entry:
-                    lang_labels = self._labels_from_entry(target_entry)
-                    header_title = (
-                        lang_labels["ru"] if self.lang_display_ru else lang_labels["en"]
-                    )
+            if widget is None:
+                widget = LanguagePairWidget(
+                    display_name,
+                    self.currency_symbol,
+                    self.get_current_currency_code(),
+                    lang="ru" if self.lang_display_ru else "en",
+                )
+                widget.remove_requested.connect(
+                    lambda w=widget: self._on_widget_remove_requested(w)
+                )
+                widget.subtotal_changed.connect(self.update_total)
+                widget.name_changed.connect(
+                    lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
+                )
+                self.language_pairs[pair_key] = widget
+                self.pairs_layout.insertWidget(
+                    self.pairs_layout.count() - 1, widget
+                )
+                self.pair_headers[pair_key] = header_title
+                added_pairs += 1
+            else:
+                widget.set_pair_name(display_name)
+                widget.set_language("ru" if self.lang_display_ru else "en")
+                self.pair_headers[pair_key] = header_title
+                updated_pairs += 1
+
+            widget.set_report_sources(sources_for_pair, replace=replace)
+
+            if self.only_new_repeats_mode:
+                widget.set_only_new_and_repeats_mode(True)
+
+            group = widget.translation_group
+            table = group.table
+            group.setChecked(True)
+
+            if self.only_new_repeats_mode:
+                new_total = 0
+                repeat_total = 0
+                repeat_name = "Перевод, повторы и 100% совпадения (30%)"
+                for row_name, add_val in volumes.items():
+                    if row_name == repeat_name:
+                        repeat_total += add_val
+                    else:
+                        new_total += add_val
+                total_volume = new_total + repeat_total
+                repeat_row = table.rowCount() - 1
+                if replace:
+                    table.item(0, 1).setText(str(new_total))
+                    table.item(repeat_row, 1).setText(str(repeat_total))
                 else:
-                    lang_info = self._find_language_by_key(tgt_key or pair_key)
-                    header_title = (
-                        lang_info["ru"] if self.lang_display_ru else lang_info["en"]
-                    )
+                    try:
+                        prev_new = float(
+                            table.item(0, 1).text() if table.item(0, 1) else "0"
+                        )
+                    except ValueError:
+                        prev_new = 0
+                    try:
+                        prev_rep = float(
+                            table.item(repeat_row, 1).text()
+                            if table.item(repeat_row, 1)
+                            else "0"
+                        )
+                    except ValueError:
+                        prev_rep = 0
+                    table.item(0, 1).setText(str(prev_new + new_total))
+                    table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
+            else:
+                total_volume = 0
+                for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
+                    row_name = row_info["name"]
+                    add_val = volumes.get(row_name, 0)
+                    total_volume += add_val
 
-                if widget is None:
-                    widget = LanguagePairWidget(
-                        display_name,
-                        self.currency_symbol,
-                        self.get_current_currency_code(),
-                        lang="ru" if self.lang_display_ru else "en",
-                    )
-                    widget.remove_requested.connect(
-                        lambda w=widget: self._on_widget_remove_requested(w)
-                    )
-                    widget.subtotal_changed.connect(self.update_total)
-                    widget.name_changed.connect(
-                        lambda new_name, w=widget: self.on_pair_name_changed(w, new_name)
-                    )
-                    self.language_pairs[pair_key] = widget
-                    self.pairs_layout.insertWidget(
-                        self.pairs_layout.count() - 1, widget
-                    )
-                    self.pair_headers[pair_key] = header_title
-                    added_pairs += 1
-                else:
-                    widget.set_pair_name(display_name)
-                    widget.set_language("ru" if self.lang_display_ru else "en")
-                    self.pair_headers[pair_key] = header_title
-                    updated_pairs += 1
-
-                widget.set_report_sources(sources_for_pair, replace=replace)
-
-                if self.only_new_repeats_mode:
-                    widget.set_only_new_and_repeats_mode(True)
-
-                group = widget.translation_group
-                table = group.table
-                group.setChecked(True)
-
-                if self.only_new_repeats_mode:
-                    new_total = 0
-                    repeat_total = 0
-                    repeat_name = "Перевод, повторы и 100% совпадения (30%)"
-                    for row_name, add_val in volumes.items():
-                        if row_name == repeat_name:
-                            repeat_total += add_val
-                        else:
-                            new_total += add_val
-                    total_volume = new_total + repeat_total
-                    repeat_row = table.rowCount() - 1
                     if replace:
-                        table.item(0, 1).setText(str(new_total))
-                        table.item(repeat_row, 1).setText(str(repeat_total))
+                        table.item(idx, 1).setText(str(add_val))
                     else:
                         try:
-                            prev_new = float(
-                                table.item(0, 1).text() if table.item(0, 1) else "0"
-                            )
-                        except ValueError:
-                            prev_new = 0
-                        try:
-                            prev_rep = float(
-                                table.item(repeat_row, 1).text()
-                                if table.item(repeat_row, 1)
+                            prev_text = (
+                                table.item(idx, 1).text()
+                                if table.item(idx, 1)
                                 else "0"
                             )
-                        except ValueError:
-                            prev_rep = 0
-                        table.item(0, 1).setText(str(prev_new + new_total))
-                        table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
-                else:
-                    total_volume = 0
-                    for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
-                        row_name = row_info["name"]
-                        add_val = volumes.get(row_name, 0)
-                        total_volume += add_val
-
-                        if replace:
+                            prev = float(prev_text or "0")
+                            new_val = prev + add_val
+                            table.item(idx, 1).setText(str(new_val))
+                        except (ValueError, TypeError):
                             table.item(idx, 1).setText(str(add_val))
-                        else:
-                            try:
-                                prev_text = (
-                                    table.item(idx, 1).text()
-                                    if table.item(idx, 1)
-                                    else "0"
-                                )
-                                prev = float(prev_text or "0")
-                                new_val = prev + add_val
-                                table.item(idx, 1).setText(str(new_val))
-                            except (ValueError, TypeError):
-                                table.item(idx, 1).setText(str(add_val))
 
-                widget.update_rates_and_sums(
-                    table, group.rows_config, group.base_rate_row
-                )
-
-            sorted_items = sorted(
-                self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0])
+            widget.update_rates_and_sums(
+                table, group.rows_config, group.base_rate_row
             )
-            for w in self.language_pairs.values():
-                self.pairs_layout.removeWidget(w)
-            for _, w in sorted_items:
-                self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, w)
-            self.language_pairs = dict(sorted_items)
 
-            self.update_pairs_list()
-            self.update_total()
+        sorted_items = sorted(
+            self.language_pairs.items(), key=lambda kv: self._pair_sort_key(kv[0])
+        )
+        for w in self.language_pairs.values():
+            self.pairs_layout.removeWidget(w)
+        for _, w in sorted_items:
+            self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, w)
+        self.language_pairs = dict(sorted_items)
 
-            result_msg = "Обработка завершена!\n\n"
-            if added_pairs > 0:
-                result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
-            if updated_pairs > 0:
-                result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
-            result_msg += f"\nВсего обработано языковых пар: {len(data)}"
+        self.update_pairs_list()
+        self.update_total()
 
-        except Exception as e:
-            error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
-            QMessageBox.critical(self, "Ошибка", error_msg)
+        result_msg = "Обработка завершена!\n\n"
+        if added_pairs > 0:
+            result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
+        if updated_pairs > 0:
+            result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
+        result_msg += f"\nВсего обработано языковых пар: {len(data)}"
 
 
     def load_project_data(self, project_data: Dict[str, Any]):
