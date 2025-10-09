@@ -240,6 +240,7 @@ class TranslationCostCalculator(QMainWindow):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
         self.pair_headers: Dict[str, str] = {}
+        self._pair_language_inputs: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.lang_display_ru: bool = True  # Controls language for quotation/Excel
         self.gui_lang: str = "ru"  # Controls application GUI language
         self.show_territory_codes: bool = True
@@ -594,7 +595,11 @@ class TranslationCostCalculator(QMainWindow):
             display_name = self._display_pair_name(pair_key)
             widget.set_pair_name(display_name)
             _, right_key = self._extract_pair_parts(pair_key)
-            if right_key:
+            target_entry = self._pair_language_inputs.get(pair_key, {}).get("target")
+            if target_entry:
+                labels = self._labels_from_entry(target_entry)
+                self.pair_headers[pair_key] = labels[lang]
+            elif right_key:
                 lang_info = self._find_language_by_key(
                     right_key, show_codes=self.show_territory_codes
                 )
@@ -1157,6 +1162,74 @@ class TranslationCostCalculator(QMainWindow):
                 }
         return {"en": "", "ru": "", "text": text, "dict": False}
 
+    def _store_pair_language_inputs(
+        self,
+        pair_key: str,
+        source: Dict[str, Any],
+        target: Dict[str, Any],
+        left_key: Optional[str] = None,
+        right_key: Optional[str] = None,
+    ) -> None:
+        source_entry = dict(source or {})
+        target_entry = dict(target or {})
+        if left_key and not source_entry.get("key"):
+            source_entry["key"] = left_key
+        if right_key and not target_entry.get("key"):
+            target_entry["key"] = right_key
+        if "key" not in source_entry:
+            source_entry["key"] = (
+                source_entry.get("text")
+                or source_entry.get("en")
+                or source_entry.get("ru")
+                or ""
+            )
+        if "key" not in target_entry:
+            target_entry["key"] = (
+                target_entry.get("text")
+                or target_entry.get("en")
+                or target_entry.get("ru")
+                or ""
+            )
+        self._pair_language_inputs[pair_key] = {
+            "source": source_entry,
+            "target": target_entry,
+        }
+
+    def _labels_from_entry(self, entry: Dict[str, Any]) -> Dict[str, str]:
+        if not entry:
+            return {"en": "", "ru": ""}
+
+        key_value = entry.get("key", "").strip()
+        text = entry.get("text", "").strip()
+        en_value = entry.get("en", "").strip()
+        ru_value = entry.get("ru", "").strip()
+
+        resolved_en = ""
+        resolved_ru = ""
+        if key_value:
+            resolved_en = resolve_language_display(key_value, locale="en") or ""
+            resolved_ru = resolve_language_display(key_value, locale="ru") or ""
+        if not resolved_en and text:
+            resolved_en = resolve_language_display(text, locale="en") or ""
+        if not resolved_ru and text:
+            resolved_ru = resolve_language_display(text, locale="ru") or ""
+        if not resolved_en and en_value:
+            resolved_en = resolve_language_display(en_value, locale="en") or ""
+        if not resolved_ru and ru_value:
+            resolved_ru = resolve_language_display(ru_value, locale="ru") or ""
+
+        en_name = resolved_en or en_value or ru_value or text or key_value
+        ru_name = resolved_ru or ru_value or en_value or text or key_value
+
+        return {
+            "en": self._prepare_language_label(
+                en_name, "en", show_codes=self.show_territory_codes
+            ),
+            "ru": self._prepare_language_label(
+                ru_name, "ru", show_codes=self.show_territory_codes
+            ),
+        }
+
     def add_language_pair(self):
         src = self._parse_combo(self.source_lang_combo)
         tgt = self._parse_combo(self.target_lang_combo)
@@ -1181,21 +1254,31 @@ class TranslationCostCalculator(QMainWindow):
             )
             return
 
+        self._store_pair_language_inputs(pair_key, src, tgt, left_key, right_key)
+
+        labels = self._pair_language_inputs.get(pair_key, {})
+        src_labels = self._labels_from_entry(labels.get("source", {}))
+        tgt_labels = self._labels_from_entry(labels.get("target", {}))
+        lang_key = "ru" if self.lang_display_ru else "en"
         locale = "ru" if self.lang_display_ru else "en"
-        display_name = (
-            f"{self._prepare_language_label(src['text'], locale, show_codes=self.show_territory_codes)} - "
-            f"{self._prepare_language_label(tgt['text'], locale, show_codes=self.show_territory_codes)}"
-        )
-        if tgt["dict"]:
-            name = tgt["ru"] if self.lang_display_ru else tgt["en"]
-            header_title = self._prepare_language_label(
-                name, locale, show_codes=self.show_territory_codes
+        src_value = src_labels[lang_key]
+        tgt_value = tgt_labels[lang_key]
+        if not src_value:
+            src_value = self._prepare_language_label(
+                src.get("text", ""), locale, show_codes=self.show_territory_codes
             )
-        else:
-            header_title = self._prepare_language_label(
-                tgt["text"], locale, show_codes=self.show_territory_codes
+        if not tgt_value:
+            tgt_value = self._prepare_language_label(
+                tgt.get("text", ""), locale, show_codes=self.show_territory_codes
             )
-        self.pair_headers[pair_key] = header_title
+        display_name = f"{src_value} - {tgt_value}"
+        header_value = tgt_labels[lang_key]
+        if not header_value:
+            locale = "ru" if self.lang_display_ru else "en"
+            header_value = self._prepare_language_label(
+                tgt.get("text", ""), locale, show_codes=self.show_territory_codes
+            )
+        self.pair_headers[pair_key] = header_value
 
         widget = LanguagePairWidget(
             display_name,
@@ -1275,8 +1358,16 @@ class TranslationCostCalculator(QMainWindow):
         return {"en": en_name, "ru": ru_name}
 
     def _display_pair_name(self, pair_key: str) -> str:
-        left_key, right_key = self._extract_pair_parts(pair_key)
         lang = "ru" if self.lang_display_ru else "en"
+        entries = self._pair_language_inputs.get(pair_key)
+        if entries:
+            left_labels = self._labels_from_entry(entries.get("source", {}))
+            right_labels = self._labels_from_entry(entries.get("target", {}))
+            if right_labels.get("en") or right_labels.get("ru"):
+                return f"{left_labels[lang]} - {right_labels[lang]}"
+            return left_labels[lang]
+
+        left_key, right_key = self._extract_pair_parts(pair_key)
         if not right_key:
             return self._prepare_language_label(
                 left_key, lang, show_codes=self.show_territory_codes
@@ -1330,6 +1421,9 @@ class TranslationCostCalculator(QMainWindow):
                 self.language_pairs.pop(key)
                 self.language_pairs[new_name] = widget
                 self.pair_headers[new_name] = header_title
+                lang_inputs = self._pair_language_inputs.pop(key, None)
+                if lang_inputs is not None:
+                    self._pair_language_inputs[new_name] = lang_inputs
                 break
         self.update_pairs_list()
 
@@ -1338,6 +1432,7 @@ class TranslationCostCalculator(QMainWindow):
         if widget:
             widget.setParent(None)
             self.pair_headers.pop(pair_key, None)
+        self._pair_language_inputs.pop(pair_key, None)
         self.update_pairs_list()
         self.update_total()
 
@@ -1346,6 +1441,7 @@ class TranslationCostCalculator(QMainWindow):
             w.setParent(None)
         self.language_pairs.clear()
         self.pair_headers.clear()
+        self._pair_language_inputs.clear()
         self.update_pairs_list()
         self.update_total()
 
@@ -1460,15 +1556,29 @@ class TranslationCostCalculator(QMainWindow):
                 widget = self.language_pairs.get(pair_key)
                 sources_for_pair = report_sources.get(pair_key, [])
 
+                left_raw, right_raw = self._extract_pair_parts(pair_key)
+                self._store_pair_language_inputs(
+                    pair_key,
+                    {"text": left_raw, "dict": False, "key": left_raw},
+                    {"text": right_raw, "dict": False, "key": right_raw},
+                )
+
                 display_name = self._display_pair_name(pair_key)
                 _, tgt_key = self._extract_pair_parts(pair_key)
-                lang_info = self._find_language_by_key(
-                    tgt_key or pair_key,
-                    show_codes=self.show_territory_codes,
-                )
-                header_title = (
-                    lang_info["ru"] if self.lang_display_ru else lang_info["en"]
-                )
+                target_entry = self._pair_language_inputs.get(pair_key, {}).get("target")
+                if target_entry:
+                    lang_labels = self._labels_from_entry(target_entry)
+                    header_title = (
+                        lang_labels["ru"] if self.lang_display_ru else lang_labels["en"]
+                    )
+                else:
+                    lang_info = self._find_language_by_key(
+                        tgt_key or pair_key,
+                        show_codes=self.show_territory_codes,
+                    )
+                    header_title = (
+                        lang_info["ru"] if self.lang_display_ru else lang_info["en"]
+                    )
 
                 if widget is None:
                     widget = LanguagePairWidget(
@@ -1885,6 +1995,7 @@ class TranslationCostCalculator(QMainWindow):
             w.setParent(None)
         self.language_pairs.clear()
         self.pair_headers.clear()
+        self._pair_language_inputs.clear()
 
         for pair_data in project_data.get("language_pairs", []):
             pair_key = pair_data["pair_name"]
@@ -1902,6 +2013,13 @@ class TranslationCostCalculator(QMainWindow):
             self.language_pairs[pair_key] = widget
             self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
             self.pair_headers[pair_key] = header_title
+
+            left_raw, right_raw = self._extract_pair_parts(pair_key)
+            self._store_pair_language_inputs(
+                pair_key,
+                {"text": left_raw, "dict": False, "key": left_raw},
+                {"text": right_raw, "dict": False, "key": right_raw},
+            )
 
             services = pair_data.get("services", {})
             if "translation" in services:
