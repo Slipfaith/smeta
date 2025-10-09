@@ -85,5 +85,8 @@ def test_apply_territory_overrides_for_latin_america_ru():
 
 
 def test_apply_territory_overrides_ignores_unknown_locale():
-    original = "Spanish (Latin America)"
-    assert language_codes.apply_territory_overrides(original, "de") == original
+    assert language_codes.apply_territory_overrides("Spanish (Latin America)", "de") == "Spanish"
+
+
+def test_apply_territory_overrides_strips_other_territories():
+    assert language_codes.apply_territory_overrides("English (United States)", "ru") == "English"

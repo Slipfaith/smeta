@@ -74,6 +74,7 @@ def _locale_territory_info(lang: str) -> Tuple[Dict[str, str], Dict[str, str]]:
 
 _CODE_PATTERN = re.compile(r"^[A-Za-z]{2,3}$|^\d{3}$")
 _PAREN_RE = re.compile(r"\(([^()]+)\)")
+_PAREN_WITH_WS_RE = re.compile(r"\s*\(([^()]+)\)")
 
 _TERRITORY_DISPLAY_OVERRIDES = {
     "en": {"Latin America": "Latam"},
@@ -86,15 +87,17 @@ def _normalise_lang(lang: str) -> str:
 
 
 def apply_territory_overrides(text: str, lang: str) -> str:
-    """Apply locale-specific replacements to territory names in ``text``."""
+    """Apply locale-specific replacements and filtering to territory names."""
 
     if not text:
         return ""
 
+    stripped = text.strip()
+    if not stripped:
+        return ""
+
     language = _normalise_lang(lang)
-    overrides = _TERRITORY_DISPLAY_OVERRIDES.get(language)
-    if not overrides:
-        return text.strip()
+    overrides = _TERRITORY_DISPLAY_OVERRIDES.get(language, {})
 
     def _repl(match: re.Match[str]) -> str:
         inner = match.group(1).strip()
@@ -103,8 +106,16 @@ def apply_territory_overrides(text: str, lang: str) -> str:
             return f" ({replacement})"
         return match.group(0)
 
-    replaced = _PAREN_RE.sub(_repl, text)
-    return re.sub(r"\s{2,}", " ", replaced).strip()
+    replaced = _PAREN_RE.sub(_repl, stripped)
+
+    def _strip_parentheticals(match: re.Match[str]) -> str:
+        inner = match.group(1).strip().lower()
+        if inner in {"latam", "латам"}:
+            return match.group(0)
+        return ""
+
+    cleaned = _PAREN_WITH_WS_RE.sub(_strip_parentheticals, replaced)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
 def _normalize(text: str) -> str:
