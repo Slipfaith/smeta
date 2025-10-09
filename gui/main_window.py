@@ -1,11 +1,6 @@
 import os
-import shutil
-import subprocess
-import sys
-import tempfile
 import re
 import traceback
-from datetime import datetime
 from typing import Dict, List, Any, Tuple, Optional
 
 from PySide6.QtWidgets import (
@@ -14,7 +9,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QFileDialog,
     QMessageBox,
     QTabWidget,
     QSplitter,
@@ -24,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 
-from logic.progress import Progress
+from logic.project_manager import ProjectManager
 from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
@@ -36,8 +30,6 @@ from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
 from gui.utils import format_amount, format_language_display
 from gui.rates_import_dialog import ExcelRatesDialog
-from logic.excel_exporter import ExcelExporter
-from logic.pdf_exporter import xlsx_to_pdf
 from logic.user_config import add_language, load_languages
 from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
@@ -45,10 +37,6 @@ from logic.pm_store import load_pm_history, save_pm_history
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.xml_parser_common import resolve_language_display
-from logic.project_io import (
-    save_project as save_project_file,
-    load_project as load_project_file,
-)
 from logic.outlook_import import (
     OutlookMsgError,
     map_message_to_project_info,
@@ -82,6 +70,7 @@ class TranslationCostCalculator(QMainWindow):
         self.total_label = QLabel()
         self.discount_total_label = QLabel()
         self.markup_total_label = QLabel()
+        self.project_manager = ProjectManager(self)
         self.setup_ui()
         self.setup_style()
         QTimer.singleShot(0, self.auto_check_for_updates)
@@ -96,10 +85,10 @@ class TranslationCostCalculator(QMainWindow):
 
         self.project_menu = self.menuBar().addMenu(tr("Проект", lang))
         self.save_action = QAction(tr("Сохранить проект", lang), self)
-        self.save_action.triggered.connect(self.save_project)
+        self.save_action.triggered.connect(self.project_manager.save_project)
         self.project_menu.addAction(self.save_action)
         self.load_action = QAction(tr("Загрузить проект", lang), self)
-        self.load_action.triggered.connect(self.load_project)
+        self.load_action.triggered.connect(self.project_manager.load_project)
         self.project_menu.addAction(self.load_action)
         self.clear_action = QAction(tr("Очистить", lang), self)
         self.clear_action.triggered.connect(self.clear_all_data)
@@ -107,10 +96,10 @@ class TranslationCostCalculator(QMainWindow):
 
         self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
         self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
-        self.save_excel_action.triggered.connect(self.save_excel)
+        self.save_excel_action.triggered.connect(self.project_manager.save_excel)
         self.export_menu.addAction(self.save_excel_action)
         self.save_pdf_action = QAction(tr("Сохранить PDF", lang), self)
-        self.save_pdf_action.triggered.connect(self.save_pdf)
+        self.save_pdf_action.triggered.connect(self.project_manager.save_pdf)
         self.export_menu.addAction(self.save_pdf_action)
 
         self.rates_menu = self.menuBar().addMenu(tr("Импорт ставок", lang))
@@ -1197,291 +1186,6 @@ class TranslationCostCalculator(QMainWindow):
             error_msg = f"Ошибка при обработке XML файлов: {str(e)}"
             QMessageBox.critical(self, "Ошибка", error_msg)
 
-    def collect_project_data(self) -> Dict[str, Any]:
-        data = {
-            "project_name": self.project_name_edit.text(),
-            "client_name": self.client_name_edit.text(),
-            "contact_person": self.contact_person_edit.text(),
-            "email": self.email_edit.text(),
-            "legal_entity": self.get_selected_legal_entity(),
-            "currency": self.get_current_currency_code(),
-            "language_pairs": [],
-            "additional_services": [],
-            "pm_name": self.current_pm.get(
-                "name_ru" if self.lang_display_ru else "name_en", ""
-            ),
-            "pm_email": self.current_pm.get("email", ""),
-            "project_setup_fee": self.project_setup_fee_spin.value(),
-            "project_setup_enabled": (
-                self.project_setup_widget.is_enabled()
-                if self.project_setup_widget
-                else False
-            ),
-            "project_setup": (
-                self.project_setup_widget.get_data()
-                if self.project_setup_widget
-                and self.project_setup_widget.is_enabled()
-                else []
-            ),
-            "project_setup_discount_percent": (
-                self.project_setup_widget.get_discount_percent()
-                if self.project_setup_widget
-                else 0.0
-            ),
-            "project_setup_markup_percent": (
-                self.project_setup_widget.get_markup_percent()
-                if self.project_setup_widget
-                else 0.0
-            ),
-            "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
-            "only_new_repeats_mode": self.only_new_repeats_mode,
-        }
-        total_discount_amount = 0.0
-        total_markup_amount = 0.0
-        project_setup_discount_amount = 0.0
-        project_setup_markup_amount = 0.0
-        if getattr(self, "project_setup_widget", None):
-            project_setup_discount_amount = (
-                self.project_setup_widget.get_discount_amount()
-            )
-            total_discount_amount += project_setup_discount_amount
-            project_setup_markup_amount = (
-                self.project_setup_widget.get_markup_amount()
-            )
-            total_markup_amount += project_setup_markup_amount
-        data["project_setup_discount_amount"] = project_setup_discount_amount
-        data["project_setup_markup_amount"] = project_setup_markup_amount
-        for pair_key, pair_widget in self.language_pairs.items():
-            p = pair_widget.get_data()
-            if p["services"]:
-                p["header_title"] = self.pair_headers.get(
-                    pair_key, pair_widget.pair_name
-                )
-                data["language_pairs"].append(p)
-                total_discount_amount += p.get("discount_amount", 0.0)
-                total_markup_amount += p.get("markup_amount", 0.0)
-        data["language_pairs"].sort(
-            key=lambda x: (
-                x.get("pair_name", "").split(" - ")[1]
-                if " - " in x.get("pair_name", "")
-                else x.get("pair_name", "")
-            )
-        )
-        additional = self.additional_services_widget.get_data()
-        if additional:
-            data["additional_services"] = additional
-            total_discount_amount += sum(
-                block.get("discount_amount", 0.0) for block in additional
-            )
-            total_markup_amount += sum(
-                block.get("markup_amount", 0.0) for block in additional
-            )
-        data["total_discount_amount"] = total_discount_amount
-        data["total_markup_amount"] = total_markup_amount
-        return data
-
-    def save_excel(self):
-        export_lang = "ru" if self.lang_display_ru else "en"
-        if not self.get_selected_legal_entity():
-            lang = self.gui_lang
-            QMessageBox.warning(
-                self,
-                tr("Предупреждение", lang),
-                tr("Выберите юрлицо", lang),
-            )
-            return
-        if not self.client_name_edit.text().strip():
-            QMessageBox.warning(self, "Ошибка", "Введите название клиента")
-            return
-        project_data = self.collect_project_data()
-        if (
-            not project_data["language_pairs"]
-            and not project_data["additional_services"]
-        ):
-            QMessageBox.warning(self, "Ошибка", "Добавьте хотя бы одну услугу")
-            return
-
-        if any(r.get("rate", 0) == 0 for r in project_data.get("project_setup", [])):
-            lang = self.gui_lang
-            msg = tr("Ставка для \"{0}\" равна 0. Продолжить?", lang).format(
-                tr("Запуск и управление проектом", lang)
-            )
-            reply = QMessageBox.question(
-                self,
-                tr("Предупреждение", lang),
-                msg,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.No:
-                return
-
-        client_name = project_data["client_name"].replace(" ", "_")
-        entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
-        currency = self.get_current_currency_code()
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.xlsx"
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить Excel файл", filename, "Excel files (*.xlsx)"
-        )
-        if not file_path:
-            return
-
-        entity_name = self.get_selected_legal_entity()
-        template_path = self.legal_entities.get(entity_name)
-        exporter = ExcelExporter(
-            template_path,
-            currency=self.get_current_currency_code(),
-            lang=export_lang,
-        )
-        with Progress(parent=self) as progress:
-            success = exporter.export_to_excel(
-                project_data, file_path, progress_callback=progress.on_progress
-            )
-        if success:
-            self._show_file_saved_message(file_path)
-        else:
-            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл")
-
-    def save_pdf(self):
-        export_lang = "ru" if self.lang_display_ru else "en"
-        if not self.get_selected_legal_entity():
-            lang = self.gui_lang
-            QMessageBox.warning(
-                self,
-                tr("Предупреждение", lang),
-                tr("Выберите юрлицо", lang),
-            )
-            return
-        if not self.project_name_edit.text().strip():
-            QMessageBox.warning(self, "Ошибка", "Введите название проекта")
-            return
-        if not self.client_name_edit.text().strip():
-            QMessageBox.warning(self, "Ошибка", "Введите название клиента")
-            return
-        project_data = self.collect_project_data()
-        if any(r.get("rate", 0) == 0 for r in project_data.get("project_setup", [])):
-            lang = self.gui_lang
-            msg = tr("Ставка для \"{0}\" равна 0. Продолжить?", lang).format(
-                tr("Запуск и управление проектом", lang)
-            )
-            reply = QMessageBox.question(
-                self,
-                tr("Предупреждение", lang),
-                msg,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.No:
-                return
-        client_name = project_data["client_name"].replace(" ", "_")
-        entity_for_file = self.get_selected_legal_entity().replace(" ", "_")
-        currency = self.get_current_currency_code()
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.pdf"
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить PDF файл", filename, "PDF files (*.pdf)"
-        )
-        if not file_path:
-            return
-        template_path = self.legal_entities.get(self.get_selected_legal_entity())
-        exporter = ExcelExporter(
-            template_path,
-            currency=currency,
-            lang=export_lang,
-        )
-        with Progress(parent=self) as progress:
-            def on_excel_progress(percent: int, message: str) -> None:
-                progress.on_progress(int(percent * 0.8), message)
-
-            try:
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    xlsx_path = os.path.join(tmpdir, "quotation.xlsx")
-                    pdf_path = os.path.join(tmpdir, "quotation.pdf")
-                    if not exporter.export_to_excel(
-                        project_data,
-                        xlsx_path,
-                        fit_to_page=True,
-                        progress_callback=on_excel_progress,
-                    ):
-                        QMessageBox.critical(self, "Ошибка", "Не удалось подготовить файл")
-                        return
-                    progress.set_label("Конвертация в PDF")
-                    progress.set_value(80)
-                    if not xlsx_to_pdf(xlsx_path, pdf_path, lang=export_lang):
-                        QMessageBox.critical(
-                            self, "Ошибка", "Не удалось конвертировать в PDF"
-                        )
-                        return
-                    progress.set_value(100)
-                    shutil.copyfile(pdf_path, file_path)
-                self._show_file_saved_message(file_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF: {e}")
-
-    def save_project(self):
-        if not self.project_name_edit.text().strip():
-            QMessageBox.warning(self, "Ошибка", "Введите название проекта")
-            return
-        project_data = self.collect_project_data()
-        project_name = project_data["project_name"].replace(" ", "_")
-        filename = f"Проект_{project_name}.json"
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить проект", filename, "JSON files (*.json)"
-        )
-        if not file_path:
-            return
-        if save_project_file(project_data, file_path):
-            QMessageBox.information(self, "Успех", f"Проект сохранен: {file_path}")
-        else:
-            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить проект")
-
-    def _show_file_saved_message(self, file_path: str) -> None:
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Information)
-        msg_box.setWindowTitle("Успех")
-        msg_box.setText(f"Файл сохранен:\n{file_path}")
-        open_button = msg_box.addButton("Открыть папку", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.setDefaultButton(QMessageBox.Ok)
-        msg_box.exec()
-        if msg_box.clickedButton() == open_button:
-            self._reveal_file_in_explorer(file_path)
-
-    def _reveal_file_in_explorer(self, file_path: str) -> None:
-        if not os.path.exists(file_path):
-            QMessageBox.warning(self, "Ошибка", "Файл не найден для открытия в проводнике")
-            return
-        try:
-            if sys.platform.startswith("win"):
-                subprocess.run(
-                    ["explorer", f"/select,{os.path.normpath(file_path)}"], check=False
-                )
-            elif sys.platform == "darwin":
-                subprocess.run(["open", "-R", file_path], check=False)
-            else:
-                directory = os.path.dirname(file_path) or "."
-                subprocess.run(["xdg-open", directory], check=False)
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                "Ошибка",
-                f"Не удалось открыть проводник:\n{exc}",
-            )
-
-    def load_project(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Загрузить проект", "", "JSON files (*.json)"
-        )
-        if not file_path:
-            return
-        project_data = load_project_file(file_path)
-        if project_data is None:
-            QMessageBox.critical(self, "Ошибка", "Не удалось загрузить проект")
-            return
-        self.load_project_data(project_data)
-        QMessageBox.information(self, "Успех", "Проект загружен")
 
     def load_project_data(self, project_data: Dict[str, Any]):
         self.project_name_edit.setText(project_data.get("project_name", ""))
