@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QAbstractItemView,
-    QDoubleSpinBox,
+    QSpinBox,
+    QRadioButton,
+    QWidgetAction,
+    QButtonGroup,
 )
 from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
@@ -76,48 +79,19 @@ class AdditionalServiceTable(QWidget):
 
         layout.addWidget(self.table)
 
-        discount_layout = QHBoxLayout()
-        self.discount_label = QLabel(tr("Скидка, %", self.lang))
-        self.discount_spin = QDoubleSpinBox()
-        self.discount_spin.setRange(0, 100)
-        self.discount_spin.setDecimals(1)
-        self.discount_spin.setSingleStep(1.0)
-        self.discount_spin.setValue(0.0)
-        self.discount_spin.valueChanged.connect(self._on_discount_changed)
-        discount_layout.addWidget(self.discount_label)
-        discount_layout.addWidget(self.discount_spin)
-        discount_layout.addStretch()
-        self.discounted_label = QLabel(
-            f"{tr('Сумма скидки', self.lang)}: 0.00{f' {self.currency_symbol}' if self.currency_symbol else ''}"
-        )
-        self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        discount_layout.addWidget(self.discounted_label)
-        layout.addLayout(discount_layout)
+        subtotal_layout = QHBoxLayout()
+        subtotal_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtotal_label = QLabel()
+        self.subtotal_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        subtotal_layout.addWidget(self.subtotal_label, 1)
 
-        markup_layout = QHBoxLayout()
-        self.markup_label = QLabel(tr("Наценка, %", self.lang))
-        self.markup_spin = QDoubleSpinBox()
-        self.markup_spin.setRange(0, 100)
-        self.markup_spin.setDecimals(1)
-        self.markup_spin.setSingleStep(1.0)
-        self.markup_spin.setValue(0.0)
-        self.markup_spin.valueChanged.connect(self._on_markup_changed)
-        markup_layout.addWidget(self.markup_label)
-        markup_layout.addWidget(self.markup_spin)
-        markup_layout.addStretch()
-        self.markup_amount_label = QLabel(
-            f"{tr('Сумма наценки', self.lang)}: 0.00{f' {self.currency_symbol}' if self.currency_symbol else ''}"
-        )
-        self.markup_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        markup_layout.addWidget(self.markup_amount_label)
-        layout.addLayout(markup_layout)
+        self.modifiers_button = QPushButton("⚙️")
+        self.modifiers_button.setFlat(True)
+        self.modifiers_button.setCursor(Qt.PointingHandCursor)
+        self.modifiers_button.clicked.connect(self._show_modifiers_menu)
+        subtotal_layout.addWidget(self.modifiers_button)
 
-        subtotal_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-        self.subtotal_label = QLabel(
-            f"{tr('Промежуточная сумма', self.lang)}: 0.00{subtotal_suffix}"
-        )
-        self.subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(self.subtotal_label)
+        layout.addLayout(subtotal_layout)
 
         self.setLayout(layout)
         self.update_sums()
@@ -231,46 +205,39 @@ class AdditionalServiceTable(QWidget):
         return self._subtotal * (self._markup_percent / 100.0)
 
     def _update_discount_label(self) -> None:
-        suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-        if hasattr(self, "discount_label"):
-            self.discount_label.setText(tr("Скидка, %", self.lang))
-        if hasattr(self, "markup_label"):
-            self.markup_label.setText(tr("Наценка, %", self.lang))
-        discount_amount = self._subtotal * (self._discount_percent / 100.0)
-        markup_amount = self._subtotal * (self._markup_percent / 100.0)
-        effective_total = self.get_subtotal()
-        if hasattr(self, "discounted_label"):
-            self.discounted_label.setText(
-                f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix}"
+        if not hasattr(self, "subtotal_label"):
+            return
+
+        base_total = self._subtotal
+        discount_percent = self._discount_percent
+        markup_percent = self._markup_percent
+        discount_amount = base_total * (discount_percent / 100.0)
+        markup_amount = base_total * (markup_percent / 100.0)
+        final_total = self.get_subtotal()
+
+        parts: list[str] = []
+        if discount_percent > 0:
+            parts.append(
+                f"− {self._format_currency(discount_amount)} ({self._format_percent(discount_percent)})"
             )
-        if hasattr(self, "markup_amount_label"):
-            self.markup_amount_label.setText(
-                f"{tr('Сумма наценки', self.lang)}: {format_amount(markup_amount, self.lang)}{suffix}"
+        if markup_percent > 0:
+            parts.append(
+                f"+ {self._format_currency(markup_amount)} ({self._format_percent(markup_percent)})"
             )
-        if hasattr(self, "subtotal_label"):
+
+        prefix = f"{tr('Промежуточная сумма', self.lang)}: {self._format_currency(base_total)}"
+        if parts:
             self.subtotal_label.setText(
-                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(effective_total, self.lang)}{suffix}"
+                f"{prefix} {' '.join(parts)} = {self._format_currency(final_total)}"
             )
-
-    def _on_discount_changed(self, value: float) -> None:
-        self._discount_percent = max(0.0, min(100.0, float(value)))
-        self._update_discount_label()
-        self.subtotal_changed.emit(self.get_subtotal())
-
-    def _on_markup_changed(self, value: float) -> None:
-        self._markup_percent = max(0.0, min(100.0, float(value)))
-        self._update_discount_label()
-        self.subtotal_changed.emit(self.get_subtotal())
+        else:
+            self.subtotal_label.setText(prefix)
 
     def get_discount_percent(self) -> float:
         return self._discount_percent
 
     def set_discount_percent(self, value: float) -> None:
         self._discount_percent = max(0.0, min(100.0, float(value)))
-        if hasattr(self, "discount_spin"):
-            self.discount_spin.blockSignals(True)
-            self.discount_spin.setValue(self._discount_percent)
-            self.discount_spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -279,12 +246,150 @@ class AdditionalServiceTable(QWidget):
 
     def set_markup_percent(self, value: float) -> None:
         self._markup_percent = max(0.0, min(100.0, float(value)))
-        if hasattr(self, "markup_spin"):
-            self.markup_spin.blockSignals(True)
-            self.markup_spin.setValue(self._markup_percent)
-            self.markup_spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
+
+    def _format_currency(self, value: float) -> str:
+        formatted = format_amount(value, self.lang)
+        symbol = self.currency_symbol or ""
+        if not symbol:
+            return formatted
+        if symbol.isalpha():
+            return f"{formatted} {symbol}"
+        return f"{formatted}{symbol}"
+
+    @staticmethod
+    def _format_percent(value: float) -> str:
+        if abs(value - round(value)) < 1e-6:
+            return f"{int(round(value))}%"
+        return f"{value:.1f}%"
+
+    def _show_modifiers_menu(self) -> None:
+        menu = QMenu(self)
+        menu.setSeparatorsCollapsible(False)
+
+        button_group = QButtonGroup(menu)
+        button_group.setExclusive(True)
+
+        def create_radio_action(text: str, with_spin: bool = False) -> tuple[QWidgetAction, QRadioButton, QSpinBox | None]:
+            container = QWidget(menu)
+            layout = QHBoxLayout(container)
+            layout.setContentsMargins(8, 4, 8, 4)
+            layout.setSpacing(8)
+            radio = QRadioButton(text)
+            layout.addWidget(radio)
+            button_group.addButton(radio)
+            spin: QSpinBox | None = None
+            if with_spin:
+                spin = QSpinBox(container)
+                spin.setRange(0, 100)
+                spin.setSuffix("%")
+                spin.setSingleStep(1)
+                spin.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                layout.addWidget(spin)
+            layout.addStretch()
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(container)
+            menu.addAction(action)
+            return action, radio, spin
+
+        _, none_radio, _ = create_radio_action(tr("Без модификаторов", self.lang))
+        _, discount_radio, discount_spin = create_radio_action(tr("Скидка", self.lang), True)
+        _, markup_radio, markup_spin = create_radio_action(tr("Наценка", self.lang), True)
+
+        menu.addSeparator()
+
+        totals_widget = QWidget(menu)
+        totals_layout = QHBoxLayout(totals_widget)
+        totals_layout.setContentsMargins(8, 4, 8, 4)
+        totals_layout.setSpacing(8)
+        totals_label = QLabel()
+        totals_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        totals_layout.addWidget(totals_label)
+        totals_action = QWidgetAction(menu)
+        totals_action.setDefaultWidget(totals_widget)
+        menu.addAction(totals_action)
+
+        buttons_widget = QWidget(menu)
+        buttons_layout = QHBoxLayout(buttons_widget)
+        buttons_layout.setContentsMargins(8, 4, 8, 4)
+        buttons_layout.setSpacing(8)
+        apply_button = QPushButton(tr("Применить", self.lang))
+        cancel_button = QPushButton(tr("Отмена", self.lang))
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(apply_button)
+        buttons_layout.addWidget(cancel_button)
+        buttons_action = QWidgetAction(menu)
+        buttons_action.setDefaultWidget(buttons_widget)
+        menu.addAction(buttons_action)
+
+        base_total = self._subtotal
+
+        if self._discount_percent > 0 and self._markup_percent <= 0:
+            discount_radio.setChecked(True)
+        elif self._markup_percent > 0 and self._discount_percent <= 0:
+            markup_radio.setChecked(True)
+        elif self._discount_percent == 0 and self._markup_percent == 0:
+            none_radio.setChecked(True)
+        else:
+            discount_radio.setChecked(True)
+
+        if discount_spin:
+            discount_spin.setEnabled(discount_radio.isChecked())
+            discount_spin.setValue(int(round(self._discount_percent)))
+        if markup_spin:
+            markup_spin.setEnabled(markup_radio.isChecked())
+            markup_spin.setValue(int(round(self._markup_percent)))
+
+        def update_totals_label():
+            discount_value = float(discount_spin.value()) if discount_spin and discount_radio.isChecked() else 0.0
+            markup_value = float(markup_spin.value()) if markup_spin and markup_radio.isChecked() else 0.0
+            preview_total = base_total - base_total * (discount_value / 100.0) + base_total * (markup_value / 100.0)
+            totals_label.setText(
+                f"{tr('Итого', self.lang)}: {self._format_currency(preview_total)}"
+            )
+
+        update_totals_label()
+
+        def on_button_toggled(button, checked):
+            if button is discount_radio and discount_spin:
+                discount_spin.setEnabled(checked)
+            if button is markup_radio and markup_spin:
+                markup_spin.setEnabled(checked)
+            update_totals_label()
+
+        button_group.buttonToggled.connect(on_button_toggled)  # type: ignore[arg-type]
+
+        if discount_spin:
+            discount_spin.valueChanged.connect(update_totals_label)
+        if markup_spin:
+            markup_spin.valueChanged.connect(update_totals_label)
+
+        def apply_changes():
+            if none_radio.isChecked():
+                self._discount_percent = 0.0
+                self._markup_percent = 0.0
+            elif discount_radio.isChecked() and discount_spin:
+                self._discount_percent = float(discount_spin.value())
+                self._markup_percent = 0.0
+            elif markup_radio.isChecked() and markup_spin:
+                self._discount_percent = 0.0
+                self._markup_percent = float(markup_spin.value())
+            self._update_discount_label()
+            self.subtotal_changed.emit(self.get_subtotal())
+            menu.close()
+
+        def cancel_changes():
+            menu.close()
+
+        apply_button.clicked.connect(apply_changes)
+        cancel_button.clicked.connect(cancel_changes)
+
+        button = getattr(self, "modifiers_button", None)
+        if button:
+            menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+        else:
+            menu.exec(self.mapToGlobal(self.rect().center()))
 
     # --------------------------------------------------------------- data i/o
     def get_data(self) -> Dict:
@@ -342,6 +447,7 @@ class AdditionalServiceTable(QWidget):
             f"{tr('Сумма', self.lang)}{symbol_suffix}",
         ])
         self.update_sums()
+        self._update_discount_label()
 
     def convert_rates(self, multiplier: float) -> None:
         """Multiply all rate values by *multiplier* and update totals."""
@@ -357,22 +463,9 @@ class AdditionalServiceTable(QWidget):
     def set_language(self, lang: str) -> None:
         self.lang = lang
         self.header_edit.setText(tr("Дополнительные услуги", lang))
-        if hasattr(self, "discount_label"):
-            self.discount_label.setText(tr("Скидка, %", lang))
-        if hasattr(self, "discounted_label"):
-            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-            self.discounted_label.setText(
-                f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
-            )
-        if hasattr(self, "markup_label"):
-            self.markup_label.setText(tr("Наценка, %", lang))
-        if hasattr(self, "markup_amount_label"):
-            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-            self.markup_amount_label.setText(
-                f"{tr('Сумма наценки', lang)}: 0.00{suffix}"
-            )
         self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
+        self._update_discount_label()
 
 
 class AdditionalServicesWidget(QWidget):
