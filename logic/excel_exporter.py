@@ -1186,7 +1186,7 @@ class ExcelExporter:
         for lang in target_langs:
             if lang and lang not in uniq_targets:
                 uniq_targets.append(lang)
-        target_langs_str = ", ".join(filter(None, [source_lang] + uniq_targets))
+        target_langs_str = ", ".join(uniq_targets)
 
         currency_code = project_data.get("currency", self.currency)
 
