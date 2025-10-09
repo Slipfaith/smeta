@@ -258,6 +258,7 @@ class TranslationCostCalculator(QMainWindow):
         # (e.g. vat spin value changes) can safely update them.
         self.total_label = QLabel()
         self.discount_total_label = QLabel()
+        self.markup_total_label = QLabel()
         self.setup_ui()
         self.setup_style()
         QTimer.singleShot(0, self.auto_check_for_updates)
@@ -845,9 +846,15 @@ class TranslationCostCalculator(QMainWindow):
 
         lay.addWidget(self.tabs)
 
-        # ``total_label`` and ``discount_total_label`` are created in ``__init__`` so that
+        # ``total_label`` and adjustment labels are created in ``__init__`` so that
         # early signal emissions can reference them without raising errors. Here we
         # simply style them and add them to the layout.
+        self.markup_total_label.setAlignment(Qt.AlignRight)
+        self.markup_total_label.setStyleSheet(
+            "font-size: 12px; padding: 4px; color: #555;"
+        )
+        self.markup_total_label.hide()
+        lay.addWidget(self.markup_total_label)
         self.discount_total_label.setAlignment(Qt.AlignRight)
         self.discount_total_label.setStyleSheet(
             "font-size: 12px; padding: 4px; color: #555;"
@@ -1056,21 +1063,32 @@ class TranslationCostCalculator(QMainWindow):
     def update_total(self, *_):
         total = 0.0
         discount_total = 0.0
+        markup_total = 0.0
         if getattr(self, "project_setup_widget", None):
             total += self.project_setup_widget.get_subtotal()
             discount_total += self.project_setup_widget.get_discount_amount()
+            markup_total += self.project_setup_widget.get_markup_amount()
         for w in self.language_pairs.values():
             total += w.get_subtotal()
             discount_total += w.get_discount_amount()
+            markup_total += w.get_markup_amount()
         if getattr(self, "additional_services_widget", None):
             total += self.additional_services_widget.get_subtotal()
             discount_total += self.additional_services_widget.get_discount_amount()
+            markup_total += self.additional_services_widget.get_markup_amount()
         lang = "ru" if self.lang_display_ru else "en"
         vat_rate = (
             self.vat_spin.value() / 100 if self.vat_spin.isEnabled() else 0.0
         )
 
         symbol_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+        if markup_total > 0:
+            self.markup_total_label.setText(
+                f"{tr('Сумма наценки', lang)}: {format_amount(markup_total, lang)}{symbol_suffix}"
+            )
+            self.markup_total_label.show()
+        else:
+            self.markup_total_label.hide()
         if discount_total > 0:
             self.discount_total_label.setText(
                 f"{tr('Сумма скидки', lang)}: {format_amount(discount_total, lang)}{symbol_suffix}"
@@ -1664,17 +1682,29 @@ class TranslationCostCalculator(QMainWindow):
                 if self.project_setup_widget
                 else 0.0
             ),
+            "project_setup_markup_percent": (
+                self.project_setup_widget.get_markup_percent()
+                if self.project_setup_widget
+                else 0.0
+            ),
             "vat_rate": self.vat_spin.value() if self.vat_spin.isEnabled() else 0,
             "only_new_repeats_mode": self.only_new_repeats_mode,
         }
         total_discount_amount = 0.0
+        total_markup_amount = 0.0
         project_setup_discount_amount = 0.0
+        project_setup_markup_amount = 0.0
         if getattr(self, "project_setup_widget", None):
             project_setup_discount_amount = (
                 self.project_setup_widget.get_discount_amount()
             )
             total_discount_amount += project_setup_discount_amount
+            project_setup_markup_amount = (
+                self.project_setup_widget.get_markup_amount()
+            )
+            total_markup_amount += project_setup_markup_amount
         data["project_setup_discount_amount"] = project_setup_discount_amount
+        data["project_setup_markup_amount"] = project_setup_markup_amount
         for pair_key, pair_widget in self.language_pairs.items():
             p = pair_widget.get_data()
             if p["services"]:
@@ -1683,6 +1713,7 @@ class TranslationCostCalculator(QMainWindow):
                 )
                 data["language_pairs"].append(p)
                 total_discount_amount += p.get("discount_amount", 0.0)
+                total_markup_amount += p.get("markup_amount", 0.0)
         data["language_pairs"].sort(
             key=lambda x: (
                 x.get("pair_name", "").split(" - ")[1]
@@ -1696,7 +1727,11 @@ class TranslationCostCalculator(QMainWindow):
             total_discount_amount += sum(
                 block.get("discount_amount", 0.0) for block in additional
             )
+            total_markup_amount += sum(
+                block.get("markup_amount", 0.0) for block in additional
+            )
         data["total_discount_amount"] = total_discount_amount
+        data["total_markup_amount"] = total_markup_amount
         return data
 
     def save_excel(self):
@@ -1970,12 +2005,14 @@ class TranslationCostCalculator(QMainWindow):
                 pair_mode = self.only_new_repeats_mode
             widget.set_only_new_and_repeats_mode(bool(pair_mode))
             widget.set_discount_percent(pair_data.get("discount_percent", 0.0))
+            widget.set_markup_percent(pair_data.get("markup_percent", 0.0))
 
         self._update_language_names("ru" if self.lang_display_ru else "en")
 
         ps_rows = project_data.get("project_setup")
         ps_enabled = project_data.get("project_setup_enabled")
         ps_discount = project_data.get("project_setup_discount_percent", 0.0)
+        ps_markup = project_data.get("project_setup_markup_percent", 0.0)
         if ps_rows is not None or ps_enabled is not None:
             if not self.project_setup_widget:
                 self.project_setup_widget = ProjectSetupWidget(
@@ -1993,6 +2030,7 @@ class TranslationCostCalculator(QMainWindow):
             if isinstance(ps_rows, dict):
                 rows_to_load = ps_rows.get("rows", [])
                 ps_discount = ps_rows.get("discount_percent", ps_discount)
+                ps_markup = ps_rows.get("markup_percent", ps_markup)
             elif isinstance(ps_rows, list):
                 rows_to_load = ps_rows
             elif ps_rows is None:
@@ -2002,6 +2040,7 @@ class TranslationCostCalculator(QMainWindow):
             enabled_flag = True if ps_enabled is None else bool(ps_enabled)
             self.project_setup_widget.load_data(rows_to_load, enabled=enabled_flag)
             self.project_setup_widget.set_discount_percent(ps_discount)
+            self.project_setup_widget.set_markup_percent(ps_markup)
             fee_value = project_data.get("project_setup_fee")
             if rows_to_load:
                 first_vol = rows_to_load[0].get("volume")
