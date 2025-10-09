@@ -5,6 +5,8 @@ from typing import Callable, Iterable, List, Sequence
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
+from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
+
 
 class DropArea(QScrollArea):
     """A scroll area that accepts dropped XML files and forwards them to a callback."""
@@ -15,28 +17,11 @@ class DropArea(QScrollArea):
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
 
-        self._base_style = """
-            QScrollArea {
-                border: 2px dashed #e5e7eb;
-                border-radius: 8px;
-                background-color: #fafafa;
-            }
-            QScrollArea[dragOver="true"] {
-                border: 2px dashed #2563eb;
-                background-color: #eff6ff;
-            }
-        """
+        self._base_style = DROP_AREA_BASE_STYLE
         self.setStyleSheet(self._base_style)
 
     def disable_hint_style(self):
-        self.setStyleSheet(
-            """
-            QScrollArea[dragOver="true"] {
-                border: 2px dashed #2563eb;
-                background-color: #eff6ff;
-            }
-        """
-        )
+        self.setStyleSheet(DROP_AREA_DRAG_ONLY_STYLE)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

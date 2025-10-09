@@ -26,6 +26,7 @@ import copy
 
 from logic.service_config import ServiceConfig
 from logic.translation_config import tr
+from gui.styles import REPORTS_LABEL_STYLE
 from .utils import format_rate, _to_float, format_amount
 
 
@@ -68,7 +69,7 @@ class LanguagePairWidget(QWidget):
 
         self.reports_label = QLabel()
         self.reports_label.setWordWrap(True)
-        self.reports_label.setStyleSheet("color: #555; font-size: 11px;")
+        self.reports_label.setStyleSheet(REPORTS_LABEL_STYLE)
         self.reports_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.reports_label.hide()
         layout.addWidget(self.reports_label)

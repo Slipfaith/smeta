@@ -12,6 +12,11 @@ from PySide6.QtWidgets import (
 
 from gui.additional_services import AdditionalServicesWidget
 from gui.project_setup_widget import ProjectSetupWidget
+from gui.styles import (
+    DROP_HINT_LABEL_STYLE,
+    SUMMARY_HINT_LABEL_STYLE,
+    TOTAL_LABEL_STYLE,
+)
 from logic.translation_config import tr
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -64,20 +69,7 @@ def create_right_panel(window: "TranslationCostCalculator") -> QWidget:
             gui_lang,
         )
     )
-    window.drop_hint_label.setStyleSheet(
-        """
-        QLabel {
-            color: #9ca3af;
-            font-style: italic;
-            padding: 24px;
-            text-align: center;
-            background-color: #f9fafb;
-            border: 2px dashed #e5e7eb;
-            border-radius: 8px;
-            margin: 16px 0;
-        }
-    """
-    )
+    window.drop_hint_label.setStyleSheet(DROP_HINT_LABEL_STYLE)
     window.drop_hint_label.setAlignment(Qt.AlignCenter)
     window.pairs_layout.addWidget(window.drop_hint_label)
 
@@ -105,23 +97,17 @@ def create_right_panel(window: "TranslationCostCalculator") -> QWidget:
     layout.addWidget(window.tabs)
 
     window.markup_total_label.setAlignment(Qt.AlignRight)
-    window.markup_total_label.setStyleSheet(
-        "font-size: 12px; padding: 4px; color: #555;"
-    )
+    window.markup_total_label.setStyleSheet(SUMMARY_HINT_LABEL_STYLE)
     window.markup_total_label.hide()
     layout.addWidget(window.markup_total_label)
 
     window.discount_total_label.setAlignment(Qt.AlignRight)
-    window.discount_total_label.setStyleSheet(
-        "font-size: 12px; padding: 4px; color: #555;"
-    )
+    window.discount_total_label.setStyleSheet(SUMMARY_HINT_LABEL_STYLE)
     window.discount_total_label.hide()
     layout.addWidget(window.discount_total_label)
 
     window.total_label.setAlignment(Qt.AlignRight)
-    window.total_label.setStyleSheet(
-        "font-weight: bold; font-size: 14px; padding: 6px; color: #333;"
-    )
+    window.total_label.setStyleSheet(TOTAL_LABEL_STYLE)
     layout.addWidget(window.total_label)
 
     widget.setLayout(layout)
