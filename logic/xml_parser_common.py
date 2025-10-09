@@ -4,11 +4,7 @@ import re
 
 import langcodes
 
-from .language_codes import (
-    country_to_code,
-    localise_territory_code,
-    replace_territory_with_code,
-)
+from .language_codes import apply_territory_overrides, country_to_code
 
 
 _SCRIPT_HINTS = {
@@ -25,13 +21,14 @@ def norm_lang(code: str) -> str:
     return code.replace("_", "-").split("-")[0].upper()
 
 
-def _format_display(text: str) -> str:
+def _format_display(text: str, locale: str) -> str:
     if not text:
         return ""
     stripped = text.strip()
     if not stripped:
         return ""
-    return stripped[0].upper() + stripped[1:]
+    formatted = stripped[0].upper() + stripped[1:]
+    return apply_territory_overrides(formatted, locale)
 
 
 def _resolve_script_hint(hint: str) -> str:
@@ -128,7 +125,7 @@ def expand_language_code(code: str, locale: str = "ru") -> str:
         tag = _language_tag_from_value(normalized) or normalized
         language = langcodes.Language.get(tag)
         result = language.display_name(locale)
-        return _format_display(replace_territory_with_code(result, locale))
+        return _format_display(result, locale)
     except langcodes.LanguageTagError:
         return norm_lang(normalized)
 
@@ -146,7 +143,7 @@ def normalize_language_name(name: str, locale: str = "ru") -> str:
         if not tag:
             return ""
         result = langcodes.Language.get(tag).display_name(locale)
-        return _format_display(replace_territory_with_code(result, locale))
+        return _format_display(result, locale)
     except langcodes.LanguageTagError:
         try:
             match = langcodes.find(name)
@@ -154,7 +151,7 @@ def normalize_language_name(name: str, locale: str = "ru") -> str:
             return ""
         try:
             result = langcodes.Language.get(match).display_name(locale)
-            return _format_display(replace_territory_with_code(result, locale))
+            return _format_display(result, locale)
         except langcodes.LanguageTagError:
             return ""
 

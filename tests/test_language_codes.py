@@ -68,24 +68,22 @@ def test_determine_short_code_returns_empty_for_script_only_when_no_fallback():
     assert short == ""
 
 
-def test_localise_territory_code_prefers_russian_abbreviations():
-    assert language_codes.localise_territory_code("US", "ru") == "США"
+def test_apply_territory_overrides_for_latin_america_en():
+    assert (
+        language_codes.apply_territory_overrides("Spanish (Latin America)", "en")
+        == "Spanish (Latam)"
+    )
 
 
-def test_localise_territory_code_passthrough_for_other_languages():
-    assert language_codes.localise_territory_code("US", "en") == "US"
+def test_apply_territory_overrides_for_latin_america_ru():
+    assert (
+        language_codes.apply_territory_overrides(
+            "испанский (Латинская Америка)", "ru"
+        )
+        == "испанский (Латам)"
+    )
 
 
-def test_localise_territory_code_uses_russian_localised_name_when_available():
-    assert language_codes.localise_territory_code("IT", "ru") == "Италия"
-    assert language_codes.localise_territory_code("ID", "ru") == "Индонезия"
-
-
-def test_replace_territory_with_code_substitutes_first_parenthesis():
-    replaced = language_codes.replace_territory_with_code("Malay (Malaysia)", "en")
-    assert replaced == "Malay (MY)"
-
-
-def test_replace_territory_with_code_returns_original_when_unknown():
-    original = "Foo (Atlantis)"
-    assert language_codes.replace_territory_with_code(original, "en") == original
+def test_apply_territory_overrides_ignores_unknown_locale():
+    original = "Spanish (Latin America)"
+    assert language_codes.apply_territory_overrides(original, "de") == original
