@@ -21,8 +21,7 @@ __all__ = [
     "RU_TERRITORY_ABBREVIATIONS",
     "country_to_code",
     "determine_short_code",
-    "localise_territory_code",
-    "replace_territory_with_code",
+    "apply_territory_overrides",
 ]
 
 
@@ -75,6 +74,37 @@ def _locale_territory_info(lang: str) -> Tuple[Dict[str, str], Dict[str, str]]:
 
 _CODE_PATTERN = re.compile(r"^[A-Za-z]{2,3}$|^\d{3}$")
 _PAREN_RE = re.compile(r"\(([^()]+)\)")
+
+_TERRITORY_DISPLAY_OVERRIDES = {
+    "en": {"Latin America": "Latam"},
+    "ru": {"Латинская Америка": "Латам"},
+}
+
+
+def _normalise_lang(lang: str) -> str:
+    return (lang or "").split("-")[0].split("_")[0].lower()
+
+
+def apply_territory_overrides(text: str, lang: str) -> str:
+    """Apply locale-specific replacements to territory names in ``text``."""
+
+    if not text:
+        return ""
+
+    language = _normalise_lang(lang)
+    overrides = _TERRITORY_DISPLAY_OVERRIDES.get(language)
+    if not overrides:
+        return text.strip()
+
+    def _repl(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        replacement = overrides.get(inner)
+        if replacement:
+            return f" ({replacement})"
+        return match.group(0)
+
+    replaced = _PAREN_RE.sub(_repl, text)
+    return re.sub(r"\s{2,}", " ", replaced).strip()
 
 
 def _normalize(text: str) -> str:
@@ -270,48 +300,4 @@ def determine_short_code(
 
     return _language_code_from_row(code, lang_en)
 
-
-def localise_territory_code(code: str, lang: str) -> str:
-    """Return a locale-aware representation of a territory code."""
-
-    if not code:
-        return ""
-
-    normalized = code.upper()
-    lang = (lang or "").strip()
-    if not lang:
-        return normalized
-
-    lang_lower = lang.lower()
-
-    if lang_lower.startswith("ru"):
-        custom = RU_TERRITORY_ABBREVIATIONS.get(normalized)
-        if custom:
-            return custom
-
-        territories, short_map = _locale_territory_info(lang_lower)
-        if normalized in short_map:
-            return short_map[normalized]
-        if normalized in territories:
-            return territories[normalized]
-        return normalized
-
-    _, short_map = _locale_territory_info(lang_lower)
-    return short_map.get(normalized, normalized)
-
-
-def replace_territory_with_code(text: str, lang: str) -> str:
-    """Replace the territory part of ``text`` (inside parentheses) with a code."""
-
-    if not text:
-        return ""
-
-    def _repl(match: re.Match[str]) -> str:
-        territory_name = match.group(1).strip()
-        code = country_to_code(territory_name)
-        if not code:
-            return match.group(0)
-        return f"({localise_territory_code(code, lang)})"
-
-    return _PAREN_RE.sub(_repl, text, count=1)
 

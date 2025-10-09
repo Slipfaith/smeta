@@ -10,5 +10,5 @@ def test_extract_languages_supports_numeric_region_codes() -> None:
         "Analyze Files en-US_es-419(42).xml"
     )
 
-    assert src == "Английский (США)"
-    assert tgt == "Испанский (Латинская Америка)"
+    assert src == "Английский (Соединенные Штаты)"
+    assert tgt == "Испанский (Латам)"

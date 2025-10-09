@@ -1,14 +1,7 @@
 from typing import Union
 import re
 
-from babel import Locale
-
-from logic.language_codes import RU_TERRITORY_ABBREVIATIONS, country_to_code
-
-
-RU_SHORT_TERRITORIES = RU_TERRITORY_ABBREVIATIONS
-
-_TERRITORY_RE = re.compile(r"\s*\(([^()]+)\)")
+from logic.language_codes import apply_territory_overrides
 
 
 def format_rate(value: Union[int, float, str], sep: str | None = None) -> str:
@@ -56,42 +49,11 @@ def _to_float(value: str) -> float:
         return 0.0
 
 
-def strip_territory(text: str) -> str:
-    """Remove territory names/codes in parentheses when recognised."""
+def format_language_display(text: str, locale: str) -> str:
+    """Apply locale-specific tweaks to language names displayed in the UI."""
 
     if not text:
-        return text
+        return ""
 
-    def _repl(match: re.Match[str]) -> str:
-        inner = match.group(1).strip()
-        if country_to_code(inner):
-            return ""
-        return match.group(0)
-
-    cleaned = _TERRITORY_RE.sub(_repl, text)
-    return re.sub(r"\s{2,}", " ", cleaned).strip()
-
-
-def shorten_locale(text: str, lang: str) -> str:
-    """Shorten territory name in parentheses using Babel data."""
-    match = re.search(r"\(([^)]+)\)", text)
-    if not match:
-        return text
-    country_full = match.group(1)
-    try:
-        locale = Locale(lang)
-    except Exception:
-        return text
-    territories = locale.territories
-    full_to_code = {name: code for code, name in territories.items()}
-    code = full_to_code.get(country_full)
-    if not code:
-        return text
-    short_map = locale._data.get("short_territories", {})
-    country_short = short_map.get(code)
-    if not country_short:
-        if lang == "ru":
-            country_short = RU_SHORT_TERRITORIES.get(code, country_full)
-        else:
-            country_short = code
-    return text[: match.start() + 1] + country_short + text[match.end() - 1 :]
+    formatted = apply_territory_overrides(text, locale)
+    return re.sub(r"\s{2,}", " ", formatted).strip()
