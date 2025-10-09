@@ -3,7 +3,11 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+QApplication = QtWidgets.QApplication
+QLabel = QtWidgets.QLabel
+QPushButton = QtWidgets.QPushButton
 
 from gui.language_pair import LanguagePairWidget
 
