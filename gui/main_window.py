@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QSplitter,
     QComboBox,
-    QInputDialog,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
@@ -28,7 +27,7 @@ from gui.panels.right_panel import create_right_panel
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
-from gui.utils import format_amount, format_language_display
+from gui.utils import format_language_display
 from gui.rates_import_dialog import ExcelRatesDialog
 from logic.user_config import add_language, load_languages
 from logic.importers import import_project_info, import_xml_reports
@@ -38,8 +37,12 @@ from logic.language_pairs import LanguagePairsMixin
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.xml_parser_common import resolve_language_display
-
-CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
+from logic.calculations import (
+    convert_to_rub as calculate_convert_to_rub,
+    on_currency_changed as calculate_on_currency_changed,
+    set_currency_code as calculate_set_currency_code,
+    update_total as calculate_update_total,
+)
 
 class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
     def __init__(self):
@@ -319,31 +322,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         return self.currency_combo.itemText(index)
 
     def set_currency_code(self, code: Optional[str]) -> bool:
-        if code:
-            normalized = str(code).strip().upper()
-            idx = self.currency_combo.findText(normalized, Qt.MatchFixedString)
-            if idx < 0:
-                for i in range(1, self.currency_combo.count()):
-                    text = self.currency_combo.itemText(i).strip().upper()
-                    if text == normalized:
-                        idx = i
-                        break
-            if idx >= 0:
-                self.currency_combo.setCurrentIndex(idx)
-                return True
-        self.currency_combo.setCurrentIndex(0)
-        return False
+        return calculate_set_currency_code(self, code)
 
     def on_currency_changed(self, code: str):
-        self.currency_symbol = CURRENCY_SYMBOLS.get(code, code)
-        if getattr(self, "project_setup_widget", None):
-            self.project_setup_widget.set_currency(self.currency_symbol, code)
-        for w in self.language_pairs.values():
-            w.set_currency(self.currency_symbol, code)
-        if getattr(self, "additional_services_widget", None):
-            self.additional_services_widget.set_currency(self.currency_symbol, code)
-        if getattr(self, "convert_btn", None):
-            self.convert_btn.setEnabled(code == "USD")
+        calculate_on_currency_changed(self, code)
 
     def get_selected_legal_entity(self) -> str:
         """Return currently selected legal entity or empty string if none."""
@@ -353,29 +335,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         return self.legal_entity_combo.currentText()
 
     def convert_to_rub(self):
-        """Convert all rates from USD to RUB using user-provided rate."""
-        if self.get_current_currency_code() != "USD":
-            return
-        lang = self.gui_lang
-        rate, ok = QInputDialog.getDouble(
-            self,
-            tr("Курс USD", lang),
-            tr("1 USD в рублях", lang),
-            0.0,
-            0.0,
-            1000000.0,
-            4,
-        )
-        if not ok or rate <= 0:
-            return
-        if getattr(self, "project_setup_widget", None):
-            self.project_setup_widget.convert_rates(rate)
-        for w in self.language_pairs.values():
-            w.convert_rates(rate)
-        if getattr(self, "additional_services_widget", None):
-            self.additional_services_widget.convert_rates(rate)
-        self.set_currency_code("RUB")
-        self.update_total()
+        calculate_convert_to_rub(self)
 
     def on_legal_entity_changed(self, entity: str):
         if entity == self.legal_entity_placeholder:
@@ -588,53 +548,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_total()
 
     def update_total(self, *_):
-        total = 0.0
-        discount_total = 0.0
-        markup_total = 0.0
-        if getattr(self, "project_setup_widget", None):
-            total += self.project_setup_widget.get_subtotal()
-            discount_total += self.project_setup_widget.get_discount_amount()
-            markup_total += self.project_setup_widget.get_markup_amount()
-        for w in self.language_pairs.values():
-            total += w.get_subtotal()
-            discount_total += w.get_discount_amount()
-            markup_total += w.get_markup_amount()
-        if getattr(self, "additional_services_widget", None):
-            total += self.additional_services_widget.get_subtotal()
-            discount_total += self.additional_services_widget.get_discount_amount()
-            markup_total += self.additional_services_widget.get_markup_amount()
-        lang = "ru" if self.lang_display_ru else "en"
-        vat_rate = (
-            self.vat_spin.value() / 100 if self.vat_spin.isEnabled() else 0.0
-        )
-
-        symbol_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-        if markup_total > 0:
-            self.markup_total_label.setText(
-                f"{tr('Сумма наценки', lang)}: {format_amount(markup_total, lang)}{symbol_suffix}"
-            )
-            self.markup_total_label.show()
-        else:
-            self.markup_total_label.hide()
-        if discount_total > 0:
-            self.discount_total_label.setText(
-                f"{tr('Сумма скидки', lang)}: {format_amount(discount_total, lang)}{symbol_suffix}"
-            )
-            self.discount_total_label.show()
-        else:
-            self.discount_total_label.hide()
-
-        if vat_rate > 0:
-            vat_amount = total * vat_rate
-            total_with_vat = total + vat_amount
-            self.total_label.setText(
-                f"{tr('Итого', lang)}: {format_amount(total_with_vat, lang)}{symbol_suffix} {tr('с НДС', lang)}. "
-                f"{tr('НДС', lang)}: {format_amount(vat_amount, lang)}{symbol_suffix}"
-            )
-        else:
-            self.total_label.setText(
-                f"{tr('Итого', lang)}: {format_amount(total, lang)}{symbol_suffix}"
-            )
+        calculate_update_total(self)
 
     def handle_add_language(self):
         ru = (self.new_lang_ru.text() or "").strip()
