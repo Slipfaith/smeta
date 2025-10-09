@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QDoubleSpinBox,
     QInputDialog,
-    QApplication,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup
@@ -1486,7 +1485,7 @@ class TranslationCostCalculator(QMainWindow):
             data, warnings, report_sources = parse_reports(paths)
 
             if warnings:
-                warning_msg = f"Предупреждения при обработке файлов:\n" + "\n".join(
+                warning_msg = "Предупреждения при обработке файлов:\n" + "\n".join(
                     warnings
                 )
                 QMessageBox.warning(self, "Предупреждение", warning_msg)
@@ -1640,7 +1639,7 @@ class TranslationCostCalculator(QMainWindow):
             self.update_pairs_list()
             self.update_total()
 
-            result_msg = f"Обработка завершена!\n\n"
+            result_msg = "Обработка завершена!\n\n"
             if added_pairs > 0:
                 result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
             if updated_pairs > 0:

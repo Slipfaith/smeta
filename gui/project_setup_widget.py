@@ -81,7 +81,6 @@ class ProjectSetupWidget(QWidget):
 
         vbox.addWidget(self.table)
 
-        # context menu for adding/removing rows
         def show_menu(pos):
             row = self.table.rowAt(pos.y())
             if row < 0:
