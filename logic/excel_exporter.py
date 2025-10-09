@@ -117,13 +117,17 @@ class BlockRenderer:
     def discount_percent(self, data: Any) -> float:  # pragma: no cover - override
         return 0.0
 
+    def markup_percent(self, data: Any) -> float:  # pragma: no cover - override
+        return 0.0
+
     def render(
         self, ws: Worksheet, start_row: int, data: Any
-    ) -> Tuple[int, Optional[str], Optional[str]]:
+    ) -> Tuple[int, Optional[str], Optional[str], Optional[str]]:
         template_ws = self.template_sheet(ws)
         items = self.prepare_items(data)
         title = self.header_title(data)
         discount = self.discount_percent(data)
+        markup = self.markup_percent(data)
         return self.exporter._render_block(
             ws,
             template_ws,
@@ -135,6 +139,7 @@ class BlockRenderer:
             self.titles,
             title,
             discount_percent=discount,
+            markup_percent=markup,
         )
 
 
@@ -245,6 +250,9 @@ class TranslationBlockRenderer(BlockRenderer):
     def discount_percent(self, pair: Dict[str, Any]) -> float:
         return float(pair.get("discount_percent", 0.0) or 0.0)
 
+    def markup_percent(self, pair: Dict[str, Any]) -> float:
+        return float(pair.get("markup_percent", 0.0) or 0.0)
+
 
 class ProjectSetupRenderer(BlockRenderer):
     def __init__(self, exporter: "ExcelExporter") -> None:
@@ -283,6 +291,11 @@ class ProjectSetupRenderer(BlockRenderer):
             return float(data.get("discount_percent", 0.0) or 0.0)
         return 0.0
 
+    def markup_percent(self, data: Any) -> float:
+        if isinstance(data, dict):
+            return float(data.get("markup_percent", 0.0) or 0.0)
+        return 0.0
+
 
 class AdditionalServicesRenderer(BlockRenderer):
     def __init__(self, exporter: "ExcelExporter") -> None:
@@ -316,6 +329,9 @@ class AdditionalServicesRenderer(BlockRenderer):
     def discount_percent(self, block: Dict[str, Any]) -> float:
         return float(block.get("discount_percent", 0.0) or 0.0)
 
+    def markup_percent(self, block: Dict[str, Any]) -> float:
+        return float(block.get("markup_percent", 0.0) or 0.0)
+
 
 class ExcelExporter:
     """Экспорт проектных данных по блоку {{translation_table}} … {{subtotal_translation_table}}."""
@@ -338,6 +354,7 @@ class ExcelExporter:
         self.add_hdr_titles = {k: tr(v, lang) for k, v in ADD_HDR_TITLES.items()}
         self.subtotal_title = f"{tr('Промежуточная сумма', lang)} ({currency}):"
         self.discount_title = tr("Скидка", lang)
+        self.markup_title = tr("Наценка", lang)
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
@@ -549,19 +566,22 @@ class ExcelExporter:
 
             subtot_cells: List[str] = []
             discount_cells: List[str] = []
+            markup_cells: List[str] = []
             current_row = 13
 
-            last_row, ps_cell, ps_discount = self._render_project_setup_table(
+            last_row, ps_cell, ps_discount, ps_markup = self._render_project_setup_table(
                 quotation_ws, project_data, current_row
             )
             if ps_cell:
                 subtot_cells.append(ps_cell)
             if ps_discount:
                 discount_cells.append(ps_discount)
+            if ps_markup:
+                markup_cells.append(ps_markup)
             step("Настройка проекта")
             current_row = last_row + 1
 
-            last_row, tr_cells, tr_discount_cells = self._render_translation_blocks(
+            last_row, tr_cells, tr_discount_cells, tr_markup_cells = self._render_translation_blocks(
                 quotation_ws,
                 project_data,
                 current_row,
@@ -569,9 +589,15 @@ class ExcelExporter:
             )
             subtot_cells += tr_cells
             discount_cells += tr_discount_cells
+            markup_cells += tr_markup_cells
             current_row = last_row + 1
 
-            last_row, add_cells, add_discount_cells = self._render_additional_services_tables(
+            (
+                last_row,
+                add_cells,
+                add_discount_cells,
+                add_markup_cells,
+            ) = self._render_additional_services_tables(
                 quotation_ws,
                 project_data,
                 current_row,
@@ -579,6 +605,7 @@ class ExcelExporter:
             )
             subtot_cells += add_cells
             discount_cells += add_discount_cells
+            markup_cells += add_markup_cells
 
             self.logger.debug("Subtotal cells collected: %s", subtot_cells)
 
@@ -599,6 +626,7 @@ class ExcelExporter:
                 project_data,
                 subtot_cells,
                 discount_cells,
+                markup_cells,
                 start_row=1,
                 wb=wb,
             )
@@ -885,7 +913,8 @@ class ExcelExporter:
         titles: Dict[str, str],
         header_title: Optional[str] = None,
         discount_percent: float = 0.0,
-    ) -> Tuple[int, Optional[str], Optional[str]]:
+        markup_percent: float = 0.0,
+    ) -> Tuple[int, Optional[str], Optional[str], Optional[str]]:
         tpl_start = self._find_first(template_ws, start_ph)
         if not tpl_start:
             return start_row - 1, None
@@ -1024,6 +1053,7 @@ class ExcelExporter:
             total_cell.number_format = self.total_fmt
 
         discount_value = max(0.0, min(100.0, float(discount_percent or 0.0)))
+        markup_value = max(0.0, min(100.0, float(markup_percent or 0.0)))
         subtotal_label = self.subtotal_title
 
         for c in range(first_col, last_col + 1):
@@ -1035,10 +1065,12 @@ class ExcelExporter:
         if r != t_first_data:
             subtotal_formula = f"SUM({totalL}{t_first_data}:{totalL}{r - 1})"
 
+        base_formula = subtotal_formula
         discount_cell_ref: Optional[str] = None
-        if discount_value > 0 and subtotal_formula != "0":
+        markup_cell_ref: Optional[str] = None
+        if discount_value > 0 and base_formula != "0":
             discount_str = format(discount_value, "g")
-            discount_formula = f"({subtotal_formula})*{discount_str}/100"
+            discount_formula = f"({base_formula})*{discount_str}/100"
             self._insert_rows(ws, t_subtotal_row, 1)
             for c in range(first_col, last_col + 1):
                 self._copy_style(
@@ -1056,7 +1088,31 @@ class ExcelExporter:
             discount_cell.number_format = self.total_fmt
             discount_cell_ref = f"{totalL}{t_subtotal_row}"
             t_subtotal_row += 1
-            subtotal_formula = f"({subtotal_formula})-({discount_formula})"
+            subtotal_formula = f"({base_formula})-({discount_formula})"
+        else:
+            subtotal_formula = base_formula
+
+        if markup_value > 0 and base_formula != "0":
+            markup_str = format(markup_value, "g")
+            markup_formula = f"({base_formula})*{markup_str}/100"
+            self._insert_rows(ws, t_subtotal_row, 1)
+            for c in range(first_col, last_col + 1):
+                self._copy_style(
+                    ws.cell(t_subtotal_row + 1, c), ws.cell(t_subtotal_row, c)
+                )
+                if c not in (col_param, col_total):
+                    ws.cell(t_subtotal_row, c, None)
+            markup_label = f"{self.markup_title} {markup_str}%"
+            ws.cell(t_subtotal_row, col_param, markup_label)
+            markup_cell = ws.cell(
+                t_subtotal_row,
+                col_total,
+                f"={markup_formula}",
+            )
+            markup_cell.number_format = self.total_fmt
+            markup_cell_ref = f"{totalL}{t_subtotal_row}"
+            t_subtotal_row += 1
+            subtotal_formula = f"({subtotal_formula})+({markup_formula})"
 
         subtotal_cell = ws.cell(
             t_subtotal_row,
@@ -1065,7 +1121,12 @@ class ExcelExporter:
         )
         subtotal_cell.number_format = self.total_fmt
 
-        return t_subtotal_row, f"{totalL}{t_subtotal_row}", discount_cell_ref
+        return (
+            t_subtotal_row,
+            f"{totalL}{t_subtotal_row}",
+            discount_cell_ref,
+            markup_cell_ref,
+        )
 
     def _render_translation_blocks(
         self,
@@ -1073,7 +1134,7 @@ class ExcelExporter:
         project_data: Dict[str, Any],
         start_row: int,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[int, List[str], List[str]]:
+    ) -> Tuple[int, List[str], List[str], List[str]]:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
             return start_row - 1, [], []
@@ -1092,36 +1153,47 @@ class ExcelExporter:
         current_row = start_row
         subtot_cells: List[str] = []
         discount_cells: List[str] = []
+        markup_cells: List[str] = []
         for pair in pairs:
-            last_row, subtotal_cell, discount_cell = renderer.render(
+            last_row, subtotal_cell, discount_cell, markup_cell = renderer.render(
                 ws, current_row, pair
             )
             if subtotal_cell:
                 subtot_cells.append(subtotal_cell)
             if discount_cell:
                 discount_cells.append(discount_cell)
+            if markup_cell:
+                markup_cells.append(markup_cell)
             current_row = last_row + 1
             if progress_callback:
                 progress_callback(pair.get("pair_name", ""))
 
-        return current_row - 1, subtot_cells, discount_cells
+        return current_row - 1, subtot_cells, discount_cells, markup_cells
 
     def _render_project_setup_table(
         self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
-    ) -> Tuple[int, Optional[str]]:
+    ) -> Tuple[int, Optional[str], Optional[str]]:
         setup_data = project_data.get("project_setup", [])
         discount = project_data.get("project_setup_discount_percent", 0.0)
+        markup = project_data.get("project_setup_markup_percent", 0.0)
         if isinstance(setup_data, dict):
             items: List[Dict[str, Any]] = setup_data.get("rows", [])
             discount = setup_data.get("discount_percent", discount)
+            markup = setup_data.get("markup_percent", markup)
         else:
             items = setup_data
         if not items:
-            return start_row - 1, None
+            return start_row - 1, None, None
         renderer = ProjectSetupRenderer(self)
-        payload = {"rows": items, "discount_percent": discount}
-        last_row, cell, discount_cell = renderer.render(ws, start_row, payload)
-        return last_row, cell, discount_cell
+        payload = {
+            "rows": items,
+            "discount_percent": discount,
+            "markup_percent": markup,
+        }
+        last_row, cell, discount_cell, markup_cell = renderer.render(
+            ws, start_row, payload
+        )
+        return last_row, cell, discount_cell, markup_cell
 
     def _render_additional_services_tables(
         self,
@@ -1129,24 +1201,29 @@ class ExcelExporter:
         project_data: Dict[str, Any],
         start_row: int,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[int, List[str], List[str]]:
+    ) -> Tuple[int, List[str], List[str], List[str]]:
         blocks: List[Dict[str, Any]] = project_data.get("additional_services") or []
         if not blocks:
-            return start_row - 1, [], []
+            return start_row - 1, [], [], []
         renderer = AdditionalServicesRenderer(self)
         current_row = start_row
         subtot_cells: List[str] = []
         discount_cells: List[str] = []
+        markup_cells: List[str] = []
         for block in blocks:
-            last_row, cell, discount_cell = renderer.render(ws, current_row, block)
+            last_row, cell, discount_cell, markup_cell = renderer.render(
+                ws, current_row, block
+            )
             if cell:
                 subtot_cells.append(cell)
             if discount_cell:
                 discount_cells.append(discount_cell)
+            if markup_cell:
+                markup_cells.append(markup_cell)
             current_row = last_row + 1
             if progress_callback:
                 progress_callback(block.get("header_title", ""))
-        return current_row - 1, subtot_cells, discount_cells
+        return current_row - 1, subtot_cells, discount_cells, markup_cells
 
     # ----------------------------- ТЕКСТОВЫЕ ПЛЕЙСХОЛДЕРЫ -----------------------------
 
@@ -1156,6 +1233,7 @@ class ExcelExporter:
         project_data: Dict[str, Any],
         subtot_cells: List[str],
         discount_cells: List[str],
+        markup_cells: List[str],
         start_row: int = 1,
         wb: Optional[Workbook] = None,
     ) -> None:
@@ -1164,6 +1242,9 @@ class ExcelExporter:
         self.logger.debug("Total formula calculated: %s", total_formula)
         discount_formula = (
             f"=SUM({','.join(discount_cells)})" if discount_cells else ""
+        )
+        markup_formula = (
+            f"=SUM({','.join(markup_cells)})" if markup_cells else ""
         )
 
         # формируем строку всех языков: сорс (первый), затем уникальные таргеты
@@ -1217,25 +1298,52 @@ class ExcelExporter:
                     t = v.strip()
                     if t == "{{total}}":
                         target_row = r
+                        insert_offset = 0
                         if discount_formula:
-                            self._insert_rows(ws, r, 1)
+                            self._insert_rows(ws, r + insert_offset, 1)
                             for c2 in range(1, ws.max_column + 1):
                                 self._copy_style(
-                                    ws.cell(r + 1, c2), ws.cell(r, c2)
+                                    ws.cell(r + insert_offset + 1, c2),
+                                    ws.cell(r + insert_offset, c2),
                                 )
-                                ws.cell(r, c2).value = None
+                                ws.cell(r + insert_offset, c2).value = None
                             label_col = 1
-                            ws.cell(r, label_col, f"{self.discount_title}")
-                            discount_cell = ws.cell(r, c, discount_formula)
+                            ws.cell(r + insert_offset, label_col, f"{self.discount_title}")
+                            discount_cell = ws.cell(
+                                r + insert_offset, c, discount_formula
+                            )
                             discount_cell.number_format = self.total_fmt
                             for c2 in range(1, ws.max_column + 1):
-                                cell2 = ws.cell(r, c2)
+                                cell2 = ws.cell(r + insert_offset, c2)
                                 val2 = cell2.value
                                 if isinstance(val2, str) and "{{$}}" in val2:
                                     cell2.value = val2.replace(
                                         "{{$}}", currency_code
                                     )
-                            target_row = r + 1
+                            insert_offset += 1
+                        if markup_formula:
+                            self._insert_rows(ws, r + insert_offset, 1)
+                            for c2 in range(1, ws.max_column + 1):
+                                self._copy_style(
+                                    ws.cell(r + insert_offset + 1, c2),
+                                    ws.cell(r + insert_offset, c2),
+                                )
+                                ws.cell(r + insert_offset, c2).value = None
+                            label_col = 1
+                            ws.cell(r + insert_offset, label_col, f"{self.markup_title}")
+                            markup_cell = ws.cell(
+                                r + insert_offset, c, markup_formula
+                            )
+                            markup_cell.number_format = self.total_fmt
+                            for c2 in range(1, ws.max_column + 1):
+                                cell2 = ws.cell(r + insert_offset, c2)
+                                val2 = cell2.value
+                                if isinstance(val2, str) and "{{$}}" in val2:
+                                    cell2.value = val2.replace(
+                                        "{{$}}", currency_code
+                                    )
+                            insert_offset += 1
+                        target_row = r + insert_offset
                         total_cell = ws.cell(target_row, c, total_formula)
                         total_cell.number_format = self.total_fmt
                         total_cell_ref = total_cell.coordinate

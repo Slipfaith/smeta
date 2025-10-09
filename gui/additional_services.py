@@ -32,6 +32,7 @@ class AdditionalServiceTable(QWidget):
         self.lang = lang
         self._subtotal = 0.0
         self._discount_percent = 0.0
+        self._markup_percent = 0.0
         self._setup_ui(title)
 
     # ------------------------------------------------------------------ UI
@@ -92,6 +93,24 @@ class AdditionalServiceTable(QWidget):
         self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         discount_layout.addWidget(self.discounted_label)
         layout.addLayout(discount_layout)
+
+        markup_layout = QHBoxLayout()
+        self.markup_label = QLabel(tr("Наценка, %", self.lang))
+        self.markup_spin = QDoubleSpinBox()
+        self.markup_spin.setRange(0, 100)
+        self.markup_spin.setDecimals(1)
+        self.markup_spin.setSingleStep(1.0)
+        self.markup_spin.setValue(0.0)
+        self.markup_spin.valueChanged.connect(self._on_markup_changed)
+        markup_layout.addWidget(self.markup_label)
+        markup_layout.addWidget(self.markup_spin)
+        markup_layout.addStretch()
+        self.markup_amount_label = QLabel(
+            f"{tr('Сумма наценки', self.lang)}: 0.00{f' {self.currency_symbol}' if self.currency_symbol else ''}"
+        )
+        self.markup_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        markup_layout.addWidget(self.markup_amount_label)
+        layout.addLayout(markup_layout)
 
         subtotal_suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
         self.subtotal_label = QLabel(
@@ -200,20 +219,33 @@ class AdditionalServiceTable(QWidget):
         return item.text() if item else "0"
 
     def get_subtotal(self) -> float:
-        return self._subtotal * (1 - self._discount_percent / 100.0)
+        base = self._subtotal
+        discount_amount = base * (self._discount_percent / 100.0)
+        markup_amount = base * (self._markup_percent / 100.0)
+        return base - discount_amount + markup_amount
 
     def get_discount_amount(self) -> float:
         return self._subtotal * (self._discount_percent / 100.0)
+
+    def get_markup_amount(self) -> float:
+        return self._subtotal * (self._markup_percent / 100.0)
 
     def _update_discount_label(self) -> None:
         suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
         if hasattr(self, "discount_label"):
             self.discount_label.setText(tr("Скидка, %", self.lang))
+        if hasattr(self, "markup_label"):
+            self.markup_label.setText(tr("Наценка, %", self.lang))
         discount_amount = self._subtotal * (self._discount_percent / 100.0)
+        markup_amount = self._subtotal * (self._markup_percent / 100.0)
         effective_total = self.get_subtotal()
         if hasattr(self, "discounted_label"):
             self.discounted_label.setText(
                 f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix}"
+            )
+        if hasattr(self, "markup_amount_label"):
+            self.markup_amount_label.setText(
+                f"{tr('Сумма наценки', self.lang)}: {format_amount(markup_amount, self.lang)}{suffix}"
             )
         if hasattr(self, "subtotal_label"):
             self.subtotal_label.setText(
@@ -222,6 +254,11 @@ class AdditionalServiceTable(QWidget):
 
     def _on_discount_changed(self, value: float) -> None:
         self._discount_percent = max(0.0, min(100.0, float(value)))
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def _on_markup_changed(self, value: float) -> None:
+        self._markup_percent = max(0.0, min(100.0, float(value)))
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -234,6 +271,18 @@ class AdditionalServiceTable(QWidget):
             self.discount_spin.blockSignals(True)
             self.discount_spin.setValue(self._discount_percent)
             self.discount_spin.blockSignals(False)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def get_markup_percent(self) -> float:
+        return self._markup_percent
+
+    def set_markup_percent(self, value: float) -> None:
+        self._markup_percent = max(0.0, min(100.0, float(value)))
+        if hasattr(self, "markup_spin"):
+            self.markup_spin.blockSignals(True)
+            self.markup_spin.setValue(self._markup_percent)
+            self.markup_spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -256,6 +305,8 @@ class AdditionalServiceTable(QWidget):
             "rows": rows,
             "discount_percent": self.get_discount_percent(),
             "discount_amount": self.get_discount_amount(),
+            "markup_percent": self.get_markup_percent(),
+            "markup_amount": self.get_markup_amount(),
         }
 
     def load_data(self, data: Dict) -> None:
@@ -277,6 +328,7 @@ class AdditionalServiceTable(QWidget):
             self.table.setItem(r, 4, total_item)
         self.update_sums()
         self.set_discount_percent(data.get("discount_percent", 0.0))
+        self.set_markup_percent(data.get("markup_percent", 0.0))
 
     def set_currency(self, symbol: str, code: str) -> None:
         self.currency_symbol = symbol
@@ -311,6 +363,13 @@ class AdditionalServiceTable(QWidget):
             suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
             self.discounted_label.setText(
                 f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
+            )
+        if hasattr(self, "markup_label"):
+            self.markup_label.setText(tr("Наценка, %", lang))
+        if hasattr(self, "markup_amount_label"):
+            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+            self.markup_amount_label.setText(
+                f"{tr('Сумма наценки', lang)}: 0.00{suffix}"
             )
         self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
@@ -407,4 +466,7 @@ class AdditionalServicesWidget(QWidget):
 
     def get_discount_amount(self) -> float:
         return sum(tbl.get_discount_amount() for tbl in self.tables)
+
+    def get_markup_amount(self) -> float:
+        return sum(tbl.get_markup_amount() for tbl in self.tables)
 

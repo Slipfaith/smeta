@@ -32,6 +32,7 @@ class ProjectSetupWidget(QWidget):
         self.lang = lang
         self._subtotal = 0.0
         self._discount_percent = 0.0
+        self._markup_percent = 0.0
         self._setup_ui(initial_volume)
 
     def _setup_ui(self, initial_volume: float):
@@ -137,6 +138,24 @@ class ProjectSetupWidget(QWidget):
         self.discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         discount_layout.addWidget(self.discounted_label)
         vbox.addLayout(discount_layout)
+
+        markup_layout = QHBoxLayout()
+        self.markup_label = QLabel(tr("Наценка, %", self.lang))
+        self.markup_spin = QDoubleSpinBox()
+        self.markup_spin.setRange(0, 100)
+        self.markup_spin.setDecimals(1)
+        self.markup_spin.setSingleStep(1.0)
+        self.markup_spin.setValue(0.0)
+        self.markup_spin.valueChanged.connect(self._on_markup_changed)
+        markup_layout.addWidget(self.markup_label)
+        markup_layout.addWidget(self.markup_spin)
+        markup_layout.addStretch()
+        self.markup_amount_label = QLabel(
+            f"{tr('Сумма наценки', self.lang)}: 0.00 {self.currency_symbol}"
+        )
+        self.markup_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        markup_layout.addWidget(self.markup_amount_label)
+        vbox.addLayout(markup_layout)
 
         self.subtotal_label = QLabel(
             f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}"
@@ -255,6 +274,12 @@ class ProjectSetupWidget(QWidget):
             self.discount_label.setEnabled(checked)
         if hasattr(self, "discounted_label"):
             self.discounted_label.setEnabled(checked)
+        if hasattr(self, "markup_spin"):
+            self.markup_spin.setEnabled(checked)
+        if hasattr(self, "markup_label"):
+            self.markup_label.setEnabled(checked)
+        if hasattr(self, "markup_amount_label"):
+            self.markup_amount_label.setEnabled(checked)
         self.update_sums()
 
     # ---------- calculations ----------
@@ -297,19 +322,34 @@ class ProjectSetupWidget(QWidget):
     def get_subtotal(self) -> float:
         if not self.is_enabled():
             return 0.0
-        return self._subtotal * (1 - self._discount_percent / 100.0)
+        base = self._subtotal
+        discount_amount = base * (self._discount_percent / 100.0)
+        markup_amount = base * (self._markup_percent / 100.0)
+        return base - discount_amount + markup_amount
 
     def get_discount_amount(self) -> float:
         if not self.is_enabled():
             return 0.0
         return self._subtotal * (self._discount_percent / 100.0)
 
+    def get_markup_amount(self) -> float:
+        if not self.is_enabled():
+            return 0.0
+        return self._subtotal * (self._markup_percent / 100.0)
+
     def _update_discount_label(self) -> None:
         if hasattr(self, "discount_label"):
             self.discount_label.setText(tr("Скидка, %", self.lang))
+        if hasattr(self, "markup_label"):
+            self.markup_label.setText(tr("Наценка, %", self.lang))
         suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
         discount_amount = (
             self._subtotal * (self._discount_percent / 100.0)
+            if self.is_enabled()
+            else 0.0
+        )
+        markup_amount = (
+            self._subtotal * (self._markup_percent / 100.0)
             if self.is_enabled()
             else 0.0
         )
@@ -318,6 +358,10 @@ class ProjectSetupWidget(QWidget):
             self.discounted_label.setText(
                 f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix}"
             )
+        if hasattr(self, "markup_amount_label"):
+            self.markup_amount_label.setText(
+                f"{tr('Сумма наценки', self.lang)}: {format_amount(markup_amount, self.lang)}{suffix}"
+            )
         if hasattr(self, "subtotal_label"):
             self.subtotal_label.setText(
                 f"{tr('Промежуточная сумма', self.lang)}: {format_amount(effective_total, self.lang)}{suffix}"
@@ -325,6 +369,11 @@ class ProjectSetupWidget(QWidget):
 
     def _on_discount_changed(self, value: float) -> None:
         self._discount_percent = max(0.0, min(100.0, float(value)))
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def _on_markup_changed(self, value: float) -> None:
+        self._markup_percent = max(0.0, min(100.0, float(value)))
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -337,6 +386,18 @@ class ProjectSetupWidget(QWidget):
             self.discount_spin.blockSignals(True)
             self.discount_spin.setValue(self._discount_percent)
             self.discount_spin.blockSignals(False)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
+
+    def get_markup_percent(self) -> float:
+        return self._markup_percent
+
+    def set_markup_percent(self, value: float) -> None:
+        self._markup_percent = max(0.0, min(100.0, float(value)))
+        if hasattr(self, "markup_spin"):
+            self.markup_spin.blockSignals(True)
+            self.markup_spin.setValue(self._markup_percent)
+            self.markup_spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -416,5 +477,12 @@ class ProjectSetupWidget(QWidget):
             suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
             self.discounted_label.setText(
                 f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
+            )
+        if hasattr(self, "markup_label"):
+            self.markup_label.setText(tr("Наценка, %", lang))
+        if hasattr(self, "markup_amount_label"):
+            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
+            self.markup_amount_label.setText(
+                f"{tr('Сумма наценки', lang)}: 0.00{suffix}"
             )
         self.update_sums()
