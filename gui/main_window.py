@@ -14,18 +14,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QPushButton,
-    QGroupBox,
-    QTextEdit,
     QFileDialog,
     QMessageBox,
-    QScrollArea,
     QTabWidget,
     QSplitter,
     QComboBox,
-    QSlider,
-    QDoubleSpinBox,
     QInputDialog,
 )
 from PySide6.QtCore import Qt, QTimer
@@ -35,6 +28,9 @@ from logic.progress import Progress
 from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
+from gui.drop_areas import DropArea
+from gui.panels.left_panel import create_left_panel
+from gui.panels.right_panel import create_right_panel
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
@@ -42,7 +38,7 @@ from gui.utils import format_amount, format_language_display
 from gui.rates_import_dialog import ExcelRatesDialog
 from logic.excel_exporter import ExcelExporter
 from logic.pdf_exporter import xlsx_to_pdf
-from logic.user_config import load_languages, add_language
+from logic.user_config import add_language, load_languages
 from logic.trados_xml_parser import parse_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
@@ -60,178 +56,6 @@ from logic.outlook_import import (
 )
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
-
-class DropArea(QScrollArea):
-    def __init__(self, callback, parent=None):
-        super().__init__(parent)
-        self._callback = callback
-        self.setAcceptDrops(True)
-        self.setWidgetResizable(True)
-
-        self._base_style = """
-            QScrollArea {
-                border: 2px dashed #e5e7eb;
-                border-radius: 8px;
-                background-color: #fafafa;
-            }
-            QScrollArea[dragOver="true"] {
-                border: 2px dashed #2563eb;
-                background-color: #eff6ff;
-            }
-        """
-        self.setStyleSheet(self._base_style)
-
-    def disable_hint_style(self):
-        self.setStyleSheet(
-            """
-            QScrollArea[dragOver="true"] {
-                border: 2px dashed #2563eb;
-                background-color: #eff6ff;
-            }
-        """
-        )
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
-            all_paths = []
-            xml_paths = []
-            for url in urls:
-                path = url.toLocalFile()
-                all_paths.append(path)
-                if path.lower().endswith(".xml") or path.lower().endswith(".XML"):
-                    xml_paths.append(path)
-            if xml_paths:
-                event.acceptProposedAction()
-                self.setProperty("dragOver", True)
-                self.style().unpolish(self)
-                self.style().polish(self)
-                return
-        event.ignore()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self.setProperty("dragOver", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def dropEvent(self, event):
-        self.setProperty("dragOver", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-        if not event.mimeData().hasUrls():
-            event.ignore()
-            return
-
-        urls = event.mimeData().urls()
-
-        all_paths = []
-        xml_paths = []
-
-        for url in urls:
-            path = url.toLocalFile()
-            all_paths.append(path)
-
-            try:
-                if not os.path.exists(path) or not os.path.isfile(path):
-                    continue
-            except Exception:
-                continue
-
-            if path.lower().endswith((".xml", ".XML")):
-                xml_paths.append(path)
-            else:
-                try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                        first_line = f.readline().strip()
-                        if first_line.startswith("<?xml") or "<" in first_line:
-                            xml_paths.append(path)
-                except Exception:
-                    pass
-
-        if xml_paths:
-            try:
-                self._callback(xml_paths)
-                event.acceptProposedAction()
-            except Exception as e:
-                QMessageBox.critical(
-                    None, "Ошибка", f"Ошибка при обработке файлов: {e}"
-                )
-        else:
-            if all_paths:
-                QMessageBox.warning(
-                    None,
-                    "Предупреждение",
-                    f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n",
-                    "Поддерживаются только файлы с расширением .xml",
-                )
-            event.ignore()
-
-
-class ProjectInfoDropArea(QGroupBox):
-    def __init__(self, title: str, callback, parent=None):
-        super().__init__(title, parent)
-        self._callback = callback
-        self.setAcceptDrops(True)
-
-    def _set_drag_state(self, active: bool):
-        self.setProperty("dragOver", active)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                path = url.toLocalFile()
-                if path.lower().endswith(".msg"):
-                    event.acceptProposedAction()
-                    self._set_drag_state(True)
-                    return
-        event.ignore()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self._set_drag_state(False)
-
-    def dropEvent(self, event):
-        self._set_drag_state(False)
-        if not event.mimeData().hasUrls():
-            event.ignore()
-            return
-
-        msg_paths: List[str] = []
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path.lower().endswith(".msg"):
-                msg_paths.append(path)
-
-        if not msg_paths:
-            event.ignore()
-            return
-
-        try:
-            self._callback(msg_paths)
-            event.acceptProposedAction()
-        except Exception as exc:
-            traceback.print_exc()
-            QMessageBox.critical(
-                self,
-                "Ошибка обработки Outlook файла",
-                str(exc) or "Не удалось обработать перетащенный .msg файл.",
-            )
-            event.ignore()
-
 
 class TranslationCostCalculator(QMainWindow):
     def __init__(self):
@@ -329,8 +153,8 @@ class TranslationCostCalculator(QMainWindow):
         main_layout = QHBoxLayout()
         splitter = QSplitter(Qt.Horizontal)
 
-        left_panel = self.create_left_panel()
-        right_panel = self.create_right_panel()
+        left_panel = create_left_panel(self)
+        right_panel = create_right_panel(self)
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
@@ -339,172 +163,6 @@ class TranslationCostCalculator(QMainWindow):
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
-
-    def create_left_panel(self) -> QWidget:
-        container = QWidget()
-        lay = QVBoxLayout()
-        lay.setSpacing(12)
-
-        lang = self.gui_lang
-
-        self.project_group = ProjectInfoDropArea(
-            tr("Информация о проекте", lang), self.handle_project_info_drop
-        )
-        p = QVBoxLayout()
-        p.setSpacing(8)
-        self.project_name_label = QLabel(tr("Название проекта", lang) + ":")
-        p.addWidget(self.project_name_label)
-        self.project_name_edit = QLineEdit()
-        p.addWidget(self.project_name_edit)
-        self.client_name_label = QLabel(tr("Название клиента", lang) + ":")
-        p.addWidget(self.client_name_label)
-        self.client_name_edit = QLineEdit()
-        p.addWidget(self.client_name_edit)
-        self.contact_person_label = QLabel(tr("Контактное лицо", lang) + ":")
-        p.addWidget(self.contact_person_label)
-        self.contact_person_edit = QLineEdit()
-        p.addWidget(self.contact_person_edit)
-        self.email_label = QLabel(tr("Email", lang) + ":")
-        p.addWidget(self.email_label)
-        self.email_edit = QLineEdit()
-        p.addWidget(self.email_edit)
-        self.legal_entity_label = QLabel(tr("Юрлицо", lang) + ":")
-        p.addWidget(self.legal_entity_label)
-        self.legal_entity_combo = QComboBox()
-        # Placeholder that indicates no legal entity selected yet
-        self.legal_entity_placeholder = tr("Выберите юрлицо", lang)
-        self.legal_entity_combo.addItem(self.legal_entity_placeholder)
-        self.legal_entity_combo.addItems(self.legal_entities.keys())
-        self.legal_entity_combo.setCurrentIndex(0)
-        self.legal_entity_combo.currentTextChanged.connect(self.on_legal_entity_changed)
-        p.addWidget(self.legal_entity_combo)
-        self.currency_label = QLabel(tr("Валюта", lang) + ":")
-        p.addWidget(self.currency_label)
-        self.currency_combo = QComboBox()
-        self.currency_placeholder = tr("Выберите валюту", lang)
-        self.currency_combo.addItem(self.currency_placeholder)
-        self.currency_combo.addItems(["RUB", "EUR", "USD"])
-        self.currency_combo.setCurrentIndex(0)
-        self.currency_combo.currentIndexChanged.connect(self.on_currency_index_changed)
-        p.addWidget(self.currency_combo)
-        self.convert_btn = QPushButton(tr("Конвертировать в рубли", lang))
-        self.convert_btn.clicked.connect(self.convert_to_rub)
-        p.addWidget(self.convert_btn)
-
-        self.vat_label = QLabel(tr("НДС, %", lang) + ":")
-        self.vat_spin = QDoubleSpinBox()
-        self.vat_spin.setDecimals(2)
-        self.vat_spin.setRange(0, 100)
-        self.vat_spin.setValue(20.0)
-        self.vat_spin.valueChanged.connect(self.update_total)
-        self.vat_spin.wheelEvent = lambda event: event.ignore()
-
-        vat_layout = QHBoxLayout()
-        vat_layout.addWidget(self.vat_label)
-        vat_layout.addWidget(self.vat_spin)
-        p.addLayout(vat_layout)
-        self.project_group.setLayout(p)
-        lay.addWidget(self.project_group)
-        # Initial state: no legal entity selected
-        self.on_legal_entity_changed("")
-        self.on_currency_changed(self.get_current_currency_code())
-
-        self.pairs_group = QGroupBox(tr("Языковые пары", lang))
-        pg = QVBoxLayout()
-        pg.setSpacing(8)
-
-        mode = QHBoxLayout()
-        self.language_names_label = QLabel(tr("Названия языков", lang) + ":")
-        mode.addWidget(self.language_names_label)
-        mode.addStretch(1)
-        mode.addWidget(QLabel("EN"))
-        self.lang_mode_slider = QSlider(Qt.Horizontal)
-        self.lang_mode_slider.setRange(0, 1)
-        self.lang_mode_slider.setValue(1)
-        self.lang_mode_slider.setFixedWidth(70)
-        self.lang_mode_slider.valueChanged.connect(self.on_lang_mode_changed)
-        mode.addWidget(self.lang_mode_slider)
-        mode.addWidget(QLabel("RU"))
-        pg.addLayout(mode)
-
-        add_pair = QHBoxLayout()
-        self.source_lang_combo = self._make_lang_combo()
-        self.source_lang_combo.setEditable(True)
-        add_pair.addWidget(self.source_lang_combo)
-        add_pair.addWidget(QLabel("→"))
-        self.target_lang_combo = self._make_lang_combo()
-        self.target_lang_combo.setEditable(True)
-        add_pair.addWidget(self.target_lang_combo)
-        pg.addLayout(add_pair)
-
-        self.add_pair_btn = QPushButton(tr("Добавить языковую пару", lang))
-        self.add_pair_btn.clicked.connect(self.add_language_pair)
-        pg.addWidget(self.add_pair_btn)
-
-        self.current_pairs_label = QLabel(tr("Текущие пары", lang) + ":")
-        pg.addWidget(self.current_pairs_label)
-        self.pairs_list = QTextEdit()
-        self.pairs_list.setMaximumHeight(100)
-        self.pairs_list.setReadOnly(True)
-        pg.addWidget(self.pairs_list)
-
-        info_layout = QHBoxLayout()
-        self.language_pairs_count_label = QLabel(f"{tr('Загружено языковых пар', lang)}: 0")
-        info_layout.addWidget(self.language_pairs_count_label)
-        info_layout.addStretch()
-        self.clear_pairs_btn = QPushButton(tr("Очистить", lang))
-        self.clear_pairs_btn.clicked.connect(self.clear_language_pairs)
-        info_layout.addWidget(self.clear_pairs_btn)
-        pg.addLayout(info_layout)
-
-        setup_layout = QHBoxLayout()
-        self.project_setup_label = QLabel(
-            tr("Запуск и управление проектом", lang) + ":",
-        )
-        setup_layout.addWidget(self.project_setup_label)
-        self.project_setup_fee_spin = QDoubleSpinBox()
-        self.project_setup_fee_spin.setDecimals(2)
-        self.project_setup_fee_spin.setSingleStep(0.25)
-        self.project_setup_fee_spin.setMinimum(0.5)
-        self.project_setup_fee_spin.setValue(0.5)
-        setup_layout.addWidget(self.project_setup_fee_spin)
-        setup_layout.addStretch()
-        pg.addLayout(setup_layout)
-
-        self.add_lang_group = QGroupBox(tr("Добавить язык в справочник", lang))
-        lg = QVBoxLayout()
-        lg.setSpacing(8)
-        r1 = QHBoxLayout()
-        self.lang_ru_label = QLabel(tr("Название RU", lang) + ":")
-        r1.addWidget(self.lang_ru_label)
-        self.new_lang_ru = QLineEdit()
-        self.new_lang_ru.setPlaceholderText(tr("Валирийский", "ru"))
-        r1.addWidget(self.new_lang_ru)
-        lg.addLayout(r1)
-        r2 = QHBoxLayout()
-        self.lang_en_label = QLabel(tr("Название EN", lang) + ":")
-        r2.addWidget(self.lang_en_label)
-        self.new_lang_en = QLineEdit()
-        self.new_lang_en.setPlaceholderText(tr("Valyrian", "en"))
-        r2.addWidget(self.new_lang_en)
-        lg.addLayout(r2)
-        self.btn_add_lang = QPushButton(tr("Добавить язык", lang))
-        self.btn_add_lang.clicked.connect(self.handle_add_language)
-        lg.addWidget(self.btn_add_lang)
-        self.add_lang_group.setLayout(lg)
-        pg.addWidget(self.add_lang_group)
-
-        self.pairs_group.setLayout(pg)
-        lay.addWidget(self.pairs_group)
-
-        lay.addStretch()
-        container.setLayout(lay)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(container)
-        scroll.setMinimumWidth(280)
-        return scroll
 
     def _make_lang_combo(self) -> QComboBox:
         cb = QComboBox()
@@ -758,117 +416,6 @@ class TranslationCostCalculator(QMainWindow):
                 self.vat_spin.setValue(default_vat_value)
         else:
             self.vat_spin.setValue(0.0)
-
-    def create_right_panel(self) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout()
-        self.tabs = QTabWidget()
-        gui_lang = self.gui_lang
-        est_lang = "ru" if self.lang_display_ru else "en"
-
-        self.pairs_scroll = QScrollArea()
-        self.pairs_scroll.setWidgetResizable(True)
-        self.pairs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.pairs_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-
-        self.pairs_container_widget = QWidget()
-        self.pairs_layout = QVBoxLayout()
-        self.pairs_layout.setSpacing(12)
-
-        self.only_new_repeats_btn = QPushButton(
-            tr("Только новые слова и повторы", gui_lang)
-        )
-        self.only_new_repeats_btn.clicked.connect(self.toggle_only_new_repeats_mode)
-        self.pairs_layout.addWidget(self.only_new_repeats_btn)
-
-        self.project_setup_widget = ProjectSetupWidget(
-            self.project_setup_fee_spin.value(),
-            self.currency_symbol,
-            self.get_current_currency_code(),
-            lang=est_lang,
-        )
-        self.project_setup_widget.remove_requested.connect(
-            self.remove_project_setup_widget
-        )
-        self.project_setup_widget.subtotal_changed.connect(self.update_total)
-        self.pairs_layout.addWidget(self.project_setup_widget)
-        self.project_setup_fee_spin.valueChanged.connect(
-            self.update_project_setup_volume_from_spin
-        )
-        self.project_setup_widget.table.itemChanged.connect(
-            self.on_project_setup_item_changed
-        )
-
-        self.drop_hint_label = QLabel(
-            tr(
-                "Перетащите XML файлы отчетов Trados или Smartcat сюда для автоматического заполнения",
-                gui_lang,
-            )
-        )
-        self.drop_hint_label.setStyleSheet(
-            """
-            QLabel {
-                color: #9ca3af;
-                font-style: italic;
-                padding: 24px;
-                text-align: center;
-                background-color: #f9fafb;
-                border: 2px dashed #e5e7eb;
-                border-radius: 8px;
-                margin: 16px 0;
-            }
-        """
-        )
-        self.drop_hint_label.setAlignment(Qt.AlignCenter)
-        self.pairs_layout.addWidget(self.drop_hint_label)
-
-        self.pairs_layout.addStretch()
-
-        self.pairs_container_widget.setLayout(self.pairs_layout)
-        self.pairs_scroll.setWidget(self.pairs_container_widget)
-
-        self.pairs_scroll.setAcceptDrops(True)
-        self.setup_drag_drop()
-
-        self.tabs.addTab(self.pairs_scroll, tr("Языковые пары", gui_lang))
-
-        self.additional_services_widget = AdditionalServicesWidget(
-            self.currency_symbol,
-            self.get_current_currency_code(),
-            lang=est_lang,
-        )
-        self.additional_services_widget.subtotal_changed.connect(self.update_total)
-        add_scroll = QScrollArea()
-        add_scroll.setWidget(self.additional_services_widget)
-        add_scroll.setWidgetResizable(True)
-        self.tabs.addTab(add_scroll, tr("Дополнительные услуги", gui_lang))
-
-        lay.addWidget(self.tabs)
-
-        # ``total_label`` and adjustment labels are created in ``__init__`` so that
-        # early signal emissions can reference them without raising errors. Here we
-        # simply style them and add them to the layout.
-        self.markup_total_label.setAlignment(Qt.AlignRight)
-        self.markup_total_label.setStyleSheet(
-            "font-size: 12px; padding: 4px; color: #555;"
-        )
-        self.markup_total_label.hide()
-        lay.addWidget(self.markup_total_label)
-        self.discount_total_label.setAlignment(Qt.AlignRight)
-        self.discount_total_label.setStyleSheet(
-            "font-size: 12px; padding: 4px; color: #555;"
-        )
-        self.discount_total_label.hide()
-        lay.addWidget(self.discount_total_label)
-        self.total_label.setAlignment(Qt.AlignRight)
-        self.total_label.setStyleSheet(
-            "font-weight: bold; font-size: 14px; padding: 6px; color: #333;"
-        )
-        lay.addWidget(self.total_label)
-
-        w.setLayout(lay)
-        self.update_total()
-        return w
 
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop)
