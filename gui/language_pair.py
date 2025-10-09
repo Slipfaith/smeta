@@ -13,7 +13,11 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMenu,
     QAbstractItemView,
-    QDoubleSpinBox,
+    QPushButton,
+    QSpinBox,
+    QRadioButton,
+    QButtonGroup,
+    QWidgetAction,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -194,49 +198,21 @@ class LanguagePairWidget(QWidget):
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(show_menu)
 
-        # Промежуточная сумма, скидка и наценка
-        discount_layout = QHBoxLayout()
-        discount_label = QLabel(tr("Скидка, %", self.lang))
-        discount_spin = QDoubleSpinBox()
-        discount_spin.setRange(0, 100)
-        discount_spin.setDecimals(1)
-        discount_spin.setSingleStep(1.0)
-        discount_spin.setValue(0.0)
-        discount_spin.valueChanged.connect(self._on_discount_changed)
-        discount_layout.addWidget(discount_label)
-        discount_layout.addWidget(discount_spin)
-        discount_layout.addStretch()
-        discounted_label = QLabel(
-            f"{tr('Сумма скидки', self.lang)}: 0.00 {self.currency_symbol}"
-        )
-        discounted_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        discount_layout.addWidget(discounted_label)
-        vbox.addLayout(discount_layout)
-
-        markup_layout = QHBoxLayout()
-        markup_label = QLabel(tr("Наценка, %", self.lang))
-        markup_spin = QDoubleSpinBox()
-        markup_spin.setRange(0, 100)
-        markup_spin.setDecimals(1)
-        markup_spin.setSingleStep(1.0)
-        markup_spin.setValue(0.0)
-        markup_spin.valueChanged.connect(self._on_markup_changed)
-        markup_layout.addWidget(markup_label)
-        markup_layout.addWidget(markup_spin)
-        markup_layout.addStretch()
-        markup_amount_label = QLabel(
-            f"{tr('Сумма наценки', self.lang)}: 0.00 {self.currency_symbol}"
-        )
-        markup_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        markup_layout.addWidget(markup_amount_label)
-        vbox.addLayout(markup_layout)
-
-        subtotal_label = QLabel(
-            f"{tr('Промежуточная сумма', self.lang)}: 0.00 {self.currency_symbol}"
-        )
-        subtotal_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # Промежуточная сумма и меню модификаторов
+        subtotal_layout = QHBoxLayout()
+        subtotal_layout.setContentsMargins(0, 0, 0, 0)
+        subtotal_label = QLabel()
+        subtotal_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         subtotal_label.setObjectName("subtotal_label")
-        vbox.addWidget(subtotal_label)
+        subtotal_layout.addWidget(subtotal_label, 1)
+
+        modifiers_button = QPushButton("⚙️")
+        modifiers_button.setFlat(True)
+        modifiers_button.setCursor(Qt.PointingHandCursor)
+        modifiers_button.clicked.connect(self._show_modifiers_menu)
+        subtotal_layout.addWidget(modifiers_button)
+
+        vbox.addLayout(subtotal_layout)
 
         group.setLayout(vbox)
 
@@ -245,12 +221,7 @@ class LanguagePairWidget(QWidget):
         setattr(group, 'rows_config', rows)
         setattr(group, 'base_rate_row', base_rate_row)
         setattr(group, 'subtotal_label', subtotal_label)
-        setattr(group, 'discount_spin', discount_spin)
-        setattr(group, 'discount_label', discount_label)
-        setattr(group, 'discounted_label', discounted_label)
-        setattr(group, 'markup_spin', markup_spin)
-        setattr(group, 'markup_label', markup_label)
-        setattr(group, 'markup_amount_label', markup_amount_label)
+        setattr(group, 'modifiers_button', modifiers_button)
 
         # начальный пересчёт + авто-раскрытие высоты
         self.update_rates_and_sums(table, rows, base_rate_row)
@@ -439,26 +410,11 @@ class LanguagePairWidget(QWidget):
             return
         for attr in (
             "subtotal_label",
-            "discount_spin",
-            "discounted_label",
-            "discount_label",
-            "markup_spin",
-            "markup_label",
-            "markup_amount_label",
+            "modifiers_button",
         ):
             widget = getattr(group, attr, None)
             if widget:
                 widget.setEnabled(checked)
-        self._update_discount_label()
-        self.subtotal_changed.emit(self.get_subtotal())
-
-    def _on_discount_changed(self, value: float):
-        self._discount_percent = max(0.0, min(100.0, float(value)))
-        self._update_discount_label()
-        self.subtotal_changed.emit(self.get_subtotal())
-
-    def _on_markup_changed(self, value: float):
-        self._markup_percent = max(0.0, min(100.0, float(value)))
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -467,54 +423,187 @@ class LanguagePairWidget(QWidget):
         if not group:
             return
         subtotal_label: QLabel | None = getattr(group, "subtotal_label", None)
-        if subtotal_label:
-            suffix_total = (
-                f" {self.currency_symbol}" if self.currency_symbol else ""
-            )
-            effective_total = self.get_subtotal()
-            subtotal_label.setText(
-                f"{tr('Промежуточная сумма', self.lang)}: {format_amount(effective_total, self.lang)}{suffix_total}"
-            )
-        discounted_label: QLabel | None = getattr(group, "discounted_label", None)
-        discount_label: QLabel | None = getattr(group, "discount_label", None)
-        markup_label: QLabel | None = getattr(group, "markup_label", None)
-        markup_amount_label: QLabel | None = getattr(group, "markup_amount_label", None)
+        if not subtotal_label:
+            return
+
         base_total = self._subtotal
-        discount_amount = base_total * (self._discount_percent / 100.0)
-        markup_amount = base_total * (self._markup_percent / 100.0)
-        if not group.isChecked():
-            discount_amount = 0.0
-            markup_amount = 0.0
-        if discount_label:
-            discount_label.setText(tr("Скидка, %", self.lang))
-        if discounted_label:
-            suffix_discount = (
-                f" {self.currency_symbol}" if self.currency_symbol else ""
+        discount_percent = self._discount_percent if group.isChecked() else 0.0
+        markup_percent = self._markup_percent if group.isChecked() else 0.0
+        discount_amount = base_total * (discount_percent / 100.0)
+        markup_amount = base_total * (markup_percent / 100.0)
+        final_total = self.get_subtotal()
+
+        parts: list[str] = []
+        if discount_percent > 0:
+            parts.append(
+                f"− {self._format_currency(discount_amount)} ({self._format_percent(discount_percent)})"
             )
-            discounted_label.setText(
-                f"{tr('Сумма скидки', self.lang)}: {format_amount(discount_amount, self.lang)}{suffix_discount}"
+        if markup_percent > 0:
+            parts.append(
+                f"+ {self._format_currency(markup_amount)} ({self._format_percent(markup_percent)})"
             )
-        if markup_label:
-            markup_label.setText(tr("Наценка, %", self.lang))
-        if markup_amount_label:
-            suffix_markup = (
-                f" {self.currency_symbol}" if self.currency_symbol else ""
+
+        prefix_amount = base_total if group.isChecked() else final_total
+        prefix = f"{tr('Промежуточная сумма', self.lang)}: {self._format_currency(prefix_amount)}"
+        if parts:
+            subtotal_label.setText(
+                f"{prefix} {' '.join(parts)} = {self._format_currency(final_total)}"
             )
-            markup_amount_label.setText(
-                f"{tr('Сумма наценки', self.lang)}: {format_amount(markup_amount, self.lang)}{suffix_markup}"
+        else:
+            subtotal_label.setText(prefix)
+
+    def _format_currency(self, value: float) -> str:
+        formatted = format_amount(value, self.lang)
+        symbol = self.currency_symbol or ""
+        if not symbol:
+            return formatted
+        if symbol.isalpha():
+            return f"{formatted} {symbol}"
+        return f"{formatted}{symbol}"
+
+    @staticmethod
+    def _format_percent(value: float) -> str:
+        if abs(value - round(value)) < 1e-6:
+            return f"{int(round(value))}%"
+        return f"{value:.1f}%"
+
+    def _show_modifiers_menu(self):
+        group = getattr(self, "translation_group", None)
+        if not group or not group.isEnabled():
+            return
+
+        menu = QMenu(self)
+        menu.setSeparatorsCollapsible(False)
+
+        button_group = QButtonGroup(menu)
+        button_group.setExclusive(True)
+
+        def create_radio_action(text: str, with_spin: bool = False) -> tuple[QWidgetAction, QRadioButton, QSpinBox | None]:
+            container = QWidget(menu)
+            layout = QHBoxLayout(container)
+            layout.setContentsMargins(8, 4, 8, 4)
+            layout.setSpacing(8)
+            radio = QRadioButton(text)
+            layout.addWidget(radio)
+            button_group.addButton(radio)
+            spin: QSpinBox | None = None
+            if with_spin:
+                spin = QSpinBox(container)
+                spin.setRange(0, 100)
+                spin.setSuffix("%")
+                spin.setSingleStep(1)
+                spin.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                layout.addWidget(spin)
+            layout.addStretch()
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(container)
+            menu.addAction(action)
+            return action, radio, spin
+
+        _, none_radio, _ = create_radio_action(tr("Без модификаторов", self.lang))
+        _, discount_radio, discount_spin = create_radio_action(tr("Скидка", self.lang), True)
+        _, markup_radio, markup_spin = create_radio_action(tr("Наценка", self.lang), True)
+
+        menu.addSeparator()
+
+        totals_widget = QWidget(menu)
+        totals_layout = QHBoxLayout(totals_widget)
+        totals_layout.setContentsMargins(8, 4, 8, 4)
+        totals_layout.setSpacing(8)
+        totals_label = QLabel()
+        totals_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        totals_layout.addWidget(totals_label)
+        totals_action = QWidgetAction(menu)
+        totals_action.setDefaultWidget(totals_widget)
+        menu.addAction(totals_action)
+
+        buttons_widget = QWidget(menu)
+        buttons_layout = QHBoxLayout(buttons_widget)
+        buttons_layout.setContentsMargins(8, 4, 8, 4)
+        buttons_layout.setSpacing(8)
+        apply_button = QPushButton(tr("Применить", self.lang))
+        cancel_button = QPushButton(tr("Отмена", self.lang))
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(apply_button)
+        buttons_layout.addWidget(cancel_button)
+        buttons_action = QWidgetAction(menu)
+        buttons_action.setDefaultWidget(buttons_widget)
+        menu.addAction(buttons_action)
+
+        base_total = self._subtotal
+
+        if self._discount_percent > 0 and self._markup_percent <= 0:
+            discount_radio.setChecked(True)
+        elif self._markup_percent > 0 and self._discount_percent <= 0:
+            markup_radio.setChecked(True)
+        elif self._discount_percent == 0 and self._markup_percent == 0:
+            none_radio.setChecked(True)
+        else:
+            # При конфликте показываем скидку приоритетно
+            discount_radio.setChecked(True)
+
+        if discount_spin:
+            discount_spin.setEnabled(discount_radio.isChecked())
+            discount_spin.setValue(int(round(self._discount_percent)))
+        if markup_spin:
+            markup_spin.setEnabled(markup_radio.isChecked())
+            markup_spin.setValue(int(round(self._markup_percent)))
+
+        def update_totals_label():
+            discount_value = float(discount_spin.value()) if discount_spin and discount_radio.isChecked() else 0.0
+            markup_value = float(markup_spin.value()) if markup_spin and markup_radio.isChecked() else 0.0
+            preview_total = base_total - base_total * (discount_value / 100.0) + base_total * (markup_value / 100.0)
+            totals_label.setText(
+                f"{tr('Итого', self.lang)}: {self._format_currency(preview_total)}"
             )
+
+        update_totals_label()
+
+        def on_button_toggled(button, checked):
+            if button is discount_radio and discount_spin:
+                discount_spin.setEnabled(checked)
+            if button is markup_radio and markup_spin:
+                markup_spin.setEnabled(checked)
+            update_totals_label()
+
+        button_group.buttonToggled.connect(on_button_toggled)  # type: ignore[arg-type]
+
+        if discount_spin:
+            discount_spin.valueChanged.connect(update_totals_label)
+        if markup_spin:
+            markup_spin.valueChanged.connect(update_totals_label)
+
+        def apply_changes():
+            if none_radio.isChecked():
+                self._discount_percent = 0.0
+                self._markup_percent = 0.0
+            elif discount_radio.isChecked() and discount_spin:
+                self._discount_percent = float(discount_spin.value())
+                self._markup_percent = 0.0
+            elif markup_radio.isChecked() and markup_spin:
+                self._discount_percent = 0.0
+                self._markup_percent = float(markup_spin.value())
+            self._update_discount_label()
+            self.subtotal_changed.emit(self.get_subtotal())
+            menu.close()
+
+        def cancel_changes():
+            menu.close()
+
+        apply_button.clicked.connect(apply_changes)
+        cancel_button.clicked.connect(cancel_changes)
+
+        button: QPushButton | None = getattr(group, "modifiers_button", None)
+        if button:
+            menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+        else:
+            menu.exec(self.mapToGlobal(self.rect().center()))
 
     def get_discount_percent(self) -> float:
         return self._discount_percent
 
     def set_discount_percent(self, value: float) -> None:
         self._discount_percent = max(0.0, min(100.0, float(value)))
-        group = getattr(self, "translation_group", None)
-        spin: QDoubleSpinBox | None = getattr(group, "discount_spin", None) if group else None
-        if spin:
-            spin.blockSignals(True)
-            spin.setValue(self._discount_percent)
-            spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -523,12 +612,6 @@ class LanguagePairWidget(QWidget):
 
     def set_markup_percent(self, value: float) -> None:
         self._markup_percent = max(0.0, min(100.0, float(value)))
-        group = getattr(self, "translation_group", None)
-        spin: QDoubleSpinBox | None = getattr(group, "markup_spin", None) if group else None
-        if spin:
-            spin.blockSignals(True)
-            spin.setValue(self._markup_percent)
-            spin.blockSignals(False)
         self._update_discount_label()
         self.subtotal_changed.emit(self.get_subtotal())
 
@@ -545,24 +628,6 @@ class LanguagePairWidget(QWidget):
             f"{tr('Ставка', lang)} ({self.currency_symbol})",
             f"{tr('Сумма', lang)} ({self.currency_symbol})",
         ])
-        discount_label: QLabel | None = getattr(group, "discount_label", None)
-        if discount_label:
-            discount_label.setText(tr("Скидка, %", lang))
-        discounted_label: QLabel | None = getattr(group, "discounted_label", None)
-        if discounted_label:
-            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-            discounted_label.setText(
-                f"{tr('Сумма скидки', lang)}: 0.00{suffix}"
-            )
-        markup_label: QLabel | None = getattr(group, "markup_label", None)
-        if markup_label:
-            markup_label.setText(tr("Наценка, %", lang))
-        markup_amount_label: QLabel | None = getattr(group, "markup_amount_label", None)
-        if markup_amount_label:
-            suffix = f" {self.currency_symbol}" if self.currency_symbol else ""
-            markup_amount_label.setText(
-                f"{tr('Сумма наценки', lang)}: 0.00{suffix}"
-            )
         rows = group.rows_config
         for i, row_info in enumerate(rows):
             item = table.item(i, 0)
