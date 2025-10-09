@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from typing import Optional, Tuple
+from typing import Optional
 
 try:
     import psutil  # type: ignore
