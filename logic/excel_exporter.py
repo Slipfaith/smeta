@@ -1137,7 +1137,7 @@ class ExcelExporter:
     ) -> Tuple[int, List[str], List[str], List[str]]:
         pairs: List[Dict[str, Any]] = project_data.get("language_pairs", [])
         if not pairs:
-            return start_row - 1, [], []
+            return start_row - 1, [], [], []
         self.logger.debug("Rendering %d translation pair(s)", len(pairs))
 
         pairs = sorted(
@@ -1172,7 +1172,7 @@ class ExcelExporter:
 
     def _render_project_setup_table(
         self, ws: Worksheet, project_data: Dict[str, Any], start_row: int
-    ) -> Tuple[int, Optional[str], Optional[str]]:
+    ) -> Tuple[int, Optional[str], Optional[str], Optional[str]]:
         setup_data = project_data.get("project_setup", [])
         discount = project_data.get("project_setup_discount_percent", 0.0)
         markup = project_data.get("project_setup_markup_percent", 0.0)
@@ -1183,7 +1183,7 @@ class ExcelExporter:
         else:
             items = setup_data
         if not items:
-            return start_row - 1, None, None
+            return start_row - 1, None, None, None
         renderer = ProjectSetupRenderer(self)
         payload = {
             "rows": items,
