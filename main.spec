@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import babel
 import certifi
+import langcodes
+import language_data
 
 block_cipher = None
 
@@ -15,6 +17,8 @@ additional_datas = [
     (str(project_root / "templates" / "*"), "templates"),
     (str(project_root / "logic" / "legal_entities.json"), "logic"),
     (str(Path(babel.__file__).resolve().parent / "locale-data" / "*"), "babel/locale-data"),
+    (str(Path(langcodes.__file__).resolve().parent / "data" / "*"), "langcodes/data"),
+    (str(Path(language_data.__file__).resolve().parent / "data" / "*"), "language_data/data"),
     (certifi.where(), "certifi"),
     (str(project_root / "rateapp.ico"), "."),
 ]
