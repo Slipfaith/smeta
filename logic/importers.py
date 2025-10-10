@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Tuple
 
 from .outlook_import import map_message_to_project_info, parse_msg_file
 from .outlook_import.msg_reader import OutlookMsgError
 from .trados_xml_parser import parse_reports
+
+
+logger = logging.getLogger(__name__)
 
 
 def import_xml_reports(paths: List[str]) -> Tuple[Dict[str, Any], List[str]]:
@@ -23,7 +28,8 @@ def import_xml_reports(paths: List[str]) -> Tuple[Dict[str, Any], List[str]]:
 
     try:
         data, warnings, report_sources = parse_reports(paths)
-    except Exception as exc:  # pragma: no cover - passthrough for GUI display
+    except (ET.ParseError, OSError) as exc:
+        logger.exception("Failed to parse XML reports")
         errors.append(f"Ошибка при обработке XML файлов: {exc}")
         return result, errors
 
