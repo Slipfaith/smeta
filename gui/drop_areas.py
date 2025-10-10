@@ -6,14 +6,21 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
+from logic.translation_config import tr
 
 
 class DropArea(QScrollArea):
     """A scroll area that accepts dropped XML files and forwards them to a callback."""
 
-    def __init__(self, callback: Callable[[Sequence[str]], None], parent=None):
+    def __init__(
+        self,
+        callback: Callable[[Sequence[str]], None],
+        get_lang: Callable[[], str] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._callback = callback
+        self._get_lang = get_lang or (lambda: "ru")
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
 
@@ -92,16 +99,29 @@ class DropArea(QScrollArea):
                 self._callback(xml_paths)
                 event.acceptProposedAction()
             except Exception as e:
+                lang = self._get_lang()
                 QMessageBox.critical(
-                    None, "Ошибка", f"Ошибка при обработке файлов: {e}"
+                    self.window(),
+                    tr("Ошибка", lang),
+                    tr("Ошибка при обработке файлов: {0}", lang).format(e),
                 )
         else:
             if all_paths:
+                lang = self._get_lang()
                 QMessageBox.warning(
-                    None,
-                    "Предупреждение",
-                    f"Среди {len(all_paths)} перетащенных файлов не найдено ни одного XML файла.\n",
-                    "Поддерживаются только файлы с расширением .xml",
+                    self.window(),
+                    tr("Предупреждение", lang),
+                    "\n".join(
+                        [
+                            tr(
+                                "Среди {0} перетащенных файлов не найдено ни одного XML файла.",
+                                lang,
+                            ).format(len(all_paths)),
+                            tr(
+                                "Поддерживаются только файлы с расширением .xml", lang
+                            ),
+                        ]
+                    ),
                 )
             event.ignore()
 
@@ -109,9 +129,16 @@ class DropArea(QScrollArea):
 class ProjectInfoDropArea(QGroupBox):
     """A group box that accepts dropped Outlook .msg files with project metadata."""
 
-    def __init__(self, title: str, callback: Callable[[Iterable[str]], None], parent=None):
+    def __init__(
+        self,
+        title: str,
+        callback: Callable[[Iterable[str]], None],
+        get_lang: Callable[[], str] | None = None,
+        parent=None,
+    ):
         super().__init__(title, parent)
         self._callback = callback
+        self._get_lang = get_lang or (lambda: "ru")
         self.setAcceptDrops(True)
 
     def _set_drag_state(self, active: bool):
@@ -159,9 +186,10 @@ class ProjectInfoDropArea(QGroupBox):
             event.acceptProposedAction()
         except Exception as exc:
             traceback.print_exc()
+            lang = self._get_lang()
             QMessageBox.critical(
                 self,
-                "Ошибка обработки Outlook файла",
-                str(exc) or "Не удалось обработать перетащенный .msg файл.",
+                tr("Ошибка обработки Outlook файла", lang),
+                str(exc) or tr("Не удалось обработать перетащенный .msg файл.", lang),
             )
             event.ignore()
