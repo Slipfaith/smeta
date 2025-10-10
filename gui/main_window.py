@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import traceback
@@ -14,8 +15,8 @@ from PySide6.QtWidgets import (
     QSplitter,
     QComboBox,
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
 
 from logic.project_manager import ProjectManager
 from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
@@ -36,6 +37,7 @@ from logic.pm_store import load_pm_history, save_pm_history
 from logic.language_pairs import LanguagePairsMixin
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
+from logic.logging_utils import get_last_run_log_path
 from logic.xml_parser_common import resolve_language_display
 from logic.calculations import (
     convert_to_rub as calculate_convert_to_rub,
@@ -43,6 +45,9 @@ from logic.calculations import (
     set_currency_code as calculate_set_currency_code,
     update_total as calculate_update_total,
 )
+
+logger = logging.getLogger(__name__)
+
 
 class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
     def __init__(self):
@@ -92,6 +97,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.clear_action = QAction(tr("Очистить", lang), self)
         self.clear_action.triggered.connect(self.clear_all_data)
         self.project_menu.addAction(self.clear_action)
+        self.open_log_action = QAction(tr("Открыть лог", lang), self)
+        self.open_log_action.triggered.connect(self.open_last_run_log)
+        self.project_menu.addAction(self.open_log_action)
 
         self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
         self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
@@ -151,6 +159,29 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
+
+    def open_last_run_log(self):
+        """Open the last run log file in the system text editor."""
+        log_path = get_last_run_log_path()
+        try:
+            log_path.touch(exist_ok=True)
+        except OSError:
+            logger.exception("Failed to touch log file: %s", log_path)
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", self.gui_lang),
+                tr("Не удалось получить доступ к файлу журнала.", self.gui_lang),
+            )
+            return
+
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
+        if not opened:
+            logger.warning("System was unable to open log file: %s", log_path)
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", self.gui_lang),
+                tr("Не удалось открыть файл журнала.", self.gui_lang),
+            )
 
     def _make_lang_combo(self) -> QComboBox:
         cb = QComboBox()
