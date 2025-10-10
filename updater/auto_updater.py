@@ -7,8 +7,9 @@ import sys
 import tempfile
 import textwrap
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import requests
 from PySide6.QtCore import Qt
@@ -22,6 +23,12 @@ REPO = "Slipfaith/smeta"
 LAST_CHECK_FILE = Path(tempfile.gettempdir()) / "smeta_last_update_check"
 
 
+@dataclass(frozen=True)
+class ReleaseInfo:
+    version: str
+    assets: Dict[str, str]
+
+
 def _should_check(force: bool) -> bool:
     if force:
         return True
@@ -32,6 +39,23 @@ def _should_check(force: bool) -> bool:
 
 def _save_check_time() -> None:
     LAST_CHECK_FILE.touch()
+
+
+def _fetch_latest_release_info() -> ReleaseInfo:
+    url = f"https://api.github.com/repos/{REPO}/releases/latest"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    tag = data.get("tag_name", "")
+    if tag.startswith("v"):
+        tag = tag[1:]
+    assets: Dict[str, str] = {}
+    for asset in data.get("assets", []) or []:
+        name = asset.get("name")
+        download_url = asset.get("browser_download_url")
+        if name and download_url:
+            assets[name] = download_url
+    return ReleaseInfo(version=tag, assets=assets)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -108,6 +132,21 @@ def _schedule_windows_install(exe_path: Path, downloaded_exe: Path, old_path: Pa
         raise
 
 
+def check_for_updates_background(force: bool = False) -> Optional[str]:
+    """Fetch update metadata without blocking the GUI thread."""
+
+    if not _should_check(force):
+        return None
+    _save_check_time()
+    try:
+        release = _fetch_latest_release_info()
+    except Exception:
+        return None
+    if not release.version or release.version <= APP_VERSION:
+        return None
+    return release.version
+
+
 def check_for_updates(parent: Optional[object] = None, force: bool = False) -> None:
     """Check GitHub for a new release and update if confirmed by the user."""
     if not _should_check(force):
@@ -135,18 +174,15 @@ def check_for_updates(parent: Optional[object] = None, force: bool = False) -> N
             progress.setAutoReset(False)
             progress.show()
             QApplication.processEvents()
-        url = f"https://api.github.com/repos/{REPO}/releases/latest"
-        data = requests.get(url, timeout=10).json()
-        tag = data.get("tag_name", "")
-        if tag.startswith("v"):
-            tag = tag[1:]
-        if tag <= APP_VERSION:
+        release = _fetch_latest_release_info()
+        tag = release.version
+        if not tag or tag <= APP_VERSION:
             if progress is not None:
                 progress.close()
             if force:
                 QMessageBox.information(parent, tr("Обновление", lang), tr("Установлена последняя версия", lang))
             return
-        assets = {a["name"]: a["browser_download_url"] for a in data.get("assets", [])}
+        assets = release.assets
         exe_url = next((u for n, u in assets.items() if n.endswith(".exe")), None)
         sha_url = next((u for n, u in assets.items() if n.endswith(".sha256")), None)
         if not exe_url or not sha_url:

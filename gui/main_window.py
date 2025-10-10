@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import threading
 import traceback
 from typing import Dict, List, Any, Tuple, Optional
 
@@ -15,11 +16,17 @@ from PySide6.QtWidgets import (
     QSplitter,
     QComboBox,
 )
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
 
 from logic.project_manager import ProjectManager
-from updater import APP_VERSION, AUTHOR, RELEASE_DATE, check_for_updates
+from updater import (
+    APP_VERSION,
+    AUTHOR,
+    RELEASE_DATE,
+    check_for_updates,
+    check_for_updates_background,
+)
 from gui.language_pair import LanguagePairWidget
 from gui.additional_services import AdditionalServicesWidget
 from gui.drop_areas import DropArea
@@ -50,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
+    update_available = Signal(str)
+
     def __init__(self):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
@@ -77,6 +86,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.project_manager = ProjectManager(self)
         self.setup_ui()
         self.setup_style()
+        self.update_available.connect(self._handle_background_update_available)
         QTimer.singleShot(0, self.auto_check_for_updates)
 
     def setup_ui(self):
@@ -331,7 +341,26 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         check_for_updates(self, force=True)
 
     def auto_check_for_updates(self):
-        check_for_updates(self, force=False)
+        def worker():
+            try:
+                version = check_for_updates_background(force=False)
+            except Exception:  # pragma: no cover - network errors, etc.
+                logger.debug("Background update check failed", exc_info=True)
+                return
+            if version:
+                self.update_available.emit(version)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_background_update_available(self, version: str):
+        lang = self.gui_lang
+        reply = QMessageBox.question(
+            self,
+            tr("Доступно обновление", lang),
+            tr("Доступна новая версия {0}. Проверить обновление сейчас?", lang).format(version),
+        )
+        if reply == QMessageBox.Yes:
+            self.manual_update_check()
 
     def show_about_dialog(self):
         lang = self.gui_lang
