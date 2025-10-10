@@ -109,6 +109,7 @@ TRANSLATIONS = {
         "en": "Rate for \"{0}\" is 0. Continue?",
     },
     "Выберите юрлицо": {"ru": "Выберите юрлицо", "en": "Choose legal entity"},
+    "Выберите валюту": {"ru": "Выберите валюту", "en": "Select currency"},
     "Конвертировать в рубли": {"ru": "Конвертировать в рубли", "en": "Convert to RUB"},
     "Курс USD": {"ru": "Курс USD", "en": "USD rate"},
     "1 USD в рублях": {"ru": "1 USD в рублях", "en": "1 USD in RUB"},
@@ -119,8 +120,57 @@ TRANSLATIONS = {
     "Обновлены поля": {"ru": "Обновлены поля", "en": "Updated fields"},
     "Не удалось определить": {"ru": "Не удалось определить", "en": "Could not determine"},
     "Проверьте вручную": {"ru": "Проверьте вручную", "en": "Check manually"},
+    "Предупреждения при обработке файлов": {
+        "ru": "Предупреждения при обработке файлов",
+        "en": "Warnings during file processing",
+    },
     "Отправитель": {"ru": "Отправитель", "en": "Sender"},
     "Дата отправки": {"ru": "Дата отправки", "en": "Sent at"},
+    "Сначала добавьте языковые пары": {
+        "ru": "Сначала добавьте языковые пары",
+        "en": "Add language pairs first",
+    },
+    "Результат обработки": {"ru": "Результат обработки", "en": "Processing result"},
+    "В XML файлах не найдено данных о языковых парах.": {
+        "ru": "В XML файлах не найдено данных о языковых парах.",
+        "en": "No language pair data found in the XML files.",
+    },
+    "Возможные причины:": {
+        "ru": "Возможные причины:",
+        "en": "Possible reasons:",
+    },
+    "1. XML файлы имеют нестандартную структуру": {
+        "ru": "1. XML файлы имеют нестандартную структуру",
+        "en": "1. XML files have a non-standard structure",
+    },
+    "2. Не найдены элементы LanguageDirection": {
+        "ru": "2. Не найдены элементы LanguageDirection",
+        "en": "2. LanguageDirection elements were not found",
+    },
+    "3. Отсутствуют данные о языках или объемах": {
+        "ru": "3. Отсутствуют данные о языках или объемах",
+        "en": "3. Language or volume data is missing",
+    },
+    "Проверьте консоль для детальной информации.": {
+        "ru": "Проверьте консоль для детальной информации.",
+        "en": "Check the console for more details.",
+    },
+    "Ошибка при обработке файлов: {0}": {
+        "ru": "Ошибка при обработке файлов: {0}",
+        "en": "Error while processing files: {0}",
+    },
+    "Среди {0} перетащенных файлов не найдено ни одного XML файла.": {
+        "ru": "Среди {0} перетащенных файлов не найдено ни одного XML файла.",
+        "en": "No XML files found among the {0} dropped files.",
+    },
+    "Поддерживаются только файлы с расширением .xml": {
+        "ru": "Поддерживаются только файлы с расширением .xml",
+        "en": "Only files with the .xml extension are supported",
+    },
+    "Не удалось обработать перетащенный .msg файл.": {
+        "ru": "Не удалось обработать перетащенный .msg файл.",
+        "en": "Failed to process the dropped .msg file.",
+    },
     "Ошибка обработки Outlook файла": {
         "ru": "Ошибка обработки Outlook файла",
         "en": "Failed to process Outlook file",

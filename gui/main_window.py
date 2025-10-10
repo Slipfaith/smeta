@@ -363,7 +363,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.vat_spin.setValue(0.0)
 
     def setup_drag_drop(self):
-        drop_area = DropArea(self.handle_xml_drop)
+        drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
 
         drop_area.setWidget(self.pairs_container_widget)
 
@@ -742,7 +742,12 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def import_rates_from_excel(self) -> None:
         if not self.language_pairs:
-            QMessageBox.warning(self, "Ошибка", "Сначала добавьте языковые пары")
+            lang = self.gui_lang
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", lang),
+                tr("Сначала добавьте языковые пары", lang),
+            )
             return
         pairs = []
         pair_map = {}
@@ -784,27 +789,38 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         result, errors = import_xml_reports(paths)
 
         if errors:
-            QMessageBox.critical(self, "Ошибка", "\n".join(errors))
+            lang = self.gui_lang
+            QMessageBox.critical(self, tr("Ошибка", lang), "\n".join(errors))
             return
 
         warnings = result.get("warnings", [])
         if warnings:
-            warning_msg = "Предупреждения при обработке файлов:\n" + "\n".join(warnings)
-            QMessageBox.warning(self, "Предупреждение", warning_msg)
+            lang = self.gui_lang
+            warning_msg = (
+                f"{tr('Предупреждения при обработке файлов', lang)}:\n"
+                + "\n".join(warnings)
+            )
+            QMessageBox.warning(self, tr("Предупреждение", lang), warning_msg)
 
         data = result.get("data", {})
         report_sources = result.get("report_sources", {})
 
         if not data:
+            lang = self.gui_lang
+            message_lines = [
+                tr("В XML файлах не найдено данных о языковых парах.", lang),
+                "",
+                tr("Возможные причины:", lang),
+                tr("1. XML файлы имеют нестандартную структуру", lang),
+                tr("2. Не найдены элементы LanguageDirection", lang),
+                tr("3. Отсутствуют данные о языках или объемах", lang),
+                "",
+                tr("Проверьте консоль для детальной информации.", lang),
+            ]
             QMessageBox.warning(
                 self,
-                "Результат обработки",
-                "В XML файлах не найдено данных о языковых парах.\n"
-                "Возможные причины:\n"
-                "1. XML файлы имеют нестандартную структуру\n"
-                "2. Не найдены элементы LanguageDirection\n"
-                "3. Отсутствуют данные о языках или объемах\n"
-                "Проверьте консоль для детальной информации.",
+                tr("Результат обработки", lang),
+                "\n".join(message_lines),
             )
             return
 

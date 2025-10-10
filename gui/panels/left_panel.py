@@ -31,7 +31,9 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     lang = window.gui_lang
 
     window.project_group = ProjectInfoDropArea(
-        tr("Информация о проекте", lang), window.handle_project_info_drop
+        tr("Информация о проекте", lang),
+        window.handle_project_info_drop,
+        lambda: window.gui_lang,
     )
     project_layout = QVBoxLayout()
     project_layout.setSpacing(8)
