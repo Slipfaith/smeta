@@ -1,16 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-
+import os
 import babel
 import certifi
 
 block_cipher = None
 
-project_root = Path(__file__).resolve().parent
+# Безопасное определение корня проекта
+project_root = Path(__file__).resolve().parent if '__file__' in globals() else Path.cwd()
 
+# Дополнительные ресурсы
 additional_datas = [
-    (str(project_root / "languages" / "*"), "languages"),
     (str(project_root / "templates" / "*"), "templates"),
     (str(project_root / "logic" / "legal_entities.json"), "logic"),
     (str(Path(babel.__file__).resolve().parent / "locale-data" / "*"), "babel/locale-data"),
@@ -34,7 +35,11 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(
+    a.pure,
+    a.zipped_data,
+    cipher=block_cipher,
+)
 
 exe = EXE(
     pyz,
@@ -48,6 +53,6 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=False,   # если нужно окно консоли -> True
     icon=str(project_root / 'rateapp.ico'),
 )
