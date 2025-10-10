@@ -187,6 +187,10 @@ TRANSLATIONS = {
         "ru": "Новая версия {0}. Закрыть программу для установки?",
         "en": "New version {0} available. Close the application to install?",
     },
+    "Доступна новая версия {0}. Проверить обновление сейчас?": {
+        "ru": "Доступна новая версия {0}. Проверить обновление сейчас?",
+        "en": "New version {0} available. Check for updates now?",
+    },
     "Установлена последняя версия": {
         "ru": "Установлена последняя версия",
         "en": "You have the latest version",
