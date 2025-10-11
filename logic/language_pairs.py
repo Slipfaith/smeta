@@ -107,6 +107,8 @@ class LanguagePairsMixin:
         self.update_pairs_list()
         self.update_total()
 
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
+
         self.source_lang_combo.setCurrentIndex(0)
         self.target_lang_combo.setCurrentIndex(0)
 
@@ -143,6 +145,8 @@ class LanguagePairsMixin:
         self.update_pairs_list()
         self.update_total()
 
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
+
     def clear_language_pairs(self):
         for w in self.language_pairs.values():
             w.setParent(None)
@@ -151,3 +155,5 @@ class LanguagePairsMixin:
         self._pair_language_inputs.clear()
         self.update_pairs_list()
         self.update_total()
+
+        self._update_language_variant_regions_from_pairs([])

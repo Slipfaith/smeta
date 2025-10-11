@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Tuple
 
 import langcodes
 
@@ -128,6 +129,36 @@ def expand_language_code(code: str, locale: str = "ru") -> str:
         return _format_display(result, locale)
     except langcodes.LanguageTagError:
         return norm_lang(normalized)
+
+
+def language_identity(value: str) -> Tuple[str, str, str]:
+    """Return normalized language, script and territory codes for *value*.
+
+    The helper attempts to interpret ``value`` as a language identifier using
+    the same heuristics as :func:`expand_language_code`.  The return value is a
+    tuple ``(language, script, territory)`` where each element is normalised to
+    lower/upper case respectively.  Empty strings indicate that the component
+    could not be determined.
+    """
+
+    if not value:
+        return "", "", ""
+
+    tag = _language_tag_from_value(value)
+    candidates = [candidate for candidate in (tag, value) if candidate]
+
+    for candidate in candidates:
+        try:
+            lang = langcodes.Language.get(candidate)
+        except langcodes.LanguageTagError:
+            continue
+
+        language = (lang.language or "").lower()
+        script = (lang.script or "").title() if lang.script else ""
+        territory = (lang.territory or "").upper()
+        return language, script, territory
+
+    return "", "", ""
 
 
 def normalize_language_name(name: str, locale: str = "ru") -> str:

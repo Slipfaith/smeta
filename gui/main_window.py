@@ -3,7 +3,7 @@ import os
 import re
 import threading
 import traceback
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -45,7 +45,7 @@ from logic.language_pairs import LanguagePairsMixin
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.logging_utils import get_last_run_log_path
-from logic.xml_parser_common import resolve_language_display
+from logic.xml_parser_common import language_identity, resolve_language_display
 from logic.calculations import (
     convert_to_rub as calculate_convert_to_rub,
     on_currency_changed as calculate_on_currency_changed,
@@ -64,6 +64,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
         self.pair_headers: Dict[str, str] = {}
         self._pair_language_inputs: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._language_variant_regions: Dict[Tuple[str, str], Set[str]] = {}
         self.lang_display_ru: bool = True  # Controls language for quotation/Excel
         self.gui_lang: str = "ru"  # Controls application GUI language
         self._languages: List[Dict[str, str]] = load_languages()
@@ -690,10 +691,31 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         _, right = self._extract_pair_parts(pair_key)
         return right or pair_key
 
+    def _update_language_variant_regions_from_pairs(
+        self, pair_keys: Iterable[str]
+    ) -> None:
+        region_map: Dict[Tuple[str, str], Set[str]] = {}
+        for pair_key in pair_keys:
+            left, right = self._extract_pair_parts(pair_key)
+            for value in (left, right):
+                language_code, script_code, territory_code = language_identity(value)
+                if not language_code or not territory_code:
+                    continue
+                map_key = (language_code, script_code)
+                region_map.setdefault(map_key, set()).add(territory_code)
+        self._language_variant_regions = region_map
+
     def _prepare_language_label(self, name: str, locale: str) -> str:
         if not name:
             return ""
-        return format_language_display(name, locale)
+
+        formatted = format_language_display(name, locale)
+        language_code, script_code, territory_code = language_identity(name)
+        if territory_code:
+            territories = self._language_variant_regions.get((language_code, script_code))
+            if not territories or len(territories) <= 1:
+                formatted = re.sub(r"\s*\([^()]*\)\s*$", "", formatted).strip()
+        return formatted
 
     def _find_language_by_key(self, key: str) -> Dict[str, str]:
         norm = key.strip().lower()
@@ -865,6 +887,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         data = result.get("data", {})
         report_sources = result.get("report_sources", {})
 
+        combined_keys = set(self.language_pairs.keys()) | set(data.keys())
+        self._update_language_variant_regions_from_pairs(combined_keys)
+
         if not data:
             lang = self.gui_lang
             message_lines = [
@@ -1020,6 +1045,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_pairs_list()
         self.update_total()
 
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
+
         result_msg = "Обработка завершена!\n\n"
         if added_pairs > 0:
             result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
@@ -1097,6 +1124,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             widget.set_only_new_and_repeats_mode(bool(pair_mode))
             widget.set_discount_percent(pair_data.get("discount_percent", 0.0))
             widget.set_markup_percent(pair_data.get("markup_percent", 0.0))
+
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
 
         self._update_language_names("ru" if self.lang_display_ru else "en")
 
