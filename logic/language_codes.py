@@ -74,8 +74,6 @@ def _locale_territory_info(lang: str) -> Tuple[Dict[str, str], Dict[str, str]]:
 
 _CODE_PATTERN = re.compile(r"^[A-Za-z]{2,3}$|^\d{3}$")
 _PAREN_RE = re.compile(r"\(([^()]+)\)")
-_PAREN_WITH_WS_RE = re.compile(r"\s*\(([^()]+)\)")
-
 _TERRITORY_DISPLAY_OVERRIDES = {
     "en": {"Latin America": "Latam"},
     "ru": {"Латинская Америка": "Латам"},
@@ -107,15 +105,7 @@ def apply_territory_overrides(text: str, lang: str) -> str:
         return match.group(0)
 
     replaced = _PAREN_RE.sub(_repl, stripped)
-
-    def _strip_parentheticals(match: re.Match[str]) -> str:
-        inner = match.group(1).strip().lower()
-        if inner in {"latam", "латам"}:
-            return match.group(0)
-        return ""
-
-    cleaned = _PAREN_WITH_WS_RE.sub(_strip_parentheticals, replaced)
-    return re.sub(r"\s{2,}", " ", cleaned).strip()
+    return re.sub(r"\s{2,}", " ", replaced).strip()
 
 
 def _normalize(text: str) -> str:

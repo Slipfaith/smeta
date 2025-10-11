@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from logic import language_codes
+from logic.xml_parser_common import expand_language_code
 
 
 class _DummyLanguage:
@@ -85,8 +86,19 @@ def test_apply_territory_overrides_for_latin_america_ru():
 
 
 def test_apply_territory_overrides_ignores_unknown_locale():
-    assert language_codes.apply_territory_overrides("Spanish (Latin America)", "de") == "Spanish"
+    assert (
+        language_codes.apply_territory_overrides("Spanish (Latin America)", "de")
+        == "Spanish (Latin America)"
+    )
 
 
-def test_apply_territory_overrides_strips_other_territories():
-    assert language_codes.apply_territory_overrides("English (United States)", "ru") == "English"
+def test_apply_territory_overrides_preserves_other_territories():
+    assert (
+        language_codes.apply_territory_overrides("English (United States)", "ru")
+        == "English (United States)"
+    )
+
+
+def test_expand_language_code_preserves_territory_information():
+    assert expand_language_code("zh-CN", locale="en").endswith("(China)")
+    assert expand_language_code("zh-TW", locale="en").endswith("(Taiwan)")
