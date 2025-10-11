@@ -659,9 +659,8 @@ class ExcelExporter:
 
             self.logger.info("Export completed successfully")
             return True
-        except Exception as e:
-            self.logger.exception("Export failed")
-            print(f"[ExcelExporter] Ошибка экспорта: {e}")
+        except Exception:
+            self.logger.exception("Ошибка экспорта в Excel")
             return False
 
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------

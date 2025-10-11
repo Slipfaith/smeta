@@ -26,9 +26,8 @@ def export_to_pdf(
             if not xlsx_to_pdf(xlsx_path, output_path, lang=lang):
                 raise RuntimeError("Не удалось конвертировать в PDF")
         return True
-    except Exception as e:
-        logger.exception("PDF export failed")
-        print(f"[PdfExporter] Ошибка экспорта PDF: {e}")
+    except Exception:
+        logger.exception("Ошибка экспорта PDF")
         return False
 
 
