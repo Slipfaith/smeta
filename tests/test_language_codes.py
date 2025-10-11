@@ -102,3 +102,8 @@ def test_apply_territory_overrides_preserves_other_territories():
 def test_expand_language_code_preserves_territory_information():
     assert expand_language_code("zh-CN", locale="en").endswith("(China)")
     assert expand_language_code("zh-TW", locale="en").endswith("(Taiwan)")
+
+
+def test_country_to_code_resolves_override_aliases():
+    assert language_codes.country_to_code("Latam") == "419"
+    assert language_codes.country_to_code("Латам") == "419"
