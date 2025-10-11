@@ -6,6 +6,7 @@ import tempfile
 from datetime import datetime
 from typing import Any, Dict, TYPE_CHECKING
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from logic.excel_exporter import ExcelExporter
@@ -216,7 +217,7 @@ class ProjectManager:
                 project_data, file_path, progress_callback=progress.on_progress
             )
         if success:
-            self._show_file_saved_message(file_path)
+            self._schedule_file_saved_message(file_path)
         else:
             QMessageBox.critical(window, "Ошибка", "Не удалось сохранить файл")
 
@@ -293,7 +294,7 @@ class ProjectManager:
                         return
                     progress.set_value(100)
                     shutil.copyfile(pdf_path, file_path)
-                self._show_file_saved_message(file_path)
+                self._schedule_file_saved_message(file_path)
             except Exception as exc:  # pragma: no cover - defensive
                 QMessageBox.critical(
                     window, "Ошибка", f"Не удалось сохранить PDF: {exc}"
@@ -314,6 +315,19 @@ class ProjectManager:
         msg_box.exec()
         if msg_box.clickedButton() == open_button:
             self._reveal_file_in_explorer(file_path)
+
+    def _schedule_file_saved_message(self, file_path: str) -> None:
+        """Show the "file saved" dialog on the next event loop iteration.
+
+        Export operations run synchronously and keep the event loop busy until
+        they finish, which could postpone the appearance of the success
+        message even though the file is already written to disk.  Scheduling
+        the dialog with a zero-timeout QTimer ensures that it pops up as soon
+        as the export task releases control back to the UI thread, keeping the
+        feedback immediate for the user.
+        """
+
+        QTimer.singleShot(0, lambda path=file_path: self._show_file_saved_message(path))
 
     def _reveal_file_in_explorer(self, file_path: str) -> None:
         window = self.window
