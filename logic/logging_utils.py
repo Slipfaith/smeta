@@ -83,15 +83,8 @@ def setup_logging() -> Path:
     rotating_handler.setLevel(logging.DEBUG)
     rotating_handler.setFormatter(formatter)
 
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(
-        logging.Formatter("%(levelname)s | %(name)s | %(message)s")
-    )
-
     root_logger.addHandler(last_run_handler)
     root_logger.addHandler(rotating_handler)
-    root_logger.addHandler(console_handler)
 
     _configured = True
     _last_run_log_path = last_run_log
