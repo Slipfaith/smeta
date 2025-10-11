@@ -198,6 +198,17 @@ def _territory_name_map() -> Dict[str, str]:
     for code, short in RU_TERRITORY_ABBREVIATIONS.items():
         mapping[_normalize(short)] = code
 
+    # Include override display names (e.g. "Latam") so that abbreviated
+    # variants resolve to the same territory codes as their full forms.
+    for override_map in _TERRITORY_DISPLAY_OVERRIDES.values():
+        for original, alias in override_map.items():
+            alias_norm = _normalize(alias)
+            if alias_norm in mapping:
+                continue
+            code = mapping.get(_normalize(original))
+            if code:
+                mapping[alias_norm] = code
+
     # Allow matching against plain codes ("US", "gb", "410").
     for code in list(mapping.values()):
         mapping.setdefault(_normalize(code), code)
