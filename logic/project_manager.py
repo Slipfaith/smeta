@@ -167,6 +167,15 @@ class ProjectManager:
                 tr("Выберите юрлицо", lang),
             )
             return
+        currency = window.get_current_currency_code()
+        if not currency:
+            lang = window.gui_lang
+            QMessageBox.warning(
+                window,
+                tr("Предупреждение", lang),
+                tr("Выберите валюту", lang),
+            )
+            return
         if not window.client_name_edit.text().strip():
             QMessageBox.warning(window, "Ошибка", "Введите название клиента")
             return
@@ -195,7 +204,6 @@ class ProjectManager:
 
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = window.get_selected_legal_entity().replace(" ", "_")
-        currency = window.get_current_currency_code()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.xlsx"
 
@@ -209,7 +217,7 @@ class ProjectManager:
         template_path = window.legal_entities.get(entity_name)
         exporter = ExcelExporter(
             template_path,
-            currency=window.get_current_currency_code(),
+            currency=currency,
             lang=export_lang,
         )
         with Progress(parent=window) as progress:
@@ -238,6 +246,15 @@ class ProjectManager:
         if not window.client_name_edit.text().strip():
             QMessageBox.warning(window, "Ошибка", "Введите название клиента")
             return
+        currency = window.get_current_currency_code()
+        if not currency:
+            lang = window.gui_lang
+            QMessageBox.warning(
+                window,
+                tr("Предупреждение", lang),
+                tr("Выберите валюту", lang),
+            )
+            return
         project_data = self.collect_project_data()
         if any(r.get("rate", 0) == 0 for r in project_data.get("project_setup", [])):
             lang = window.gui_lang
@@ -255,7 +272,6 @@ class ProjectManager:
                 return
         client_name = project_data["client_name"].replace(" ", "_")
         entity_for_file = window.get_selected_legal_entity().replace(" ", "_")
-        currency = window.get_current_currency_code()
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = f"{date_str}-{entity_for_file}-{currency}-{client_name}.pdf"
         file_path, _ = QFileDialog.getSaveFileName(
