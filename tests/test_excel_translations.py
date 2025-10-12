@@ -35,7 +35,6 @@ def test_project_setup_renderer_uses_english_discount_and_markup(tmp_path):
     exporter = ExcelExporter(
         template_path=str(tmp_path / "template.xlsx"),
         currency="USD",
-        log_path=str(tmp_path / "export.log"),
         lang="en",
     )
 
