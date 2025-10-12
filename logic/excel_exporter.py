@@ -340,7 +340,6 @@ class ExcelExporter:
         self,
         template_path: Optional[str] = None,
         currency: str = "RUB",
-        log_path: str = "excel_export.md",
         lang: str = "ru",
     ):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
@@ -357,12 +356,6 @@ class ExcelExporter:
         self.markup_title = tr("Наценка", lang)
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
-        self.logger.propagate = False
-        if not self.logger.handlers:
-            handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-            formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
         self.logger.debug(
             "Initialized ExcelExporter with template %s", self.template_path
         )
