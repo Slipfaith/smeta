@@ -297,12 +297,25 @@ def _extract_outlook_messages(mime) -> List[str]:
         return []
 
     is_wide = descriptor_format.endswith("DescriptorW")
-    entry_size = 592 if is_wide else 332
-    filename_size = 520 if is_wide else 260
-
     count = int.from_bytes(descriptor_bytes[:4], "little")
     offset = 4
     created_paths: List[str] = []
+
+    if count <= 0:
+        return created_paths
+
+    default_entry_size = 592 if is_wide else 332
+    remaining = len(descriptor_bytes) - offset
+    if remaining <= 0:
+        return created_paths
+
+    entry_size = remaining // count if count else 0
+    if entry_size < 72:
+        entry_size = default_entry_size
+        if entry_size <= 0 or offset + count * entry_size > len(descriptor_bytes):
+            return created_paths
+    elif entry_size <= 0:
+        return created_paths
 
     for index in range(count):
         if offset + entry_size > len(descriptor_bytes):
@@ -311,7 +324,7 @@ def _extract_outlook_messages(mime) -> List[str]:
         entry = descriptor_bytes[offset : offset + entry_size]
         offset += entry_size
 
-        filename_bytes = entry[72 : 72 + filename_size]
+        filename_bytes = entry[72:]
         filename = _decode_filename(filename_bytes, wide=is_wide)
         if not filename:
             continue
