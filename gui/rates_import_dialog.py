@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from logic import rates_importer
+from logic import online_rates, rates_importer
 from gui.styles import (
     RATES_IMPORT_DIALOG_STYLE,
     STATUS_LABEL_DEFAULT_STYLE,
@@ -45,11 +45,26 @@ class ExcelRatesDialog(QDialog):
 
         self._rates: Dict[Tuple[str, str], Dict[str, float]] = {}
         self._name_to_code: Dict[str, str] = {}
+        self._remote_sources = online_rates.available_sources()
+        self._remote_cache: Dict[Tuple[str, str, str], rates_importer.RatesMap] = {}
+        self._current_source: Optional[str] = None
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(15, 15, 15, 15)
+
+        source_layout = QHBoxLayout()
+        source_layout.setSpacing(8)
+        source_layout.addWidget(QLabel("Source:"))
+        self.source_combo = QComboBox()
+        self.source_combo.addItem("Local File", userData=None)
+        for key, remote in self._remote_sources.items():
+            self.source_combo.addItem(remote.label, userData=key)
+        self.source_combo.currentIndexChanged.connect(self._on_source_changed)
+        source_layout.addWidget(self.source_combo, 1)
+        source_layout.addStretch()
+        layout.addLayout(source_layout)
 
         file_layout = QHBoxLayout()
         file_layout.setSpacing(8)
@@ -60,12 +75,13 @@ class ExcelRatesDialog(QDialog):
         self.file_edit.editingFinished.connect(self._load)
         file_layout.addWidget(self.file_edit, 1)
 
-        browse_btn = QPushButton("Browse")
-        browse_btn.setFixedWidth(70)
-        browse_btn.clicked.connect(self._browse)
-        file_layout.addWidget(browse_btn)
+        self.browse_btn = QPushButton("Browse")
+        self.browse_btn.setFixedWidth(70)
+        self.browse_btn.clicked.connect(self._browse)
+        file_layout.addWidget(self.browse_btn)
 
         layout.addLayout(file_layout)
+        self._on_source_changed(self.source_combo.currentIndex())
 
         config_layout = QGridLayout()
         config_layout.setSpacing(8)
@@ -133,6 +149,18 @@ class ExcelRatesDialog(QDialog):
     def _setup_styles(self) -> None:
         self.setStyleSheet(RATES_IMPORT_DIALOG_STYLE)
 
+    def _on_source_changed(self, _index: int) -> None:
+        source_key = self.source_combo.currentData()
+        self._current_source = source_key
+        is_local = source_key is None
+        self.file_edit.setEnabled(is_local)
+        self.browse_btn.setEnabled(is_local)
+        if is_local:
+            self.file_edit.setPlaceholderText("Select Excel file...")
+        else:
+            self.file_edit.setText(self.source_combo.currentText())
+        self._load()
+
     def showEvent(self, event):
         super().showEvent(event)
         if self.file_edit.text():
@@ -150,26 +178,50 @@ class ExcelRatesDialog(QDialog):
             self._load()
 
     def _load(self) -> None:
-        path = self.file_edit.text()
-        if not path:
-            self.status_label.setText("No file")
-            self.status_label.setStyleSheet(STATUS_LABEL_DEFAULT_STYLE)
-            self.table.setRowCount(0)
-            return
-
+        source_key = getattr(self, 'source_combo', None)
+        source_key = source_key.currentData() if source_key else None
         currency = self.currency_combo.currentText()
         rate_type = self.rate_combo.currentText()
 
-        try:
-            rates = rates_importer.load_rates_from_excel(path, currency, rate_type)
-            self._rates = rates
-            self.status_label.setText(f"Loaded {len(rates)} pairs")
-            self.status_label.setStyleSheet(STATUS_LABEL_SUCCESS_STYLE)
-        except Exception as exc:
-            self.table.setRowCount(0)
-            self.status_label.setText(f"Error: {str(exc)[:30]}...")
-            self.status_label.setStyleSheet(STATUS_LABEL_ERROR_STYLE)
-            return
+        rates: Optional[rates_importer.RatesMap] = None
+        status_message: str
+
+        if source_key is None:
+            path = self.file_edit.text().strip()
+            if not path:
+                self._rates = {}
+                self.table.setRowCount(0)
+                self.status_label.setText("No file")
+                self.status_label.setStyleSheet(STATUS_LABEL_DEFAULT_STYLE)
+                return
+            try:
+                rates = rates_importer.load_rates_from_excel(path, currency, rate_type)
+            except Exception as exc:
+                self._rates = {}
+                self.table.setRowCount(0)
+                self.status_label.setText(f"Error: {str(exc)[:40]}...")
+                self.status_label.setStyleSheet(STATUS_LABEL_ERROR_STYLE)
+                return
+            status_message = f"Loaded {len(rates)} pairs"
+        else:
+            cache_key = (source_key, currency, rate_type)
+            try:
+                rates = self._remote_cache.get(cache_key)
+                if rates is None:
+                    rates = online_rates.load_remote_rates(source_key, currency, rate_type)
+                    self._remote_cache[cache_key] = rates
+            except Exception as exc:
+                self._rates = {}
+                self.table.setRowCount(0)
+                self.status_label.setText(f"Error: {str(exc)[:40]}...")
+                self.status_label.setStyleSheet(STATUS_LABEL_ERROR_STYLE)
+                return
+            source_label = self.source_combo.currentText()
+            status_message = f"Loaded {len(rates)} pairs from {source_label}"
+
+        self._rates = rates or {}
+        self.status_label.setText(status_message)
+        self.status_label.setStyleSheet(STATUS_LABEL_SUCCESS_STYLE)
 
         self.table.clearSpans()
 

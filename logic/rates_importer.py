@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, IO, List, Optional, Tuple, Union
 
 import langcodes
 import openpyxl
@@ -40,13 +41,17 @@ def _language_name(code: str) -> str:
     return langcodes.Language.make(code).display_name("en")
 
 
-def load_rates_from_excel(path: str, currency: str, rate_type: str) -> RatesMap:
+def load_rates_from_excel(
+    path_or_stream: Union[str, os.PathLike[str], IO[bytes]],
+    currency: str,
+    rate_type: str,
+) -> RatesMap:
     """Load rates from *path* for the given *currency* and *rate_type*.
 
     Parameters
     ----------
-    path:
-        Path to the Excel workbook.
+    path_or_stream:
+        Path to the Excel workbook or a binary stream containing the workbook contents.
     currency:
         Currency code selected in the GUI (e.g. ``"USD"``).
     rate_type:
@@ -59,9 +64,12 @@ def load_rates_from_excel(path: str, currency: str, rate_type: str) -> RatesMap:
         with keys ``basic``, ``complex`` and ``hour``.
     """
     sheet_name = f"{rate_type}_{currency}".upper()
-    wb = openpyxl.load_workbook(path, data_only=True)
+    stream = path_or_stream
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    wb = openpyxl.load_workbook(stream, data_only=True)
     if sheet_name not in wb.sheetnames:
-        raise ValueError(f"Sheet {sheet_name} not found in {path}")
+        raise ValueError(f"Sheet {sheet_name} not found in workbook")
 
     ws = wb[sheet_name]
     rates: RatesMap = {}
