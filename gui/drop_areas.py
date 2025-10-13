@@ -153,19 +153,29 @@ def _cleanup_temp_outlook_files():
 atexit.register(_cleanup_temp_outlook_files)
 
 
+def _normalize_mime_format(fmt: str) -> str:
+    """Return *fmt* stripped and with redundant whitespace removed."""
+
+    fmt = fmt.strip()
+    # Outlook may append extra parameters separated by semicolons. Duplicated
+    # whitespace around those separators changes the literal string returned by
+    # Qt, so collapse it to improve comparisons.
+    return " ".join(fmt.split())
+
+
 def _iter_mime_format_strings(mime) -> List[str]:
     """Return all MIME formats from *mime* as decoded strings."""
 
     formats: List[str] = []
     for fmt in mime.formats():
         if isinstance(fmt, str):
-            formats.append(fmt)
+            formats.append(_normalize_mime_format(fmt))
             continue
 
         if isinstance(fmt, bytes):
             decoded = fmt.decode("utf-8", errors="ignore")
             if decoded:
-                formats.append(decoded)
+                formats.append(_normalize_mime_format(decoded))
             continue
 
         # PySide6 returns QByteArray instances for MIME formats. Converting them
@@ -175,11 +185,35 @@ def _iter_mime_format_strings(mime) -> List[str]:
         except Exception:
             decoded = str(fmt)
 
-        decoded = decoded.strip()
+        decoded = _normalize_mime_format(decoded)
         if decoded:
             formats.append(decoded)
 
     return formats
+
+
+def _match_descriptor_format(fmt: str) -> bool:
+    if fmt in _OUTLOOK_DESCRIPTOR_FORMATS:
+        return True
+
+    if not fmt.startswith("application/x-qt-windows-mime;value="):
+        return False
+
+    remainder = fmt.split(";value=", 1)[-1]
+    if remainder.startswith('"'):
+        remainder = remainder[1:]
+    value_part = remainder.split('"', 1)[0]
+    return value_part in {"FileGroupDescriptor", "FileGroupDescriptorW"}
+
+
+def _match_file_contents_format(fmt: str) -> bool:
+    if fmt == _OUTLOOK_CONTENTS_PREFIX:
+        return True
+
+    if not fmt.startswith(_OUTLOOK_CONTENTS_PREFIX):
+        return False
+
+    return True
 
 
 def _mime_has_outlook_messages(mime) -> bool:
@@ -189,11 +223,11 @@ def _mime_has_outlook_messages(mime) -> bool:
         return False
 
     formats = set(_iter_mime_format_strings(mime))
-    if not formats.intersection(_OUTLOOK_DESCRIPTOR_FORMATS):
+    if not any(_match_descriptor_format(fmt) for fmt in formats):
         return False
 
     # Outlook provides one "FileContents" entry per dragged message.
-    if any(fmt == _OUTLOOK_CONTENTS_PREFIX or fmt.startswith(f"{_OUTLOOK_CONTENTS_PREFIX};") for fmt in formats):
+    if any(_match_file_contents_format(fmt) for fmt in formats):
         return True
 
     return False
@@ -210,13 +244,18 @@ def _find_file_contents_format(formats: Sequence[str], index: int) -> str | None
     for fmt in formats:
         if fmt.startswith(prefix) and "index=" in fmt:
             try:
-                fmt_index = int(fmt.split("index=")[-1])
+                index_part = fmt.split("index=", 1)[-1].split(";", 1)[0]
+                fmt_index = int(index_part)
             except ValueError:
                 continue
             if fmt_index == index:
                 return fmt
 
-    if index == 0 and _OUTLOOK_CONTENTS_PREFIX in formats:
+    for fmt in formats:
+        if fmt.startswith(prefix):
+            return fmt if index == 0 else None
+
+    if index == 0 and any(fmt == _OUTLOOK_CONTENTS_PREFIX for fmt in formats):
         return _OUTLOOK_CONTENTS_PREFIX
 
     return None
@@ -238,7 +277,7 @@ def _extract_outlook_messages(mime) -> List[str]:
 
     formats = _iter_mime_format_strings(mime)
     descriptor_format = next(
-        (fmt for fmt in formats if fmt in _OUTLOOK_DESCRIPTOR_FORMATS),
+        (fmt for fmt in formats if _match_descriptor_format(fmt)),
         None,
     )
 
