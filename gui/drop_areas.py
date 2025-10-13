@@ -5,20 +5,20 @@ import os
 import sys
 import tempfile
 import traceback
-from typing import Callable, Iterable, List, Sequence
+from typing import Callable, Iterable, List, Sequence, Tuple, Optional
 
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
 from logic.translation_config import tr
 
-
 logger = logging.getLogger(__name__)
 
+# --------------------------- Generic XML DropArea ---------------------------
 
 class DropArea(QScrollArea):
-    """A scroll area that accepts dropped XML files and forwards them to a callback."""
+    """Scroll area accepting dropped XML files and forwarding them to a callback."""
 
     def __init__(
         self,
@@ -41,12 +41,10 @@ class DropArea(QScrollArea):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
-            all_paths = []
             xml_paths = []
             for url in urls:
                 path = url.toLocalFile()
-                all_paths.append(path)
-                if path.lower().endswith(".xml") or path.lower().endswith(".XML"):
+                if path and path.lower().endswith(".xml"):
                     xml_paths.append(path)
             if xml_paths:
                 event.acceptProposedAction()
@@ -77,27 +75,18 @@ class DropArea(QScrollArea):
             return
 
         urls = event.mimeData().urls()
-
-        all_paths = []
-        xml_paths = []
-
+        xml_paths: List[str] = []
         for url in urls:
             path = url.toLocalFile()
-            all_paths.append(path)
-
-            try:
-                if not os.path.exists(path) or not os.path.isfile(path):
-                    continue
-            except Exception:
+            if not path:
                 continue
-
-            if path.lower().endswith((".xml", ".XML")):
+            if path.lower().endswith(".xml"):
                 xml_paths.append(path)
             else:
                 try:
                     with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                        first_line = f.readline().strip()
-                        if first_line.startswith("<?xml") or "<" in first_line:
+                        first_line = f.readline()
+                        if "<?xml" in first_line or "<" in first_line:
                             xml_paths.append(path)
                 except Exception:
                     pass
@@ -114,393 +103,304 @@ class DropArea(QScrollArea):
                     tr("Ошибка при обработке файлов: {0}", lang).format(e),
                 )
         else:
-            if all_paths:
-                lang = self._get_lang()
-                QMessageBox.warning(
-                    self.window(),
-                    tr("Предупреждение", lang),
-                    "\n".join(
-                        [
-                            tr(
-                                "Среди {0} перетащенных файлов не найдено ни одного XML файла.",
-                                lang,
-                            ).format(len(all_paths)),
-                            tr(
-                                "Поддерживаются только файлы с расширением .xml", lang
-                            ),
-                        ]
-                    ),
-                )
             event.ignore()
 
+# ------------------------- Outlook D&D (MSG) helpers ------------------------
 
 _OUTLOOK_DESCRIPTOR_FORMATS = (
     'application/x-qt-windows-mime;value="FileGroupDescriptorW"',
     'application/x-qt-windows-mime;value="FileGroupDescriptor"',
 )
 _OUTLOOK_CONTENTS_PREFIX = 'application/x-qt-windows-mime;value="FileContents"'
+_FMT_REN_PRIVATE_MESSAGES = 'application/x-qt-windows-mime;value="RenPrivateMessages"'
+_FMT_REN_PRIVATE_ITEM = 'application/x-qt-windows-mime;value="RenPrivateItem"'
+_FMT_OBJECT_DESCRIPTOR = 'application/x-qt-windows-mime;value="Object Descriptor"'
+
 _OUTLOOK_TEMP_FILES: set[str] = set()
-
-
-def _cleanup_temp_outlook_files():
-    while _OUTLOOK_TEMP_FILES:
-        path = _OUTLOOK_TEMP_FILES.pop()
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except OSError:
-            # Best-effort cleanup. Ignore failures, files will be removed
-            # by the OS temp directory cleanup policies.
-            pass
-
-
-atexit.register(_cleanup_temp_outlook_files)
-
+atexit.register(lambda: [os.path.exists(p) and os.remove(p) for p in list(_OUTLOOK_TEMP_FILES)])
 
 def _normalize_mime_format(fmt: str) -> str:
-    """Return *fmt* stripped and with redundant whitespace removed."""
-
     fmt = fmt.replace("\x00", "").strip()
-    # Outlook may append extra parameters separated by semicolons. Duplicated
-    # whitespace around those separators changes the literal string returned by
-    # Qt, so collapse it to improve comparisons.
     return " ".join(fmt.split())
 
-
 def _iter_mime_format_strings(mime) -> List[str]:
-    """Return all MIME formats from *mime* as decoded strings."""
-
     formats: List[str] = []
     for fmt in mime.formats():
-        if isinstance(fmt, str):
-            formats.append(_normalize_mime_format(fmt))
-            continue
-
-        if isinstance(fmt, bytes):
-            decoded = fmt.decode("utf-8", errors="ignore")
-            if decoded:
-                formats.append(_normalize_mime_format(decoded))
-            continue
-
-        # PySide6 returns QByteArray instances for MIME formats. Converting them
-        # to ``bytes`` yields the raw data that we then decode to a string.
         try:
-            decoded = bytes(fmt).decode("utf-8", errors="ignore")
+            decoded = fmt if isinstance(fmt, str) else bytes(fmt).decode("utf-8", errors="ignore")
         except Exception:
             decoded = str(fmt)
-
         decoded = _normalize_mime_format(decoded)
         if decoded:
             formats.append(decoded)
-
     logger.info("Outlook drag MIME formats decoded: %s", formats)
     return formats
-
 
 def _match_descriptor_format(fmt: str) -> bool:
     if fmt in _OUTLOOK_DESCRIPTOR_FORMATS:
         return True
-
-    lowered = fmt.lower()
-    if "filegroupdescriptor" in lowered:
-        return True
-
-    if not fmt.startswith("application/x-qt-windows-mime;value="):
-        return False
-
-    remainder = fmt.split(";value=", 1)[-1]
-    if remainder.startswith('"'):
-        remainder = remainder[1:]
-    value_part = remainder.split('"', 1)[0]
-    return "filegroupdescriptor" in value_part.lower()
-
+    return "filegroupdescriptor" in fmt.lower()
 
 def _match_file_contents_format(fmt: str) -> bool:
-    lowered = fmt.lower()
-    if "filecontents" in lowered:
-        return True
-
-    if fmt == _OUTLOOK_CONTENTS_PREFIX:
-        return True
-
-    if not fmt.startswith(_OUTLOOK_CONTENTS_PREFIX):
-        return False
-
-    return True
-
+    return "filecontents" in fmt.lower()
 
 def _mime_has_outlook_messages(mime) -> bool:
-    """Return True if *mime* contains Outlook drag-n-drop data."""
-
     if sys.platform != "win32":
         return False
-
     formats = set(_iter_mime_format_strings(mime))
-    if not any(_match_descriptor_format(fmt) for fmt in formats):
-        logger.debug(
-            "Outlook drag rejected: descriptor format missing. Formats=%s",
-            formats,
-        )
-        return False
-
-    # Outlook provides one "FileContents" entry per dragged message.
-    if any(_match_file_contents_format(fmt) for fmt in formats):
-        logger.info("Outlook drag detected with descriptor and file contents data")
-        return True
-
-    logger.debug(
-        "Outlook drag rejected: file contents format missing. Formats=%s", formats
-    )
-    return False
-
-
-def _find_file_contents_format(formats: Sequence[str], index: int) -> str | None:
-    """Return the Qt MIME format that stores data for the requested *index*."""
-
-    exact_name = f"{_OUTLOOK_CONTENTS_PREFIX};index={index}"
-    if exact_name in formats:
-        return exact_name
-
-    prefix = f"{_OUTLOOK_CONTENTS_PREFIX};"
-    for fmt in formats:
-        if fmt.startswith(prefix) and "index=" in fmt:
-            try:
-                index_part = fmt.split("index=", 1)[-1].split(";", 1)[0]
-                fmt_index = int(index_part)
-            except ValueError:
-                continue
-            if fmt_index == index:
-                return fmt
-
-    for fmt in formats:
-        if fmt.startswith(prefix):
-            return fmt if index == 0 else None
-
-    if index == 0 and any(fmt == _OUTLOOK_CONTENTS_PREFIX for fmt in formats):
-        return _OUTLOOK_CONTENTS_PREFIX
-
-    return None
-
+    return any(_match_descriptor_format(f) for f in formats) and any(_match_file_contents_format(f) for f in formats or [])
 
 def _ensure_bytes(data) -> bytes:
-    """Return *data* coerced into bytes, handling Qt types gracefully."""
-
     if not data:
         return b""
-
     if isinstance(data, (bytes, bytearray)):
         return bytes(data)
-
+    if isinstance(data, QByteArray):
+        return bytes(data)
     try:
         return bytes(data)
     except Exception:
         return b""
 
+def _try_qt_filecontents_bytes(mime, formats: Sequence[str], index: int = 0) -> bytes:
+    """Try to pull bytes of CFSTR_FILECONTENTS via Qt. Returns b'' if not possible."""
+    # Prefer exact variants first
+    candidates = []
+    exact0 = f'{_OUTLOOK_CONTENTS_PREFIX};index={index}'
+    if exact0 in formats:
+        candidates.append(exact0)
+    if _OUTLOOK_CONTENTS_PREFIX in formats:
+        candidates.append(_OUTLOOK_CONTENTS_PREFIX)
+    # all other present variants
+    for f in formats:
+        fl = f.lower()
+        if fl.startswith('application/x-qt-windows-mime;value="filecontents"') and f not in candidates:
+            candidates.append(f)
+    # synthesize common spellings
+    for v in (f'{_OUTLOOK_CONTENTS_PREFIX};Index={index}',
+              f'{_OUTLOOK_CONTENTS_PREFIX};INDEX={index}'):
+        if v not in candidates:
+            candidates.append(v)
 
-def _read_mime_bytes(mime, fmt: str) -> bytes:
-    """Return the payload stored in *mime* for the given Qt MIME *fmt*.
+    logger.debug("Candidate FileContents formats (ordered): %s", candidates)
 
-    Outlook delivers data through Windows OLE streams.  PySide6 exposes those
-    as ``QByteArray`` instances via :meth:`QMimeData.data`, but some Windows
-    configurations require :meth:`QMimeData.retrieveData` with an explicit
-    target type.  This helper centralises those quirks and provides a resilient
-    way to obtain raw bytes from the MIME payload.
-    """
-
-    try:
-        raw = mime.data(fmt)
-    except Exception:
-        logger.exception("Failed to read MIME data for format %s", fmt)
-        raw = None
-
-    payload = _ensure_bytes(raw)
-    if payload:
-        return payload
-
-    candidate_types: List[type] = []
-    if raw is not None:
-        candidate_types.append(type(raw))
-
-    candidate_types.extend([QByteArray, bytes, bytearray])
-
-    seen: set[type] = set()
-    for candidate in candidate_types:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
+    # Try data() and retrieveData() for each candidate
+    for fmt in candidates:
         try:
-            retrieved = mime.retrieveData(fmt, candidate)
+            raw = mime.data(fmt)
+            b = _ensure_bytes(raw)
+            logger.debug("Read %d bytes via data(%s)", len(b), fmt)
+            if b:
+                logger.info("Obtained %d bytes from FileContents using %s", len(b), fmt)
+                return b
         except Exception:
-            continue
-
-        payload = _ensure_bytes(retrieved)
-        if payload:
-            return payload
-
-    logger.warning("MIME format %s did not provide any payload", fmt)
+            pass
+        for t in (QByteArray, bytes, bytearray):
+            try:
+                raw = mime.retrieveData(fmt, t)
+                b = _ensure_bytes(raw)
+                logger.debug("Read %d bytes via retrieveData(%s, %s)", len(b), fmt, getattr(t, "__name__", str(t)))
+                if b:
+                    logger.info("Obtained %d bytes from FileContents using %s / %s", len(b), fmt, getattr(t, "__name__", str(t)))
+                    return b
+            except Exception:
+                continue
+    logger.warning("Failed to obtain FileContents payload after %d attempts", len(candidates))
     return b""
 
+def _decode_filename_from_descriptor(descriptor_bytes: bytes, wide: bool) -> str:
+    # FILEGROUPDESCRIPTOR: first 4 bytes = count, then descriptors
+    # внутри entry: имя начинается примерно с offset 72 (ANSI) / 76+ (W)
+    enc = "utf-16le" if wide else (locale.getpreferredencoding(False) or "utf-8")
+    tail = descriptor_bytes[76:] if wide else descriptor_bytes[72:]
+    name = tail.decode(enc, errors="ignore").split("\x00", 1)[0].strip()
+    return name or "outlook_message.msg"
 
-def _decode_filename(data: bytes, wide: bool) -> str:
-    """Decode a filename stored inside a FILEDESCRIPTOR structure."""
-
-    encoding = "utf-16le" if wide else locale.getpreferredencoding(False) or "utf-8"
-    decoded = data.decode(encoding, errors="ignore").split("\x00", 1)[0]
-    return decoded.strip()
-
+def _read_descriptor(mime, descriptor_format: str) -> Tuple[int, int, bytes, bool]:
+    """Return (count, entry_size, descriptor_bytes, is_wide)."""
+    raw = _ensure_bytes(mime.data(descriptor_format)) or _ensure_bytes(mime.retrieveData(descriptor_format, QByteArray))
+    logger.debug("Read %d bytes via data(%s)", len(raw), descriptor_format)
+    if len(raw) < 4:
+        return 0, 0, raw, descriptor_format.endswith("DescriptorW")
+    is_wide = descriptor_format.endswith("DescriptorW")
+    count = int.from_bytes(raw[:4], "little")
+    # пробуем оценить размер записи
+    remaining = len(raw) - 4
+    entry_size = remaining // count if count else 0
+    if entry_size < 72:
+        entry_size = 592 if is_wide else 332
+    return count, entry_size, raw, is_wide
 
 def _collect_existing_msg_paths(mime) -> List[str]:
-    """Return local ``.msg`` paths that exist on disk."""
-
     if not mime.hasUrls():
         return []
-
-    collected: List[str] = []
+    paths: List[str] = []
     for url in mime.urls():
+        path = url.toLocalFile()
+        if path and path.lower().endswith(".msg") and os.path.isfile(path):
+            paths.append(path)
+    return paths
+
+# --------------------------- COM fallback (MAPI) ---------------------------
+
+def _read_bytes(mime, fmt: str) -> bytes:
+    return _ensure_bytes(mime.data(fmt)) or _ensure_bytes(mime.retrieveData(fmt, QByteArray))
+
+def _parse_ren_private_messages(mime) -> List[Tuple[bytes, Optional[bytes]]]:
+    """
+    Parse RenPrivateMessages / RenPrivateItem to extract (entry_id, store_id).
+    Форматы внутренние, но на практике часто идут как:
+      [count:DWORD] [ [cbEID:DWORD][EID bytes] [cbStore:DWORD][Store bytes] ] * count
+    Возвращает список пар (EntryID, StoreID or None).
+    """
+    for fmt in (_FMT_REN_PRIVATE_MESSAGES, _FMT_REN_PRIVATE_ITEM):
+        data = _read_bytes(mime, fmt)
+        if not data:
+            continue
         try:
-            path = url.toLocalFile()
-        except Exception:
-            continue
-
-        if not path:
-            continue
-
-        lowered = path.lower()
-        if not lowered.endswith(".msg"):
-            continue
-
-        try:
-            if not os.path.isfile(path):
+            pos = 0
+            if len(data) < 4:
                 continue
-        except OSError:
-            continue
+            count = int.from_bytes(data[pos:pos+4], "little"); pos += 4
+            result: List[Tuple[bytes, Optional[bytes]]] = []
+            for _ in range(max(1, count)):
+                if pos + 4 > len(data): break
+                cb_eid = int.from_bytes(data[pos:pos+4], "little"); pos += 4
+                if cb_eid <= 0 or pos + cb_eid > len(data): break
+                eid = data[pos:pos+cb_eid]; pos += cb_eid
+                store: Optional[bytes] = None
+                if pos + 4 <= len(data):
+                    cb_store = int.from_bytes(data[pos:pos+4], "little"); pos += 4
+                    if cb_store > 0 and pos + cb_store <= len(data):
+                        store = data[pos:pos+cb_store]; pos += cb_store
+                result.append((eid, store))
+            if result:
+                logger.info("Parsed %d EntryID(s) from %s", len(result), fmt)
+                return result
+        except Exception as ex:
+            logger.warning("Failed to parse %s: %s", fmt, ex)
+    return []
 
-        collected.append(path)
+def _save_msg_via_outlook_com(eid: bytes, store: Optional[bytes]) -> Optional[str]:
+    """
+    Use Outlook COM to fetch MailItem by EntryID/StoreID and SaveAs temp .msg
+    """
+    try:
+        import win32com.client  # pywin32
+        import pythoncom
+    except Exception as ex:
+        logger.error("pywin32 not installed; COM fallback unavailable: %s", ex)
+        return None
 
-    return collected
+    try:
+        pythoncom.CoInitialize()
+        app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+        ns = app.GetNamespace("MAPI")
+        # EntryID/StoreID должны быть в hex-строке для GetItemFromID
+        def b2hex(b: bytes) -> str:
+            return "".join(f"{x:02X}" for x in b)
+        entry_id = b2hex(eid)
+        store_id = b2hex(store) if store else None
 
+        try:
+            item = ns.GetItemFromID(entry_id, store_id) if store_id else ns.GetItemFromID(entry_id)
+        except Exception as ex:
+            logger.error("Namespace.GetItemFromID failed: %s", ex)
+            return None
+
+        # 3 == olMSG (прямой .msg)
+        fd, temp_path = tempfile.mkstemp(prefix="smeta_outlook_", suffix=".msg")
+        os.close(fd)
+        item.SaveAs(temp_path, 3)
+        _OUTLOOK_TEMP_FILES.add(temp_path)
+        logger.info("Saved Outlook item via COM to %s", temp_path)
+        return temp_path
+    except Exception as ex:
+        logger.exception("COM fallback failed: %s", ex)
+        return None
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+# ---------------------- Master extractor for Outlook D&D --------------------
 
 def _extract_outlook_messages(mime) -> List[str]:
-    """Return temporary file paths created from the Outlook drag data."""
-
+    """
+    Try FileContents (virtual files). If empty (Qt limitation), fallback:
+    - parse RenPrivateMessages / RenPrivateItem for EntryID/StoreID
+    - fetch item via Outlook COM and SaveAs .msg
+    """
     if sys.platform != "win32":
         return []
 
     formats = _iter_mime_format_strings(mime)
-    descriptor_format = next(
-        (fmt for fmt in formats if _match_descriptor_format(fmt)),
-        None,
-    )
 
-    if not descriptor_format:
-        logger.warning(
-            "Failed to locate Outlook descriptor format in drag data. Formats=%s",
-            formats,
-        )
-        return []
+    # 1) If real files already present (.msg dragged from Explorer) — use them.
+    real_msgs = _collect_existing_msg_paths(mime)
+    if real_msgs:
+        return real_msgs
 
-    descriptor_bytes = _read_mime_bytes(mime, descriptor_format)
-    logger.info(
-        "Reading Outlook descriptor %s (size=%d bytes)",
-        descriptor_format,
-        len(descriptor_bytes),
-    )
-    if len(descriptor_bytes) < 4:
-        logger.warning(
-            "Descriptor payload too small to contain entries (size=%d)",
-            len(descriptor_bytes),
-        )
-        return []
+    # 2) Try FileGroupDescriptor -> FileContents (Qt path)
+    descriptor_format = next((f for f in formats if _match_descriptor_format(f)), None)
+    if descriptor_format:
+        count, entry_size, desc_bytes, is_wide = _read_descriptor(mime, descriptor_format)
+        if count > 0 and len(desc_bytes) >= 4 + entry_size:
+            # one message (по твоему сценарию)
+            filename = _decode_filename_from_descriptor(desc_bytes, is_wide)
+            payload = _try_qt_filecontents_bytes(mime, formats, index=0)
+            if payload:
+                fd, temp_path = tempfile.mkstemp(prefix="smeta_outlook_", suffix=os.path.splitext(filename)[1] or ".msg")
+                os.close(fd)
+                with open(temp_path, "wb") as f:
+                    f.write(payload)
+                _OUTLOOK_TEMP_FILES.add(temp_path)
+                logger.info("Created temporary Outlook file %s (FileContents path)", temp_path)
+                return [temp_path]
+            else:
+                logger.warning("FileContents empty; switching to COM fallback")
 
-    is_wide = descriptor_format.endswith("DescriptorW")
-    count = int.from_bytes(descriptor_bytes[:4], "little")
-    offset = 4
-    created_paths: List[str] = []
+    # 3) COM fallback using RenPrivateMessages / RenPrivateItem
+    pairs = _parse_ren_private_messages(mime)
+    results: List[str] = []
+    for (eid, store) in pairs or []:
+        path = _save_msg_via_outlook_com(eid, store)
+        if path:
+            results.append(path)
+    if results:
+        return results
 
-    if count <= 0:
-        logger.info("Descriptor indicates no Outlook messages (count=%d)", count)
-        return created_paths
+    # 4) As a very last resort, try ActiveExplorer.Selection[1] (heuristic)
+    try:
+        import win32com.client  # pywin32
+        import pythoncom
+        pythoncom.CoInitialize()
+        app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+        expl = app.ActiveExplorer()
+        if expl and expl.Selection and expl.Selection.Count >= 1:
+            item = expl.Selection.Item(1)
+            fd, temp_path = tempfile.mkstemp(prefix="smeta_outlook_", suffix=".msg")
+            os.close(fd)
+            item.SaveAs(temp_path, 3)
+            _OUTLOOK_TEMP_FILES.add(temp_path)
+            logger.info("Saved ActiveExplorer selection to %s (heuristic fallback)", temp_path)
+            return [temp_path]
+    except Exception as ex:
+        logger.debug("ActiveExplorer heuristic failed: %s", ex)
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
-    default_entry_size = 592 if is_wide else 332
-    remaining = len(descriptor_bytes) - offset
-    if remaining <= 0:
-        logger.warning(
-            "Descriptor payload truncated: remaining bytes=%d", remaining
-        )
-        return created_paths
+    logger.warning("Unable to extract Outlook message bytes from drag data")
+    return []
 
-    entry_size = remaining // count if count else 0
-    if entry_size < 72:
-        entry_size = default_entry_size
-        if entry_size <= 0 or offset + count * entry_size > len(descriptor_bytes):
-            logger.warning(
-                "Descriptor entry size invalid (entry_size=%d, count=%d, len=%d)",
-                entry_size,
-                count,
-                len(descriptor_bytes),
-            )
-            return created_paths
-    elif entry_size <= 0:
-        logger.warning("Descriptor entry size non-positive: %d", entry_size)
-        return created_paths
-
-    for index in range(count):
-        if offset + entry_size > len(descriptor_bytes):
-            logger.warning(
-                "Descriptor terminated early at index=%d (offset=%d, len=%d)",
-                index,
-                offset,
-                len(descriptor_bytes),
-            )
-            break
-
-        entry = descriptor_bytes[offset : offset + entry_size]
-        offset += entry_size
-
-        filename_bytes = entry[72:]
-        filename = _decode_filename(filename_bytes, wide=is_wide)
-        if not filename:
-            logger.warning("Skipping Outlook entry without filename (index=%d)", index)
-            continue
-
-        contents_format = _find_file_contents_format(formats, index)
-        if not contents_format:
-            logger.warning(
-                "No file contents format found for Outlook entry %s (index=%d)",
-                filename,
-                index,
-            )
-            continue
-
-        file_bytes = _read_mime_bytes(mime, contents_format)
-        if not file_bytes:
-            logger.warning(
-                "Outlook entry %s (index=%d) has empty payload", filename, index
-            )
-            continue
-
-        suffix = os.path.splitext(filename)[1] or ".msg"
-        prefix = "smeta_outlook_"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix=prefix) as tmp_file:
-            tmp_file.write(file_bytes)
-            temp_path = tmp_file.name
-
-        _OUTLOOK_TEMP_FILES.add(temp_path)
-        preview = file_bytes[:200]
-        logger.info(
-            "Created temporary Outlook file %s for %s (size=%d bytes, preview=%r)",
-            temp_path,
-            filename,
-            len(file_bytes),
-            preview,
-        )
-        created_paths.append(temp_path)
-
-    return created_paths
-
+# --------------------------- ProjectInfoDropArea ----------------------------
 
 class ProjectInfoDropArea(QGroupBox):
-    """A group box that accepts dropped Outlook .msg files with project metadata."""
+    """Accepts dropped Outlook messages; yields temp .msg paths to callback."""
 
     def __init__(
         self,
@@ -521,17 +421,11 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
-        local_paths = _collect_existing_msg_paths(mime)
-        if local_paths:
+        if _collect_existing_msg_paths(mime) or _mime_has_outlook_messages(mime):
             event.acceptProposedAction()
             self._set_drag_state(True)
-            return
-
-        if _mime_has_outlook_messages(mime):
-            event.acceptProposedAction()
-            self._set_drag_state(True)
-            return
-        event.ignore()
+        else:
+            event.ignore()
 
     def dragMoveEvent(self, event):
         mime = event.mimeData()
@@ -545,25 +439,24 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dropEvent(self, event):
         self._set_drag_state(False)
-        msg_paths: List[str] = []
         mime = event.mimeData()
 
-        msg_paths.extend(_collect_existing_msg_paths(mime))
+        # 1) paths from Explorer (real .msg)
+        msg_paths = _collect_existing_msg_paths(mime)
 
+        # 2) Outlook virtual files / COM fallback
         if not msg_paths:
-            msg_paths.extend(_extract_outlook_messages(mime))
+            msg_paths = _extract_outlook_messages(mime)
 
         if not msg_paths:
             event.ignore()
             return
 
         logger.info("Outlook drop resulted in message paths: %s", msg_paths)
-
         try:
             self._callback(msg_paths)
             event.acceptProposedAction()
         except Exception as exc:
-            traceback.print_exc()
             lang = self._get_lang()
             QMessageBox.critical(
                 self,
