@@ -290,6 +290,37 @@ def _decode_filename(data: bytes, wide: bool) -> str:
     return decoded.strip()
 
 
+def _collect_existing_msg_paths(mime) -> List[str]:
+    """Return local ``.msg`` paths that exist on disk."""
+
+    if not mime.hasUrls():
+        return []
+
+    collected: List[str] = []
+    for url in mime.urls():
+        try:
+            path = url.toLocalFile()
+        except Exception:
+            continue
+
+        if not path:
+            continue
+
+        lowered = path.lower()
+        if not lowered.endswith(".msg"):
+            continue
+
+        try:
+            if not os.path.isfile(path):
+                continue
+        except OSError:
+            continue
+
+        collected.append(path)
+
+    return collected
+
+
 def _extract_outlook_messages(mime) -> List[str]:
     """Return temporary file paths created from the Outlook drag data."""
 
@@ -431,21 +462,21 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
-        if mime.hasUrls():
-            for url in mime.urls():
-                path = url.toLocalFile()
-                if path.lower().endswith(".msg"):
-                    event.acceptProposedAction()
-                    self._set_drag_state(True)
-                    return
-        elif _mime_has_outlook_messages(mime):
+        local_paths = _collect_existing_msg_paths(mime)
+        if local_paths:
+            event.acceptProposedAction()
+            self._set_drag_state(True)
+            return
+
+        if _mime_has_outlook_messages(mime):
             event.acceptProposedAction()
             self._set_drag_state(True)
             return
         event.ignore()
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls() or _mime_has_outlook_messages(event.mimeData()):
+        mime = event.mimeData()
+        if _collect_existing_msg_paths(mime) or _mime_has_outlook_messages(mime):
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -458,11 +489,7 @@ class ProjectInfoDropArea(QGroupBox):
         msg_paths: List[str] = []
         mime = event.mimeData()
 
-        if mime.hasUrls():
-            for url in mime.urls():
-                path = url.toLocalFile()
-                if path.lower().endswith(".msg"):
-                    msg_paths.append(path)
+        msg_paths.extend(_collect_existing_msg_paths(mime))
 
         if not msg_paths:
             msg_paths.extend(_extract_outlook_messages(mime))
