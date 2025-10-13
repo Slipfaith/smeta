@@ -7,3 +7,6 @@ requests
 PySide6
 pywin32; platform_system == "Windows"
 extract_msg
+msal
+pandas
+python-dotenv
