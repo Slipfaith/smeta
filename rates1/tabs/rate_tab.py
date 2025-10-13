@@ -1,0 +1,900 @@
+
+import os
+
+# =================== PySide6 ===================
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QPushButton, QLabel,
+    QHBoxLayout, QComboBox, QTableWidget, QTableWidgetItem,
+    QListWidget, QAbstractItemView,
+    QStyledItemDelegate, QHeaderView, QSizePolicy, QLineEdit,
+    QDialog, QApplication, QFileDialog
+)
+from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
+
+from utils import dark_theme, light_theme
+
+# =================== pandas ===================
+import pandas as pd
+
+# =================== Сервисы MS Graph ===================
+from services.ms_graph import (
+    authenticate_with_msal,
+    download_excel_from_sharepoint,
+    download_excel_by_fileid
+)
+from services.excel_export import export_rate_tables
+
+# =================== dotenv ===================
+from dotenv import load_dotenv
+from utils.history import load_history, add_entry
+
+load_dotenv()
+
+# --------------------------------------------------------------
+# Функция для удаления ".0" при выводе
+# --------------------------------------------------------------
+def format_value(val):
+    """
+    Если val = "N/A", возвращаем как есть.
+    Если val - число, переводим в str. Если оно оканчивается на ".0", убираем.
+    """
+    if val == "N/A":
+        return val
+    if isinstance(val, (int, float)):
+        s = str(val)
+        if s.endswith(".0"):
+            s = s[:-2]
+        return s
+    return str(val)
+
+
+def safe_float(val):
+    """Превращает значение в float, если возможно.
+
+    Возвращает None, если передан нечисловой текст или значение нельзя
+    преобразовать к числу. Это позволяет корректно обрабатывать ячейки,
+    содержащие ссылки или другие нечисловые данные, не выбрасывая
+    исключений при последующем округлении."""
+    try:
+        val = float(val)
+    except (TypeError, ValueError):
+        return None
+    return None if pd.isna(val) else val
+
+# --------------------------------------------------------------
+# Полупрозрачное окошко "Loading..."
+# --------------------------------------------------------------
+class LoadingOverlay(QDialog):
+    def __init__(self, parent=None, text="Loading..."):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 204);")
+
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
+        self.setLayout(layout)
+
+        self.label = QLabel(text)
+        self.label.setStyleSheet("color: white; font-size: 16px;")
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
+
+        self.resize(200, 100)
+        self.center_on_screen()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.center_on_screen()
+
+    def center_on_screen(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            geometry = screen.availableGeometry()
+            x = geometry.x() + (geometry.width() - self.width()) // 2
+            y = geometry.y() + (geometry.height() - self.height()) // 2
+            self.move(x, y)
+
+# --------------------------------------------------------------
+# Делегат для отступов
+# --------------------------------------------------------------
+class CustomDelegate(QStyledItemDelegate):
+    def __init__(self, padding_left=5, padding_right=5, parent=None):
+        super().__init__(parent)
+        self.padding_left = padding_left
+        self.padding_right = padding_right
+
+    def paint(self, painter, option, index):
+        if index.column() in [2, 3, 4]:
+            option.rect = QRect(
+                option.rect.left() + self.padding_left,
+                option.rect.top(),
+                option.rect.width() - self.padding_left - self.padding_right,
+                option.rect.height()
+            )
+        super().paint(painter, option, index)
+
+class RateTab(QWidget):
+    """
+    Вкладка «Ставки», поддерживающая 2 Excel:
+      - "MLV_Rates_USD_EUR_RUR_CNY"
+      - "TEP (Source RU)"
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(1000, 700)
+        self.layout_main = QVBoxLayout()
+        self.setLayout(self.layout_main)
+
+        # --- Кнопки загрузки (две) ---
+        self.load_layout = QHBoxLayout()
+
+        self.load_url_button = QPushButton("MLV_Rates_USD_EUR_RUR_CNY")
+        self.load_url_button.clicked.connect(self.load_url)
+        self.load_layout.addWidget(self.load_url_button)
+
+        self.load_url_button_2 = QPushButton("TEP (Source RU)")
+        self.load_url_button_2.clicked.connect(self.load_url_2)
+        self.load_layout.addWidget(self.load_url_button_2)
+
+        # Apply initial theme styles (dark by default)
+        self.set_theme(True)
+
+        self.layout_main.addLayout(self.load_layout)
+
+        # --- Поля ввода языков ---
+        self.lang_layout = QHBoxLayout()
+        self.source_lang_label = QLabel("Исходный язык:")
+        self.source_lang_combo = QComboBox()
+        self.target_lang_label = QLabel("Языки перевода:")
+        self.selected_target_lang_label = QLabel("Выбрано языков: 0")
+
+        self.lang_layout.addWidget(self.source_lang_label)
+        self.lang_layout.addWidget(self.source_lang_combo)
+        self.lang_layout.addWidget(self.target_lang_label)
+        self.lang_layout.addWidget(self.selected_target_lang_label)
+        self.layout_main.addLayout(self.lang_layout)
+
+        # --- Списки доступных/выбранных языков ---
+        self.target_layout = QHBoxLayout()
+        self.available_layout = QVBoxLayout()
+        self.available_search = QLineEdit()
+        self.available_search.setPlaceholderText("Поиск...")
+        self.available_search.textChanged.connect(self.filter_available_languages)
+        self.available_label = QLabel("Доступные языки:")
+        self.available_lang_list = QListWidget()
+        self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.available_lang_list.itemClicked.connect(self.move_to_selected)
+
+        self.available_layout.addWidget(self.available_search)
+        self.available_layout.addWidget(self.available_label)
+        self.available_layout.addWidget(self.available_lang_list)
+
+        self.select_buttons_layout = QHBoxLayout()
+        self.select_all_button = QPushButton("Выбрать все")
+        self.deselect_all_button = QPushButton("Снять выбор")
+        self.select_all_button.clicked.connect(self.select_all_available)
+        self.deselect_all_button.clicked.connect(self.deselect_all_available)
+        self.select_buttons_layout.addWidget(self.select_all_button)
+        self.select_buttons_layout.addWidget(self.deselect_all_button)
+        self.available_layout.addLayout(self.select_buttons_layout)
+
+        self.target_layout.addLayout(self.available_layout)
+
+        self.selected_layout = QVBoxLayout()
+        self.selected_label = QLabel("Выбранные языки:")
+        self.selected_lang_list = QListWidget()
+        self.selected_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.selected_lang_list.itemClicked.connect(self.move_to_available)
+        self.selected_layout.addWidget(self.selected_label)
+        self.selected_lang_list.setSortingEnabled(True)
+        self.selected_layout.addWidget(self.selected_lang_list)
+        self.target_layout.addLayout(self.selected_layout)
+        self.layout_main.addLayout(self.target_layout)
+
+        # -- Removed text size slider --
+
+        # --- Отображение списка выбранных языков ---
+        self.selected_languages_display = QLabel("Список выбранных языков: (не выбрано)")
+        self.selected_languages_display.setWordWrap(True)
+        self.selected_languages_display.setStyleSheet("border: 1px solid #ccc; padding: 5px;")
+        self.layout_main.addWidget(self.selected_languages_display)
+
+        # --- Выбор ставки (Client rates 1/2) ---
+        self.rate_layout = QHBoxLayout()
+        self.rate_label = QLabel("Выберите ставки:")
+        self.rate_combo = QComboBox()
+        self.rate_combo.addItems(["Client rates 1", "Client rates 2"])
+        self.rate_layout.addWidget(self.rate_label)
+        self.rate_layout.addWidget(self.rate_combo)
+        self.layout_main.addLayout(self.rate_layout)
+
+        # --- Выбор валюты (USD, EUR, RUB, CNY) ---
+        self.currency_layout = QHBoxLayout()
+        self.currency_label = QLabel("Выберите валюту:")
+        self.currency_combo = QComboBox()
+        self.currency_combo.addItems(["Долл США (USD)", "Евро (EUR)", "Рубль (RUB)", "Юань (CNY)"])
+        self.currency_layout.addWidget(self.currency_label)
+        self.currency_layout.addWidget(self.currency_combo)
+        self.layout_main.addLayout(self.currency_layout)
+
+        # --- История выбора языков ---
+        self.history_layout = QHBoxLayout()
+        self.history_label = QLabel("История:")
+        self.history_combo = QComboBox()
+        self.history_layout.addWidget(self.history_label)
+        self.history_layout.addWidget(self.history_combo)
+        self.layout_main.addLayout(self.history_layout)
+
+        # --- Таблица ---
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectItems)
+        self.table.setSelectionMode(QTableWidget.ExtendedSelection)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table.setWordWrap(True)
+        self.layout_main.addWidget(self.table)
+
+        self.copy_shortcut = QShortcut(QKeySequence.Copy, self.table)
+        self.copy_shortcut.activated.connect(self.copy_to_clipboard)
+
+        # --- Кнопка экспорта ---
+        self.export_button = QPushButton("Экспорт в Excel")
+        self.export_button.clicked.connect(self.export_rates_to_excel)
+        self.layout_main.addWidget(self.export_button)
+
+        self.delegate = CustomDelegate(padding_left=5, padding_right=5, parent=self.table)
+        for col in [2, 3, 4]:
+            self.table.setItemDelegateForColumn(col, self.delegate)
+
+        self.df = None
+        self.default_font = QFont()
+        self.setFont(self.default_font)
+
+        self.is_second_file = False
+
+        self.history_data = []
+        self.last_saved_selection = None
+
+        # MS Graph настройки через .env
+        self.client_id = os.getenv('CLIENT_ID')
+        self.tenant_id = os.getenv('TENANT_ID')
+        scope_val = os.getenv('SCOPE')
+        if scope_val is not None:
+            self.scope = [scope_val]
+        else:
+            self.scope = []
+        self.site_id = os.getenv('SITE_ID_1')
+        self.file_path = os.getenv('FILE_PATH_1')
+        self.site_id_2 = os.getenv('SITE_ID_2')
+        self.file_id_2 = os.getenv('FILE_ID_2')
+
+        # Автопересчёт при смене ставки/валюты
+        self.rate_combo.currentIndexChanged.connect(self.process_data)
+        self.currency_combo.currentIndexChanged.connect(self.process_data)
+        self.source_lang_combo.currentIndexChanged.connect(self.update_target_languages)
+
+        # При смене SourceLang - обновляем таргеты
+        self.source_lang_combo.currentIndexChanged.connect(self.update_target_languages)
+
+        self.history_combo.currentIndexChanged.connect(self.apply_history_selection)
+        self.load_history_combo()
+
+    def set_theme(self, dark: bool = True):
+        """Apply theme-specific styles to the download buttons."""
+        if dark:
+            self.load_url_button.setStyleSheet(dark_theme.MLV_RATES_BUTTON_STYLE)
+            self.load_url_button_2.setStyleSheet(dark_theme.TEP_BUTTON_STYLE)
+        else:
+            self.load_url_button.setStyleSheet(light_theme.MLV_RATES_BUTTON_STYLE)
+            self.load_url_button_2.setStyleSheet(light_theme.TEP_BUTTON_STYLE)
+
+    # ----------------------------------------------------------------
+    # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY
+    # ----------------------------------------------------------------
+    def load_url(self):
+        # Disable this button to prevent repeated clicks and enable the other
+        self.load_url_button.setEnabled(False)
+        self.load_url_button_2.setEnabled(True)
+
+        overlay = LoadingOverlay(self, text="Loading MLV_Rates_USD_EUR_RUR_CNY...")
+        overlay.show()
+        QApplication.processEvents()
+
+        try:
+            print("MLV_Rates_USD_EUR_RUR_CNY: site_id =", self.site_id, "file_path =", self.file_path)
+            token = authenticate_with_msal(self.client_id, self.tenant_id, self.scope)
+            if not token:
+                print("Не удалось получить access_token для MLV_Rates_USD_EUR_RUR_CNY")
+                return
+
+            df_temp = download_excel_from_sharepoint(token, self.site_id, self.file_path)
+            if df_temp is None:
+                print("Не удалось скачать MLV_Rates_USD_EUR_RUR_CNY Excel")
+                return
+
+            print(f"MLV_Rates_USD_EUR_RUR_CNY Excel загружен: {df_temp.shape}")
+            self.df = df_temp
+            self.is_second_file = False
+            self.setup_languages()
+            self.process_data()
+        finally:
+            overlay.close()
+
+    # ----------------------------------------------------------------
+    # 2) Загрузка TEP (Source RU)
+    # ----------------------------------------------------------------
+    def load_url_2(self):
+        # Disable this button to prevent repeated clicks and enable the other
+        self.load_url_button_2.setEnabled(False)
+        self.load_url_button.setEnabled(True)
+
+        overlay = LoadingOverlay(self, text="Loading TEP (Source RU)...")
+        overlay.show()
+        QApplication.processEvents()
+
+        try:
+            print(f"Начинаем скачивать TEP (Source RU) (fileId): {self.file_id_2}")
+            token = authenticate_with_msal(self.client_id, self.tenant_id, self.scope)
+            if not token:
+                print("Не удалось получить access_token для TEP (Source RU)")
+                return
+
+            df_temp = download_excel_by_fileid(
+                access_token=token,
+                site_id=self.site_id_2,
+                file_id=self.file_id_2,
+                sheet_name="TEP (Source RU)",
+                skiprows=3
+            )
+            if df_temp is None:
+                print("Не удалось скачать/прочитать TEP (Source RU) Excel")
+                return
+
+            print(f"TEP (Source RU) Excel загружен, shape = {df_temp.shape}")
+            if df_temp.shape[1] > 11:
+                df_temp = df_temp.iloc[:, :11]
+            rename_map = {}
+            if len(df_temp.columns) >= 11:
+                rename_map[df_temp.columns[0]] = "SourceLang"
+                rename_map[df_temp.columns[1]] = "TargetLang"
+                rename_map[df_temp.columns[2]] = "USD_Basic_R1"
+                rename_map[df_temp.columns[3]] = "USD_Complex_R1"
+                rename_map[df_temp.columns[4]] = "USD_Hourly_R1"
+                rename_map[df_temp.columns[5]] = "USD_Basic_R2"
+                rename_map[df_temp.columns[6]] = "USD_Complex_R2"
+                rename_map[df_temp.columns[7]] = "USD_Hourly_R2"
+                rename_map[df_temp.columns[8]] = "RUB_Basic_R1"
+                rename_map[df_temp.columns[9]] = "RUB_Complex_R1"
+                rename_map[df_temp.columns[10]] = "RUB_Hourly_R1"
+            df_temp = df_temp.rename(columns=rename_map)
+
+            self.df = df_temp
+            self.is_second_file = True
+            self.setup_languages()
+            self.process_data()
+        finally:
+            overlay.close()
+
+    # ----------------------------------------------------------------
+    # Обновляем список SourceLang
+    # ----------------------------------------------------------------
+    def setup_languages(self):
+        if self.df is None or self.df.shape[0] == 0:
+            return
+
+        self.available_lang_list.clear()
+        self.selected_lang_list.clear()
+        self.selected_target_lang_label.setText("Выбрано языков: 0")
+        self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+
+        if not self.is_second_file:
+            # MLV_Rates_USD_EUR_RUR_CNY
+            if self.df.shape[1] < 2:
+                return
+            source_list = self.df.iloc[:, 0].dropna().unique().tolist()
+            source_list = [x for x in source_list if isinstance(x, str) and x.lower() != "source"]
+            self.source_lang_combo.clear()
+            self.source_lang_combo.addItems(source_list)
+        else:
+            # TEP (Source RU)
+            if "SourceLang" not in self.df.columns:
+                return
+            source_list = self.df["SourceLang"].dropna().unique().tolist()
+            source_list = [str(x) for x in source_list if str(x).lower() != "source"]
+            self.source_lang_combo.clear()
+            self.source_lang_combo.addItems(source_list)
+
+    def update_target_languages(self):
+        if self.df is None:
+            return
+        source_lang = self.source_lang_combo.currentText()
+
+        self.available_lang_list.clear()
+        self.selected_lang_list.clear()
+        self.selected_target_lang_label.setText("Выбрано языков: 0")
+        self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+
+        if not self.is_second_file:
+            filtered = self.df[self.df.iloc[:,0] == source_lang]
+            targets = filtered.iloc[:,1].dropna().unique().tolist()
+            targets = [t for t in targets if isinstance(t,str) and t.lower() != "target"]
+            self.available_lang_list.addItems(targets)
+        else:
+            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
+                return
+            filtered = self.df[self.df["SourceLang"] == source_lang]
+            targets = filtered["TargetLang"].dropna().unique().tolist()
+            targets = [str(t) for t in targets if str(t).lower() != "target"]
+            self.available_lang_list.addItems(targets)
+
+    def move_to_selected(self, item):
+        try:
+            self.selected_lang_list.addItem(item.text())
+            self.available_lang_list.takeItem(self.available_lang_list.row(item))
+            self.process_data()
+        except Exception as e:
+            print("move_to_selected => исключение:", e)
+
+    def move_to_available(self, item):
+        try:
+            self.available_lang_list.addItem(item.text())
+            self.selected_lang_list.takeItem(self.selected_lang_list.row(item))
+            self.process_data()
+        except Exception as e:
+            print("move_to_available => исключение:", e)
+
+    def select_all_available(self):
+        while self.available_lang_list.count() > 0:
+            it = self.available_lang_list.item(0)
+            self.selected_lang_list.addItem(it.text())
+            self.available_lang_list.takeItem(0)
+        self.process_data()
+
+    def deselect_all_available(self):
+        while self.selected_lang_list.count() > 0:
+            it = self.selected_lang_list.item(0)
+            self.available_lang_list.addItem(it.text())
+            self.selected_lang_list.takeItem(0)
+        self.process_data()
+
+    def filter_available_languages(self, text):
+        for i in range(self.available_lang_list.count()):
+            it = self.available_lang_list.item(i)
+            it.setHidden(text.lower() not in it.text().lower())
+
+
+    def copy_to_clipboard(self):
+        selected_ranges = self.table.selectedRanges()
+        if not selected_ranges:
+            return
+        copied_data = []
+        for sr in selected_ranges:
+            top_row = sr.topRow()
+            bottom_row = sr.bottomRow()
+            left_col = sr.leftColumn()
+            right_col = sr.rightColumn()
+
+            headers_list = []
+            for col in range(left_col, right_col + 1):
+                head_item = self.table.horizontalHeaderItem(col)
+                headers_list.append(head_item.text() if head_item else "")
+            copied_data.append("\t".join(headers_list))
+
+            for row in range(top_row, bottom_row + 1):
+                row_data = []
+                for col in range(left_col, right_col + 1):
+                    item = self.table.item(row, col)
+                    row_data.append(item.text() if item else "")
+                copied_data.append("\t".join(row_data))
+
+        clipboard_text = "\n".join(copied_data)
+        QApplication.clipboard().setText(clipboard_text)
+
+    def process_data(self):
+        print("=> process_data() called.")
+        if self.df is None:
+            print("process_data: df is None => return")
+            return
+
+        source_lang = self.source_lang_combo.currentText()
+        target_languages = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
+        if not target_languages:
+            self.selected_target_lang_label.setText("Выбрано языков: 0")
+            self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+            self.table.setRowCount(0)
+            print("process_data: нет target_languages => return")
+            return
+
+        self.selected_target_lang_label.setText(f"Выбрано языков: {len(target_languages)}")
+        self.selected_languages_display.setText("Список выбранных языков:\n" + ", ".join(target_languages))
+
+        currency_map = {
+            "Долл США (USD)": "USD",
+            "Евро (EUR)":    "EUR",
+            "Рубль (RUB)":   "RUB",
+            "Юань (CNY)":    "CNY"
+        }
+        selected_currency = currency_map[self.currency_combo.currentText()]
+
+        rate_number = 1 if self.rate_combo.currentText() == "Client rates 1" else 2
+
+        self.table.setColumnCount(5)
+        headers = ["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"]
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.setRowCount(0)
+
+        if not self.is_second_file:
+            print("process_data: MLV_Rates_USD_EUR_RUR_CNY логика...")
+            filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
+
+            for targ in target_languages:
+                row_found = False
+                for _, row_ in filtered_df.iterrows():
+                    if row_.iloc[1] == targ:
+                        row_found = True
+                        try:
+                            # Hourly = округлять до целого => round(..., 0) => int
+                            if selected_currency in ["USD","EUR"]:
+                                if rate_number == 1:
+                                    if selected_currency=="USD":
+                                        col_base = 2
+                                    else:
+                                        col_base = 5
+                                    basic_round = complex_round = 3
+                                    hour_round = 0
+                                else:
+                                    if selected_currency=="USD":
+                                        col_base = 8
+                                    else:
+                                        col_base = 11
+                                    basic_round = complex_round = 3
+                                    hour_round = 0
+                            elif selected_currency in ["RUB","CNY"]:
+                                if rate_number == 1:
+                                    if selected_currency=="RUB":
+                                        col_base = 15
+                                    else:
+                                        col_base = 21
+                                    basic_round = complex_round = 2
+                                    hour_round = 0
+                                else:
+                                    if selected_currency=="RUB":
+                                        col_base = 18
+                                    else:
+                                        col_base = 24
+                                    basic_round = complex_round = 2
+                                    hour_round = 0
+                            else:
+                                col_base = None
+
+                            if col_base is not None and (col_base + 2) < len(row_):
+                                bval = safe_float(row_.iloc[col_base])
+                                cval = safe_float(row_.iloc[col_base + 1])
+                                hval = safe_float(row_.iloc[col_base + 2])
+
+                                if bval is not None:
+                                    b_rounded = round(bval, basic_round)
+                                    basic = format_value(b_rounded)
+                                else:
+                                    basic = "N/A"
+
+                                if cval is not None:
+                                    c_rounded = round(cval, complex_round)
+                                    complex_ = format_value(c_rounded)
+                                else:
+                                    complex_ = "N/A"
+
+                                if hval is not None:
+                                    h_rounded = int(round(hval, hour_round))
+                                    hour_ = format_value(h_rounded)
+                                else:
+                                    hour_ = "N/A"
+                            else:
+                                basic = complex_ = hour_ = "N/A"
+                        except Exception as e:
+                            print("Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:", e)
+                            basic = complex_ = hour_ = "N/A"
+
+                        rindex = self.table.rowCount()
+                        self.table.insertRow(rindex)
+                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
+                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
+
+                        b_item = QTableWidgetItem(str(basic))
+                        b_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 2, b_item)
+
+                        c_item = QTableWidgetItem(str(complex_))
+                        c_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 3, c_item)
+
+                        h_item = QTableWidgetItem(str(hour_))
+                        h_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 4, h_item)
+
+                if not row_found:
+                    rr = self.table.rowCount()
+                    self.table.insertRow(rr)
+                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
+                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
+                    for cc in [2, 3, 4]:
+                        na_item = QTableWidgetItem("N/A")
+                        na_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rr, cc, na_item)
+
+        else:
+            print("process_data: TEP (Source RU) логика...")
+            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
+                print("НЕТ 'SourceLang'/'TargetLang' => return")
+                return
+
+            filtered_df = self.df[self.df["SourceLang"] == source_lang]
+            for targ in target_languages:
+                row_found = False
+                for _, row_ in filtered_df.iterrows():
+                    if pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ):
+                        row_found = True
+                        if selected_currency=="USD":
+                            if rate_number==1:
+                                col_b = "USD_Basic_R1"
+                                col_c = "USD_Complex_R1"
+                                col_h = "USD_Hourly_R1"
+                                br, cr, hr = 3,3,0
+                            else:
+                                col_b = "USD_Basic_R2"
+                                col_c = "USD_Complex_R2"
+                                col_h = "USD_Hourly_R2"
+                                br, cr, hr = 3,3,0
+                        elif selected_currency=="RUB":
+                            if rate_number==1:
+                                col_b = "RUB_Basic_R1"
+                                col_c = "RUB_Complex_R1"
+                                col_h = "RUB_Hourly_R1"
+                                br, cr, hr = 2,2,0
+                            else:
+                                col_b = None
+                                col_c = None
+                                col_h = None
+                        else:
+                            col_b = None
+                            col_c = None
+                            col_h = None
+
+                        bval = safe_float(row_.get(col_b)) if col_b else None
+                        cval = safe_float(row_.get(col_c)) if col_c else None
+                        hval = safe_float(row_.get(col_h)) if col_h else None
+
+                        if bval is not None:
+                            basic_rounded = round(bval, br)
+                            basic = format_value(basic_rounded)
+                        else:
+                            basic = "N/A"
+
+                        if cval is not None:
+                            complex_rounded = round(cval, cr)
+                            complex_ = format_value(complex_rounded)
+                        else:
+                            complex_ = "N/A"
+
+                        if hval is not None:
+                            hourly_rounded = int(round(hval, hr))
+                            hour_ = format_value(hourly_rounded)
+                        else:
+                            hour_ = "N/A"
+
+                        rindex = self.table.rowCount()
+                        self.table.insertRow(rindex)
+                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
+                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
+
+                        b_item = QTableWidgetItem(str(basic))
+                        b_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 2, b_item)
+
+                        c_item = QTableWidgetItem(str(complex_))
+                        c_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 3, c_item)
+
+                        h_item = QTableWidgetItem(str(hour_))
+                        h_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rindex, 4, h_item)
+
+                if not row_found:
+                    rr = self.table.rowCount()
+                    self.table.insertRow(rr)
+                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
+                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
+                    for cc in [2, 3, 4]:
+                        na_item = QTableWidgetItem("N/A")
+                        na_item.setTextAlignment(Qt.AlignCenter)
+                        self.table.setItem(rr, cc, na_item)
+
+        # Настройка ширин
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        for col_ in [2, 3, 4]:
+            header.setSectionResizeMode(col_, QHeaderView.Stretch)
+
+        for col_ in range(self.table.columnCount()):
+            head_item = self.table.horizontalHeaderItem(col_)
+            if head_item:
+                head_item.setTextAlignment(Qt.AlignCenter)
+
+        header.setStretchLastSection(False)
+        self.table.viewport().update()
+        self.save_current_selection()
+        print("=> process_data() done.")
+
+    def load_history_combo(self):
+        self.history_combo.blockSignals(True)
+        self.history_combo.clear()
+        self.history_combo.addItem("История...")
+        self.history_data = load_history()
+        for entry in self.history_data:
+            file_text = "TEP" if entry.get('file', 1) == 2 else "MLV"
+            txt = f"{entry['source']} -> {', '.join(entry['targets'])} [{file_text}]"
+            self.history_combo.addItem(txt)
+        self.history_combo.blockSignals(False)
+
+    def apply_history_selection(self, index):
+        if index <= 0:
+            return
+        entry = self.history_data[index - 1]
+
+        entry_file = entry.get('file', 1)
+        if self.df is None or ((entry_file == 2) != self.is_second_file):
+            if entry_file == 2:
+                self.load_url_2()
+            else:
+                self.load_url()
+
+        self.source_lang_combo.setCurrentText(entry['source'])
+        self.update_target_languages()
+        targets_set = set(entry['targets'])
+        for i in range(self.available_lang_list.count() - 1, -1, -1):
+            it = self.available_lang_list.item(i)
+            if it.text() in targets_set:
+                self.selected_lang_list.addItem(it.text())
+                self.available_lang_list.takeItem(i)
+        self.history_combo.setCurrentIndex(0)
+        self.process_data()
+
+    def save_current_selection(self):
+        source = self.source_lang_combo.currentText()
+        targets = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
+        key = (source, tuple(targets))
+        if targets and key != self.last_saved_selection:
+            add_entry(source, targets, self.is_second_file)
+            self.last_saved_selection = key
+            self.load_history_combo()
+
+    # ------------------------------------------------------------------
+    # Экспорт ставок в Excel (все валюты и R1/R2)
+    # ------------------------------------------------------------------
+    def export_rates_to_excel(self):
+        if self.df is None:
+            return
+
+        source_lang = self.source_lang_combo.currentText()
+        target_languages = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
+        if not target_languages:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить ставки", "", "Excel Files (*.xlsx)")
+        if not file_path:
+            return
+        if not file_path.endswith(".xlsx"):
+            file_path += ".xlsx"
+
+        sheets = {}
+        for rate_number in [1, 2]:
+            for currency in ["USD", "EUR", "RUB", "CNY"]:
+                df_rates = self.build_rates_dataframe(source_lang, target_languages, rate_number, currency)
+                sheet_name = f"R{rate_number}_{currency}"
+                sheets[sheet_name] = df_rates
+
+        export_rate_tables(sheets, file_path)
+
+    def build_rates_dataframe(self, source_lang, targets, rate_number, currency):
+        data = []
+        if not self.is_second_file:
+            filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
+            for targ in targets:
+                row_series = filtered_df[filtered_df.iloc[:, 1] == targ]
+                if not row_series.empty:
+                    basic, complex_, hour_ = self._extract_mlv_rates(row_series.iloc[0], currency, rate_number)
+                else:
+                    basic = complex_ = hour_ = None
+                data.append({
+                    "Исходный язык": source_lang,
+                    "Язык перевода": targ,
+                    "Basic": basic,
+                    "Complex": complex_,
+                    "Hour": hour_
+                })
+        else:
+            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
+                return pd.DataFrame(columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
+            filtered_df = self.df[self.df["SourceLang"] == source_lang]
+            for targ in targets:
+                row_series = filtered_df[filtered_df["TargetLang"].astype(str) == str(targ)]
+                if not row_series.empty:
+                    basic, complex_, hour_ = self._extract_tep_rates(row_series.iloc[0], currency, rate_number)
+                else:
+                    basic = complex_ = hour_ = None
+                data.append({
+                    "Исходный язык": source_lang,
+                    "Язык перевода": targ,
+                    "Basic": basic,
+                    "Complex": complex_,
+                    "Hour": hour_
+                })
+
+        return pd.DataFrame(data, columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
+
+    def _extract_mlv_rates(self, row_, currency, rate_number):
+        col_base = None
+        hr = 0
+        if currency in ["USD", "EUR"]:
+            if rate_number == 1:
+                col_base = 2 if currency == "USD" else 5
+                br = cr = 3
+            else:
+                col_base = 8 if currency == "USD" else 11
+                br = cr = 3
+        elif currency in ["RUB", "CNY"]:
+            if rate_number == 1:
+                col_base = 15 if currency == "RUB" else 21
+                br = cr = 2
+            else:
+                col_base = 18 if currency == "RUB" else 24
+                br = cr = 2
+        if col_base is not None and (col_base + 2) < len(row_):
+            bval = safe_float(row_.iloc[col_base])
+            cval = safe_float(row_.iloc[col_base + 1])
+            hval = safe_float(row_.iloc[col_base + 2])
+            basic = round(bval, br) if bval is not None else None
+            complex_ = round(cval, cr) if cval is not None else None
+            hour_ = int(round(hval, hr)) if hval is not None else None
+        else:
+            basic = complex_ = hour_ = None
+        return basic, complex_, hour_
+
+    def _extract_tep_rates(self, row_, currency, rate_number):
+        if currency == "USD":
+            if rate_number == 1:
+                col_b = "USD_Basic_R1"
+                col_c = "USD_Complex_R1"
+                col_h = "USD_Hourly_R1"
+                br = cr = 3
+            else:
+                col_b = "USD_Basic_R2"
+                col_c = "USD_Complex_R2"
+                col_h = "USD_Hourly_R2"
+                br = cr = 3
+            hr = 0
+        elif currency == "RUB":
+            if rate_number == 1:
+                col_b = "RUB_Basic_R1"
+                col_c = "RUB_Complex_R1"
+                col_h = "RUB_Hourly_R1"
+                br = cr = 2
+                hr = 0
+            else:
+                col_b = col_c = col_h = None
+                br = cr = hr = 0
+        else:
+            col_b = col_c = col_h = None
+            br = cr = hr = 0
+
+        bval = safe_float(row_.get(col_b)) if col_b else None
+        cval = safe_float(row_.get(col_c)) if col_c else None
+        hval = safe_float(row_.get(col_h)) if col_h else None
+
+        basic = round(bval, br) if bval is not None else None
+        complex_ = round(cval, cr) if cval is not None else None
+        hour_ = int(round(hval, hr)) if hval is not None else None
+        return basic, complex_, hour_
