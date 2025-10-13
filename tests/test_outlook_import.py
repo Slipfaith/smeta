@@ -78,3 +78,41 @@ def test_map_message_strips_bracket_tags_from_subject():
     result = map_message_to_project_info(message)
 
     assert result.data.project_name == "Новая тема"
+
+
+def test_map_message_falls_back_to_plain_text_rows():
+    plain_text = """
+Название клиента
+ООО Клиент
+
+Контрагент Logrus IT (с НДС или нет, если с НДС, укажите размер НДС)
+ООО "Логрус ИТ"
+
+Валюта расчетов:
+доллары США
+
+Контактное лицо со стороны клиента:
+Jane Smith
+jane.smith@example.com
+
+Email
+Jane Smith <jane.smith@example.com>
+"""
+
+    message = OutlookMessage(
+        subject="Коммерческое предложение",
+        sender_name=None,
+        sender_email=None,
+        sent_at=None,
+        body=plain_text,
+        html_body="",
+    )
+
+    result = map_message_to_project_info(message)
+
+    data = result.data
+    assert data.client_name == "ООО Клиент"
+    assert data.legal_entity == 'ООО "Логрус ИТ"'
+    assert data.currency_code == "USD"
+    assert data.contact_email == "jane.smith@example.com"
+    assert data.email == "jane.smith@example.com"

@@ -26,6 +26,14 @@ _KEY_NORMALIZATION = {
     "currency": "currency",
 }
 
+_SUPPORTED_KEYS = {
+    "client_name",
+    "contact_person",
+    "email",
+    "legal_entity",
+    "currency",
+}
+
 
 @dataclass
 class ProjectInfoData:
@@ -110,6 +118,54 @@ def _normalize_legal_entity(value: str) -> Optional[str]:
     return value
 
 
+def _parse_plain_text_rows(body: str) -> Dict[str, str]:
+    body = body or ""
+    if not body.strip():
+        return {}
+
+    result: Dict[str, str] = {}
+    key: Optional[str] = None
+    current_parts: List[str] = []
+
+    def commit_current():
+        nonlocal key, current_parts
+        if key and current_parts:
+            value = " ".join(part.strip() for part in current_parts if part.strip())
+            if value:
+                result[key] = value
+        key = None
+        current_parts = []
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            commit_current()
+            continue
+
+        if ":" in line:
+            candidate, value_part = line.split(":", 1)
+            normalized = _normalize_key(candidate)
+            if normalized in _SUPPORTED_KEYS:
+                commit_current()
+                if value_part.strip():
+                    result[normalized] = value_part.strip()
+                else:
+                    key = normalized
+                continue
+
+        normalized = _normalize_key(line)
+        if normalized in _SUPPORTED_KEYS:
+            commit_current()
+            key = normalized
+            continue
+
+        if key:
+            current_parts.append(line)
+
+    commit_current()
+    return result
+
+
 def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResult:
     table_rows: List[List[str]] = []
     warnings: List[str] = []
@@ -130,7 +186,9 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
                 continue
             mapped_values[key] = value
     else:
-        warnings.append("Таблица в письме не найдена")
+        mapped_values.update(_parse_plain_text_rows(message.body or ""))
+        if not mapped_values:
+            warnings.append("Таблица в письме не найдена")
 
     project_name = None
     if message.subject:
