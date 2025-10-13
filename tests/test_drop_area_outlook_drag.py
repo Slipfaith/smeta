@@ -60,11 +60,24 @@ def test_mime_detection_handles_additional_parameters():
     assert drop_areas._mime_has_outlook_messages(mime) is True
 
 
+def test_mime_detection_normalises_variants():
+    mime = QMimeData()
+
+    descriptor_format = ' application/x-qt-windows-mime;value="FileGroupDescriptor"\x00 '
+    contents_format = 'application/x-qt-windows-mime;value="FileContents";Index=0'
+
+    descriptor_bytes = _make_descriptor_bytes("Email.msg", wide=False)
+    mime.setData(descriptor_format, QByteArray(descriptor_bytes))
+    mime.setData(contents_format, QByteArray(b"message-bytes"))
+
+    assert drop_areas._mime_has_outlook_messages(mime) is True
+
+
 def test_extract_outlook_messages_creates_temp_files():
     mime = QMimeData()
 
     descriptor_format = 'application/x-qt-windows-mime;value="FileGroupDescriptorW"'
-    contents_format = 'application/x-qt-windows-mime;value="FileContents";index=0'
+    contents_format = 'application/x-qt-windows-mime;value="FileContents";Index=0'
 
     file_bytes = b"Outlook attachment contents"
     descriptor_bytes = _make_descriptor_bytes("Client Email.msg")
@@ -151,6 +164,53 @@ def test_extract_outlook_messages_reads_via_retrieve_data():
         assert os.path.exists(saved_path)
         with open(saved_path, "rb") as fh:
             assert fh.read() == file_bytes
+    finally:
+        for path in created_paths:
+            if os.path.exists(path):
+                os.remove(path)
+            drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+
+def test_extract_outlook_messages_prefers_existing_msg_files(tmp_path):
+    msg_path = tmp_path / "message.msg"
+    msg_path.write_bytes(b"existing-msg")
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(msg_path))])
+
+    created_paths = drop_areas._extract_outlook_messages(mime)
+
+    assert created_paths == [str(msg_path)]
+
+
+def test_extract_outlook_messages_com_fallback(monkeypatch, tmp_path):
+    descriptor_format = 'application/x-qt-windows-mime;value="FileGroupDescriptorW"'
+    contents_format = 'application/x-qt-windows-mime;value="FileContents"'
+
+    descriptor_bytes = _make_descriptor_bytes("Client Email.msg")
+
+    mime = QMimeData()
+    mime.setData(descriptor_format, QByteArray(descriptor_bytes))
+    mime.setData(contents_format, QByteArray())
+
+    monkeypatch.setattr(drop_areas, "_try_qt_filecontents_bytes", lambda *a, **k: b"")
+    monkeypatch.setattr(drop_areas, "_parse_ren_private_messages", lambda mime: [(b"entry-id", None)])
+
+    def fake_save_msg(eid, store):
+        path = tmp_path / "from_com.msg"
+        path.write_bytes(b"com-bytes")
+        drop_areas._OUTLOOK_TEMP_FILES.add(str(path))
+        return str(path)
+
+    monkeypatch.setattr(drop_areas, "_save_msg_via_outlook_com", fake_save_msg)
+
+    created_paths = drop_areas._extract_outlook_messages(mime)
+
+    try:
+        assert created_paths == [str(tmp_path / "from_com.msg")]
+        assert os.path.exists(created_paths[0])
+        with open(created_paths[0], "rb") as fh:
+            assert fh.read() == b"com-bytes"
     finally:
         for path in created_paths:
             if os.path.exists(path):
