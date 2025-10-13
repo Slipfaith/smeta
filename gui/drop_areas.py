@@ -1,5 +1,6 @@
 import atexit
 import locale
+import logging
 import os
 import sys
 import tempfile
@@ -11,6 +12,9 @@ from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
 from logic.translation_config import tr
+
+
+logger = logging.getLogger(__name__)
 
 
 class DropArea(QScrollArea):
@@ -189,6 +193,7 @@ def _iter_mime_format_strings(mime) -> List[str]:
         if decoded:
             formats.append(decoded)
 
+    logger.info("Outlook drag MIME formats decoded: %s", formats)
     return formats
 
 
@@ -232,12 +237,20 @@ def _mime_has_outlook_messages(mime) -> bool:
 
     formats = set(_iter_mime_format_strings(mime))
     if not any(_match_descriptor_format(fmt) for fmt in formats):
+        logger.debug(
+            "Outlook drag rejected: descriptor format missing. Formats=%s",
+            formats,
+        )
         return False
 
     # Outlook provides one "FileContents" entry per dragged message.
     if any(_match_file_contents_format(fmt) for fmt in formats):
+        logger.info("Outlook drag detected with descriptor and file contents data")
         return True
 
+    logger.debug(
+        "Outlook drag rejected: file contents format missing. Formats=%s", formats
+    )
     return False
 
 
@@ -290,10 +303,23 @@ def _extract_outlook_messages(mime) -> List[str]:
     )
 
     if not descriptor_format:
+        logger.warning(
+            "Failed to locate Outlook descriptor format in drag data. Formats=%s",
+            formats,
+        )
         return []
 
     descriptor_bytes = bytes(mime.data(descriptor_format))
+    logger.info(
+        "Reading Outlook descriptor %s (size=%d bytes)",
+        descriptor_format,
+        len(descriptor_bytes),
+    )
     if len(descriptor_bytes) < 4:
+        logger.warning(
+            "Descriptor payload too small to contain entries (size=%d)",
+            len(descriptor_bytes),
+        )
         return []
 
     is_wide = descriptor_format.endswith("DescriptorW")
@@ -302,23 +328,40 @@ def _extract_outlook_messages(mime) -> List[str]:
     created_paths: List[str] = []
 
     if count <= 0:
+        logger.info("Descriptor indicates no Outlook messages (count=%d)", count)
         return created_paths
 
     default_entry_size = 592 if is_wide else 332
     remaining = len(descriptor_bytes) - offset
     if remaining <= 0:
+        logger.warning(
+            "Descriptor payload truncated: remaining bytes=%d", remaining
+        )
         return created_paths
 
     entry_size = remaining // count if count else 0
     if entry_size < 72:
         entry_size = default_entry_size
         if entry_size <= 0 or offset + count * entry_size > len(descriptor_bytes):
+            logger.warning(
+                "Descriptor entry size invalid (entry_size=%d, count=%d, len=%d)",
+                entry_size,
+                count,
+                len(descriptor_bytes),
+            )
             return created_paths
     elif entry_size <= 0:
+        logger.warning("Descriptor entry size non-positive: %d", entry_size)
         return created_paths
 
     for index in range(count):
         if offset + entry_size > len(descriptor_bytes):
+            logger.warning(
+                "Descriptor terminated early at index=%d (offset=%d, len=%d)",
+                index,
+                offset,
+                len(descriptor_bytes),
+            )
             break
 
         entry = descriptor_bytes[offset : offset + entry_size]
@@ -327,14 +370,23 @@ def _extract_outlook_messages(mime) -> List[str]:
         filename_bytes = entry[72:]
         filename = _decode_filename(filename_bytes, wide=is_wide)
         if not filename:
+            logger.warning("Skipping Outlook entry without filename (index=%d)", index)
             continue
 
         contents_format = _find_file_contents_format(formats, index)
         if not contents_format:
+            logger.warning(
+                "No file contents format found for Outlook entry %s (index=%d)",
+                filename,
+                index,
+            )
             continue
 
         file_bytes = bytes(mime.data(contents_format))
         if not file_bytes:
+            logger.warning(
+                "Outlook entry %s (index=%d) has empty payload", filename, index
+            )
             continue
 
         suffix = os.path.splitext(filename)[1] or ".msg"
@@ -344,6 +396,14 @@ def _extract_outlook_messages(mime) -> List[str]:
             temp_path = tmp_file.name
 
         _OUTLOOK_TEMP_FILES.add(temp_path)
+        preview = file_bytes[:200]
+        logger.info(
+            "Created temporary Outlook file %s for %s (size=%d bytes, preview=%r)",
+            temp_path,
+            filename,
+            len(file_bytes),
+            preview,
+        )
         created_paths.append(temp_path)
 
     return created_paths
@@ -410,6 +470,8 @@ class ProjectInfoDropArea(QGroupBox):
         if not msg_paths:
             event.ignore()
             return
+
+        logger.info("Outlook drop resulted in message paths: %s", msg_paths)
 
         try:
             self._callback(msg_paths)
