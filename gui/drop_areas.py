@@ -156,44 +156,48 @@ atexit.register(_cleanup_temp_outlook_files)
 def _normalize_mime_format(fmt: str) -> str:
     """Return *fmt* stripped and with redundant whitespace removed."""
 
-    fmt = fmt.strip()
+    fmt = fmt.replace("\x00", "").strip()
     # Outlook may append extra parameters separated by semicolons. Duplicated
     # whitespace around those separators changes the literal string returned by
     # Qt, so collapse it to improve comparisons.
     return " ".join(fmt.split())
 
 
-def _iter_mime_format_strings(mime) -> List[str]:
-    """Return all MIME formats from *mime* as decoded strings."""
+def _collect_mime_formats(mime) -> dict[str, str]:
+    """Return a mapping of normalised MIME names to the original Qt formats."""
 
-    formats: List[str] = []
+    formats: dict[str, str] = {}
     for fmt in mime.formats():
         if isinstance(fmt, str):
-            formats.append(_normalize_mime_format(fmt))
+            original = fmt
+        elif isinstance(fmt, bytes):
+            original = fmt.decode("utf-8", errors="ignore")
+        else:
+            # PySide6 returns QByteArray instances for MIME formats. Converting
+            # them to ``bytes`` yields the raw data that we then decode to a
+            # string for further processing.
+            try:
+                original = bytes(fmt).decode("utf-8", errors="ignore")
+            except Exception:
+                original = str(fmt)
+
+        normalised = _normalize_mime_format(original)
+        if not normalised:
             continue
 
-        if isinstance(fmt, bytes):
-            decoded = fmt.decode("utf-8", errors="ignore")
-            if decoded:
-                formats.append(_normalize_mime_format(decoded))
-            continue
-
-        # PySide6 returns QByteArray instances for MIME formats. Converting them
-        # to ``bytes`` yields the raw data that we then decode to a string.
-        try:
-            decoded = bytes(fmt).decode("utf-8", errors="ignore")
-        except Exception:
-            decoded = str(fmt)
-
-        decoded = _normalize_mime_format(decoded)
-        if decoded:
-            formats.append(decoded)
+        # Preserve the first occurrence of a given MIME name as reported by Qt
+        # so we can request the data back using the exact same identifier.
+        formats.setdefault(normalised, original)
 
     return formats
 
 
 def _match_descriptor_format(fmt: str) -> bool:
     if fmt in _OUTLOOK_DESCRIPTOR_FORMATS:
+        return True
+
+    lowered = fmt.lower()
+    if "filegroupdescriptor" in lowered:
         return True
 
     if not fmt.startswith("application/x-qt-windows-mime;value="):
@@ -203,10 +207,14 @@ def _match_descriptor_format(fmt: str) -> bool:
     if remainder.startswith('"'):
         remainder = remainder[1:]
     value_part = remainder.split('"', 1)[0]
-    return value_part in {"FileGroupDescriptor", "FileGroupDescriptorW"}
+    return "filegroupdescriptor" in value_part.lower()
 
 
 def _match_file_contents_format(fmt: str) -> bool:
+    lowered = fmt.lower()
+    if "filecontents" in lowered:
+        return True
+
     if fmt == _OUTLOOK_CONTENTS_PREFIX:
         return True
 
@@ -222,7 +230,9 @@ def _mime_has_outlook_messages(mime) -> bool:
     if sys.platform != "win32":
         return False
 
-    formats = set(_iter_mime_format_strings(mime))
+    format_map = _collect_mime_formats(mime)
+    formats = set(format_map)
+
     if not any(_match_descriptor_format(fmt) for fmt in formats):
         return False
 
@@ -275,7 +285,8 @@ def _extract_outlook_messages(mime) -> List[str]:
     if sys.platform != "win32":
         return []
 
-    formats = _iter_mime_format_strings(mime)
+    format_map = _collect_mime_formats(mime)
+    formats = list(format_map)
     descriptor_format = next(
         (fmt for fmt in formats if _match_descriptor_format(fmt)),
         None,
@@ -284,7 +295,11 @@ def _extract_outlook_messages(mime) -> List[str]:
     if not descriptor_format:
         return []
 
-    descriptor_bytes = bytes(mime.data(descriptor_format))
+    qt_descriptor_format = format_map.get(descriptor_format)
+    if not qt_descriptor_format:
+        return []
+
+    descriptor_bytes = bytes(mime.data(qt_descriptor_format))
     if len(descriptor_bytes) < 4:
         return []
 
@@ -312,7 +327,11 @@ def _extract_outlook_messages(mime) -> List[str]:
         if not contents_format:
             continue
 
-        file_bytes = bytes(mime.data(contents_format))
+        qt_contents_format = format_map.get(contents_format)
+        if not qt_contents_format:
+            continue
+
+        file_bytes = bytes(mime.data(qt_contents_format))
         if not file_bytes:
             continue
 

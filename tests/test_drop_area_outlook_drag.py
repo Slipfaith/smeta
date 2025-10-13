@@ -80,6 +80,35 @@ def test_extract_outlook_messages_creates_temp_files():
             drop_areas._OUTLOOK_TEMP_FILES.discard(path)
 
 
+def test_extract_outlook_messages_handles_whitespace_variants():
+    mime = QMimeData()
+
+    descriptor_format = 'application/x-qt-windows-mime; value="FileGroupDescriptorW" ;ms=1'
+    contents_format = 'application/x-qt-windows-mime; value="FileContents" ; index=0 ;ms=1'
+
+    file_bytes = b"Whitespace Outlook contents"
+    descriptor_bytes = _make_descriptor_bytes("Whitespace Email.msg")
+
+    mime.setData(descriptor_format, QByteArray(descriptor_bytes))
+    mime.setData(contents_format, QByteArray(file_bytes))
+
+    assert drop_areas._mime_has_outlook_messages(mime) is True
+
+    created_paths = drop_areas._extract_outlook_messages(mime)
+
+    try:
+        assert len(created_paths) == 1
+        saved_path = created_paths[0]
+        assert os.path.exists(saved_path)
+        with open(saved_path, "rb") as fh:
+            assert fh.read() == file_bytes
+    finally:
+        for path in created_paths:
+            if os.path.exists(path):
+                os.remove(path)
+            drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+
 def test_extract_outlook_messages_handles_parameterised_formats():
     mime = QMimeData()
 
