@@ -114,6 +114,50 @@ def test_extract_outlook_messages_handles_parameterised_formats():
             drop_areas._OUTLOOK_TEMP_FILES.discard(path)
 
 
+def test_extract_outlook_messages_reads_via_retrieve_data():
+    descriptor_format = 'application/x-qt-windows-mime;value="FileGroupDescriptorW"'
+    contents_format = 'application/x-qt-windows-mime;value="FileContents";index=0'
+
+    file_bytes = b"RetrieveData Outlook contents"
+    descriptor_bytes = _make_descriptor_bytes("Client Email.msg")
+
+    class RetrieveOnlyMime:
+        def formats(self):
+            return [descriptor_format, contents_format]
+
+        def data(self, fmt):
+            if fmt == descriptor_format:
+                return QByteArray(descriptor_bytes)
+            if fmt == contents_format:
+                return QByteArray()
+            return QByteArray()
+
+        def retrieveData(self, fmt, target_type):
+            if fmt == descriptor_format:
+                return QByteArray(descriptor_bytes)
+            if fmt == contents_format:
+                if target_type in (bytes, bytearray):
+                    return bytes(file_bytes)
+                return QByteArray(file_bytes)
+            return QByteArray()
+
+    mime = RetrieveOnlyMime()
+
+    created_paths = drop_areas._extract_outlook_messages(mime)
+
+    try:
+        assert len(created_paths) == 1
+        saved_path = created_paths[0]
+        assert os.path.exists(saved_path)
+        with open(saved_path, "rb") as fh:
+            assert fh.read() == file_bytes
+    finally:
+        for path in created_paths:
+            if os.path.exists(path):
+                os.remove(path)
+            drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+
 def test_extract_outlook_messages_handles_ansi_descriptor():
     mime = QMimeData()
 
