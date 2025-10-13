@@ -1,4 +1,8 @@
+import atexit
+import locale
 import os
+import sys
+import tempfile
 import traceback
 from typing import Callable, Iterable, List, Sequence
 
@@ -126,6 +130,136 @@ class DropArea(QScrollArea):
             event.ignore()
 
 
+_OUTLOOK_DESCRIPTOR_FORMATS = (
+    'application/x-qt-windows-mime;value="FileGroupDescriptorW"',
+    'application/x-qt-windows-mime;value="FileGroupDescriptor"',
+)
+_OUTLOOK_CONTENTS_PREFIX = 'application/x-qt-windows-mime;value="FileContents"'
+_OUTLOOK_TEMP_FILES: set[str] = set()
+
+
+def _cleanup_temp_outlook_files():
+    while _OUTLOOK_TEMP_FILES:
+        path = _OUTLOOK_TEMP_FILES.pop()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            # Best-effort cleanup. Ignore failures, files will be removed
+            # by the OS temp directory cleanup policies.
+            pass
+
+
+atexit.register(_cleanup_temp_outlook_files)
+
+
+def _mime_has_outlook_messages(mime) -> bool:
+    """Return True if *mime* contains Outlook drag-n-drop data."""
+
+    if sys.platform != "win32":
+        return False
+
+    formats = {str(fmt) for fmt in mime.formats()}
+    if not formats.intersection(_OUTLOOK_DESCRIPTOR_FORMATS):
+        return False
+
+    # Outlook provides one "FileContents" entry per dragged message.
+    if any(fmt == _OUTLOOK_CONTENTS_PREFIX or fmt.startswith(f"{_OUTLOOK_CONTENTS_PREFIX};") for fmt in formats):
+        return True
+
+    return False
+
+
+def _find_file_contents_format(formats: Sequence[str], index: int) -> str | None:
+    """Return the Qt MIME format that stores data for the requested *index*."""
+
+    exact_name = f"{_OUTLOOK_CONTENTS_PREFIX};index={index}"
+    if exact_name in formats:
+        return exact_name
+
+    prefix = f"{_OUTLOOK_CONTENTS_PREFIX};"
+    for fmt in formats:
+        if fmt.startswith(prefix) and "index=" in fmt:
+            try:
+                fmt_index = int(fmt.split("index=")[-1])
+            except ValueError:
+                continue
+            if fmt_index == index:
+                return fmt
+
+    if index == 0 and _OUTLOOK_CONTENTS_PREFIX in formats:
+        return _OUTLOOK_CONTENTS_PREFIX
+
+    return None
+
+
+def _decode_filename(data: bytes, wide: bool) -> str:
+    """Decode a filename stored inside a FILEDESCRIPTOR structure."""
+
+    encoding = "utf-16le" if wide else locale.getpreferredencoding(False) or "utf-8"
+    decoded = data.decode(encoding, errors="ignore").split("\x00", 1)[0]
+    return decoded.strip()
+
+
+def _extract_outlook_messages(mime) -> List[str]:
+    """Return temporary file paths created from the Outlook drag data."""
+
+    if sys.platform != "win32":
+        return []
+
+    formats = [str(fmt) for fmt in mime.formats()]
+    descriptor_format = next(
+        (fmt for fmt in formats if fmt in _OUTLOOK_DESCRIPTOR_FORMATS),
+        None,
+    )
+
+    if not descriptor_format:
+        return []
+
+    descriptor_bytes = bytes(mime.data(descriptor_format))
+    if len(descriptor_bytes) < 4:
+        return []
+
+    is_wide = descriptor_format.endswith("DescriptorW")
+    entry_size = 592 if is_wide else 332
+    filename_size = 520 if is_wide else 260
+
+    count = int.from_bytes(descriptor_bytes[:4], "little")
+    offset = 4
+    created_paths: List[str] = []
+
+    for index in range(count):
+        if offset + entry_size > len(descriptor_bytes):
+            break
+
+        entry = descriptor_bytes[offset : offset + entry_size]
+        offset += entry_size
+
+        filename_bytes = entry[72 : 72 + filename_size]
+        filename = _decode_filename(filename_bytes, wide=is_wide)
+        if not filename:
+            continue
+
+        contents_format = _find_file_contents_format(formats, index)
+        if not contents_format:
+            continue
+
+        file_bytes = bytes(mime.data(contents_format))
+        if not file_bytes:
+            continue
+
+        suffix = os.path.splitext(filename)[1] or ".msg"
+        prefix = "smeta_outlook_"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix=prefix) as tmp_file:
+            tmp_file.write(file_bytes)
+            temp_path = tmp_file.name
+
+        _OUTLOOK_TEMP_FILES.add(temp_path)
+        created_paths.append(temp_path)
+
+    return created_paths
+
+
 class ProjectInfoDropArea(QGroupBox):
     """A group box that accepts dropped Outlook .msg files with project metadata."""
 
@@ -147,17 +281,22 @@ class ProjectInfoDropArea(QGroupBox):
         self.style().polish(self)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
+        mime = event.mimeData()
+        if mime.hasUrls():
+            for url in mime.urls():
                 path = url.toLocalFile()
                 if path.lower().endswith(".msg"):
                     event.acceptProposedAction()
                     self._set_drag_state(True)
                     return
+        elif _mime_has_outlook_messages(mime):
+            event.acceptProposedAction()
+            self._set_drag_state(True)
+            return
         event.ignore()
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() or _mime_has_outlook_messages(event.mimeData()):
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -167,15 +306,17 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dropEvent(self, event):
         self._set_drag_state(False)
-        if not event.mimeData().hasUrls():
-            event.ignore()
-            return
-
         msg_paths: List[str] = []
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path.lower().endswith(".msg"):
-                msg_paths.append(path)
+        mime = event.mimeData()
+
+        if mime.hasUrls():
+            for url in mime.urls():
+                path = url.toLocalFile()
+                if path.lower().endswith(".msg"):
+                    msg_paths.append(path)
+
+        if not msg_paths:
+            msg_paths.extend(_extract_outlook_messages(mime))
 
         if not msg_paths:
             event.ignore()
