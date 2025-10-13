@@ -156,7 +156,7 @@ atexit.register(_cleanup_temp_outlook_files)
 def _normalize_mime_format(fmt: str) -> str:
     """Return *fmt* stripped and with redundant whitespace removed."""
 
-    fmt = fmt.strip()
+    fmt = fmt.replace("\x00", "").strip()
     # Outlook may append extra parameters separated by semicolons. Duplicated
     # whitespace around those separators changes the literal string returned by
     # Qt, so collapse it to improve comparisons.
@@ -196,6 +196,10 @@ def _match_descriptor_format(fmt: str) -> bool:
     if fmt in _OUTLOOK_DESCRIPTOR_FORMATS:
         return True
 
+    lowered = fmt.lower()
+    if "filegroupdescriptor" in lowered:
+        return True
+
     if not fmt.startswith("application/x-qt-windows-mime;value="):
         return False
 
@@ -203,10 +207,14 @@ def _match_descriptor_format(fmt: str) -> bool:
     if remainder.startswith('"'):
         remainder = remainder[1:]
     value_part = remainder.split('"', 1)[0]
-    return value_part in {"FileGroupDescriptor", "FileGroupDescriptorW"}
+    return "filegroupdescriptor" in value_part.lower()
 
 
 def _match_file_contents_format(fmt: str) -> bool:
+    lowered = fmt.lower()
+    if "filecontents" in lowered:
+        return True
+
     if fmt == _OUTLOOK_CONTENTS_PREFIX:
         return True
 
