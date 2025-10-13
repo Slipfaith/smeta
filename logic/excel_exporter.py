@@ -3,6 +3,7 @@ import os
 import logging
 import re
 import textwrap
+import threading
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
@@ -645,7 +646,7 @@ class ExcelExporter:
             self.logger.info("Saving workbook to %s", output_path)
             step("Сохранение файла")
             wb.save(output_path)
-            apply_separators(output_path, self.lang)
+            self._apply_separators_async(output_path)
 
             if progress_callback:
                 progress_callback(100, "Готово")
@@ -655,6 +656,31 @@ class ExcelExporter:
         except Exception:
             self.logger.exception("Ошибка экспорта в Excel")
             return False
+
+    def _apply_separators_async(self, output_path: str) -> None:
+        """Adjust number separators without blocking the UI."""
+
+        def worker() -> None:
+            try:
+                success = apply_separators(output_path, self.lang)
+                if not success:
+                    self.logger.debug(
+                        "Skipping separator adjustment for %s", output_path
+                    )
+            except Exception:
+                # ``apply_separators`` already guards against most failures, but we
+                # still protect the background thread from propagating exceptions
+                # back to the caller.
+                self.logger.exception(
+                    "Unexpected error while adjusting separators for %s", output_path
+                )
+
+        thread = threading.Thread(
+            target=worker,
+            name="excel-separators",
+            daemon=True,
+        )
+        thread.start()
 
     # ----------------------------- ПОИСК/КОПИРОВАНИЕ -----------------------------
 
