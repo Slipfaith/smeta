@@ -7,7 +7,7 @@ import tempfile
 import traceback
 from typing import Callable, Iterable, List, Sequence
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
@@ -282,6 +282,65 @@ def _find_file_contents_format(formats: Sequence[str], index: int) -> str | None
     return None
 
 
+def _ensure_bytes(data) -> bytes:
+    """Return *data* coerced into bytes, handling Qt types gracefully."""
+
+    if not data:
+        return b""
+
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data)
+
+    try:
+        return bytes(data)
+    except Exception:
+        return b""
+
+
+def _read_mime_bytes(mime, fmt: str) -> bytes:
+    """Return the payload stored in *mime* for the given Qt MIME *fmt*.
+
+    Outlook delivers data through Windows OLE streams.  PySide6 exposes those
+    as ``QByteArray`` instances via :meth:`QMimeData.data`, but some Windows
+    configurations require :meth:`QMimeData.retrieveData` with an explicit
+    target type.  This helper centralises those quirks and provides a resilient
+    way to obtain raw bytes from the MIME payload.
+    """
+
+    try:
+        raw = mime.data(fmt)
+    except Exception:
+        logger.exception("Failed to read MIME data for format %s", fmt)
+        raw = None
+
+    payload = _ensure_bytes(raw)
+    if payload:
+        return payload
+
+    candidate_types: List[type] = []
+    if raw is not None:
+        candidate_types.append(type(raw))
+
+    candidate_types.extend([QByteArray, bytes, bytearray])
+
+    seen: set[type] = set()
+    for candidate in candidate_types:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            retrieved = mime.retrieveData(fmt, candidate)
+        except Exception:
+            continue
+
+        payload = _ensure_bytes(retrieved)
+        if payload:
+            return payload
+
+    logger.warning("MIME format %s did not provide any payload", fmt)
+    return b""
+
+
 def _decode_filename(data: bytes, wide: bool) -> str:
     """Decode a filename stored inside a FILEDESCRIPTOR structure."""
 
@@ -340,7 +399,7 @@ def _extract_outlook_messages(mime) -> List[str]:
         )
         return []
 
-    descriptor_bytes = bytes(mime.data(descriptor_format))
+    descriptor_bytes = _read_mime_bytes(mime, descriptor_format)
     logger.info(
         "Reading Outlook descriptor %s (size=%d bytes)",
         descriptor_format,
@@ -413,7 +472,7 @@ def _extract_outlook_messages(mime) -> List[str]:
             )
             continue
 
-        file_bytes = bytes(mime.data(contents_format))
+        file_bytes = _read_mime_bytes(mime, contents_format)
         if not file_bytes:
             logger.warning(
                 "Outlook entry %s (index=%d) has empty payload", filename, index
