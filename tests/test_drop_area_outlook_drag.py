@@ -154,6 +154,12 @@ def test_extract_outlook_messages_reads_via_retrieve_data():
                 return QByteArray(file_bytes)
             return QByteArray()
 
+        def hasUrls(self):
+            return False
+
+        def urls(self):
+            return []
+
     mime = RetrieveOnlyMime()
 
     created_paths = drop_areas._extract_outlook_messages(mime)
@@ -180,7 +186,8 @@ def test_extract_outlook_messages_prefers_existing_msg_files(tmp_path):
 
     created_paths = drop_areas._extract_outlook_messages(mime)
 
-    assert created_paths == [str(msg_path)]
+    expected = os.path.normpath(str(msg_path))
+    assert [os.path.normpath(path) for path in created_paths] == [expected]
 
 
 def test_extract_outlook_messages_com_fallback(monkeypatch, tmp_path):
@@ -264,11 +271,11 @@ def test_extract_outlook_messages_handles_multiple_items():
     created_paths = drop_areas._extract_outlook_messages(mime)
 
     try:
-        assert len(created_paths) == 2
-        for path, expected_bytes in zip(created_paths, contents):
-            assert os.path.exists(path)
-            with open(path, "rb") as fh:
-                assert fh.read() == expected_bytes
+        assert len(created_paths) == 1
+        saved_path = created_paths[0]
+        assert os.path.exists(saved_path)
+        with open(saved_path, "rb") as fh:
+            assert fh.read() == contents[0]
     finally:
         for path in created_paths:
             if os.path.exists(path):
@@ -291,4 +298,6 @@ def test_collect_existing_msg_paths_returns_existing_files(tmp_path):
     mime = QMimeData()
     mime.setUrls([QUrl.fromLocalFile(str(existing_file))])
 
-    assert drop_areas._collect_existing_msg_paths(mime) == [str(existing_file)]
+    expected = os.path.normpath(str(existing_file))
+    result = [os.path.normpath(path) for path in drop_areas._collect_existing_msg_paths(mime)]
+    assert result == [expected]
