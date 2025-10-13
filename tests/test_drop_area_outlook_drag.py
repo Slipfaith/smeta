@@ -8,7 +8,7 @@ try:
 except ImportError as exc:  # pragma: no cover - platform dependent
     pytest.skip(f"PySide6 is not available: {exc}", allow_module_level=True)
 
-from PySide6.QtCore import QByteArray, QMimeData
+from PySide6.QtCore import QByteArray, QMimeData, QUrl
 
 
 def _make_descriptor_bytes(filenames, wide: bool = True) -> bytes:
@@ -170,3 +170,21 @@ def test_extract_outlook_messages_handles_multiple_items():
             if os.path.exists(path):
                 os.remove(path)
             drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+
+def test_collect_existing_msg_paths_ignores_missing_files(tmp_path):
+    mime = QMimeData()
+    missing_path = tmp_path / "missing.msg"
+    mime.setUrls([QUrl.fromLocalFile(str(missing_path))])
+
+    assert drop_areas._collect_existing_msg_paths(mime) == []
+
+
+def test_collect_existing_msg_paths_returns_existing_files(tmp_path):
+    existing_file = tmp_path / "mail.msg"
+    existing_file.write_bytes(b"msg data")
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(existing_file))])
+
+    assert drop_areas._collect_existing_msg_paths(mime) == [str(existing_file)]
