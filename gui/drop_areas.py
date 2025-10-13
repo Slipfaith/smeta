@@ -153,13 +153,42 @@ def _cleanup_temp_outlook_files():
 atexit.register(_cleanup_temp_outlook_files)
 
 
+def _iter_mime_format_strings(mime) -> List[str]:
+    """Return all MIME formats from *mime* as decoded strings."""
+
+    formats: List[str] = []
+    for fmt in mime.formats():
+        if isinstance(fmt, str):
+            formats.append(fmt)
+            continue
+
+        if isinstance(fmt, bytes):
+            decoded = fmt.decode("utf-8", errors="ignore")
+            if decoded:
+                formats.append(decoded)
+            continue
+
+        # PySide6 returns QByteArray instances for MIME formats. Converting them
+        # to ``bytes`` yields the raw data that we then decode to a string.
+        try:
+            decoded = bytes(fmt).decode("utf-8", errors="ignore")
+        except Exception:
+            decoded = str(fmt)
+
+        decoded = decoded.strip()
+        if decoded:
+            formats.append(decoded)
+
+    return formats
+
+
 def _mime_has_outlook_messages(mime) -> bool:
     """Return True if *mime* contains Outlook drag-n-drop data."""
 
     if sys.platform != "win32":
         return False
 
-    formats = {str(fmt) for fmt in mime.formats()}
+    formats = set(_iter_mime_format_strings(mime))
     if not formats.intersection(_OUTLOOK_DESCRIPTOR_FORMATS):
         return False
 
@@ -207,7 +236,7 @@ def _extract_outlook_messages(mime) -> List[str]:
     if sys.platform != "win32":
         return []
 
-    formats = [str(fmt) for fmt in mime.formats()]
+    formats = _iter_mime_format_strings(mime)
     descriptor_format = next(
         (fmt for fmt in formats if fmt in _OUTLOOK_DESCRIPTOR_FORMATS),
         None,
