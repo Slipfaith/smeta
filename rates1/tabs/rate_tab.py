@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 
-from utils import MLV_RATES_BUTTON_STYLE
+from gui.styles import MLV_RATES_BUTTON_STYLE
 
 # =================== pandas ===================
 import pandas as pd
