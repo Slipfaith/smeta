@@ -24,6 +24,16 @@ from PySide6.QtWidgets import (
 
 from gui.styles import (
     RATES_IMPORT_DIALOG_STYLE,
+    RATES_MAPPING_APPLY_COMBO_WIDTH,
+    RATES_MAPPING_CONTROLS_SPACING,
+    RATES_MAPPING_LAYOUT_MARGINS,
+    RATES_MAPPING_LAYOUT_SPACING,
+    RATES_MAPPING_TABLE_COLUMN_WIDTHS,
+    RATES_WINDOW_INITIAL_SIZE,
+    RATES_WINDOW_LAYOUT_MARGINS,
+    RATES_WINDOW_LAYOUT_SPACING,
+    RATES_WINDOW_SPLITTER_SIZES,
+    RATES_WINDOW_SPLITTER_STRETCH_FACTORS,
     STATUS_LABEL_DEFAULT_STYLE,
     STATUS_LABEL_SUCCESS_STYLE,
 )
@@ -58,11 +68,11 @@ class RatesMappingWidget(QWidget):
     # ------------------------------------------------------------------
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(*RATES_MAPPING_LAYOUT_MARGINS)
+        layout.setSpacing(RATES_MAPPING_LAYOUT_SPACING)
 
         controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(8)
+        controls_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
 
         self.auto_update_checkbox = QCheckBox(
             tr("Автоматически подставлять ставки", self._lang())
@@ -78,14 +88,14 @@ class RatesMappingWidget(QWidget):
         layout.addLayout(controls_layout)
 
         apply_layout = QHBoxLayout()
-        apply_layout.setSpacing(8)
+        apply_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
 
         apply_label = QLabel(tr("Применить", self._lang()) + ":")
         apply_layout.addWidget(apply_label)
 
         self.apply_combo = QComboBox()
         self.apply_combo.addItems(["Basic", "Complex", "Hour"])
-        self.apply_combo.setFixedWidth(110)
+        self.apply_combo.setFixedWidth(RATES_MAPPING_APPLY_COMBO_WIDTH)
         apply_layout.addWidget(self.apply_combo)
         apply_layout.addStretch()
 
@@ -114,15 +124,9 @@ class RatesMappingWidget(QWidget):
         self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
 
         header = self.table.horizontalHeader()
-        for column in range(self.table.columnCount()):
+        for column, width in enumerate(RATES_MAPPING_TABLE_COLUMN_WIDTHS):
             header.setSectionResizeMode(column, QHeaderView.Interactive)
-        self.table.setColumnWidth(0, 140)
-        self.table.setColumnWidth(1, 140)
-        self.table.setColumnWidth(2, 160)
-        self.table.setColumnWidth(3, 160)
-        self.table.setColumnWidth(4, 80)
-        self.table.setColumnWidth(5, 80)
-        self.table.setColumnWidth(6, 80)
+            self.table.setColumnWidth(column, width)
         layout.addWidget(self.table, 1)
 
         self._rate_columns = {"basic": 4, "complex": 5, "hour": 6}
@@ -400,12 +404,12 @@ class RatesManagerWindow(QMainWindow):
         self._current_pairs: List[Tuple[str, str]] = []
 
         self.setWindowTitle(tr("Панель ставок", main_window.gui_lang))
-        self.resize(1400, 720)
+        self.resize(*RATES_WINDOW_INITIAL_SIZE)
 
         central = QWidget()
         root_layout = QHBoxLayout(central)
-        root_layout.setContentsMargins(10, 10, 10, 10)
-        root_layout.setSpacing(0)
+        root_layout.setContentsMargins(*RATES_WINDOW_LAYOUT_MARGINS)
+        root_layout.setSpacing(RATES_WINDOW_LAYOUT_SPACING)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
@@ -417,9 +421,9 @@ class RatesManagerWindow(QMainWindow):
         self.mapping_widget = RatesMappingWidget(lambda: self._main_window.gui_lang, self)
         splitter.addWidget(self.mapping_widget)
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-        splitter.setSizes([420, 980])
+        splitter.setStretchFactor(0, RATES_WINDOW_SPLITTER_STRETCH_FACTORS[0])
+        splitter.setStretchFactor(1, RATES_WINDOW_SPLITTER_STRETCH_FACTORS[1])
+        splitter.setSizes(RATES_WINDOW_SPLITTER_SIZES)
 
         self.setCentralWidget(central)
 
