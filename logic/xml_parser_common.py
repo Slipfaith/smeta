@@ -93,7 +93,10 @@ def _language_tag_from_value(value: str) -> str:
         if tag:
             return tag
 
-    match = re.search(r"([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,3})?)", stripped)
+    match = re.search(
+        r"(?<![A-Za-z])([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,3})?)(?![A-Za-z])",
+        stripped,
+    )
     if match and len(stripped) <= 10:
         try:
             return langcodes.standardize_tag(match.group(1))
