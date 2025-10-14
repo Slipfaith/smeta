@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
-from utils import dark_theme, light_theme
+from utils import MLV_RATES_BUTTON_STYLE, TEP_BUTTON_STYLE
 
 # =================== pandas ===================
 import pandas as pd
@@ -134,14 +134,13 @@ class RateTab(QWidget):
 
         self.load_url_button = QPushButton("MLV_Rates_USD_EUR_RUR_CNY")
         self.load_url_button.clicked.connect(self.load_url)
+        self.load_url_button.setStyleSheet(MLV_RATES_BUTTON_STYLE)
         self.load_layout.addWidget(self.load_url_button)
 
         self.load_url_button_2 = QPushButton("TEP (Source RU)")
         self.load_url_button_2.clicked.connect(self.load_url_2)
+        self.load_url_button_2.setStyleSheet(TEP_BUTTON_STYLE)
         self.load_layout.addWidget(self.load_url_button_2)
-
-        # Apply initial theme styles (dark by default)
-        self.set_theme(True)
 
         self.layout_main.addLayout(self.load_layout)
 
@@ -289,15 +288,6 @@ class RateTab(QWidget):
 
         self.history_combo.currentIndexChanged.connect(self.apply_history_selection)
         self.load_history_combo()
-
-    def set_theme(self, dark: bool = True):
-        """Apply theme-specific styles to the download buttons."""
-        if dark:
-            self.load_url_button.setStyleSheet(dark_theme.MLV_RATES_BUTTON_STYLE)
-            self.load_url_button_2.setStyleSheet(dark_theme.TEP_BUTTON_STYLE)
-        else:
-            self.load_url_button.setStyleSheet(light_theme.MLV_RATES_BUTTON_STYLE)
-            self.load_url_button_2.setStyleSheet(light_theme.TEP_BUTTON_STYLE)
 
     # ----------------------------------------------------------------
     # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY

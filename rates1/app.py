@@ -8,18 +8,16 @@ from PySide6.QtCore import Qt, QPoint
 from tabs.rate_tab import RateTab
 from tabs.log_tab import LogTab
 from tabs.memoq_tab import MemoqTab
-from utils.dark_theme import apply_dark_theme, TITLE_BAR_STYLE as DARK_TITLE_BAR_STYLE
-from utils.light_theme import apply_light_theme, TITLE_BAR_STYLE as LIGHT_TITLE_BAR_STYLE
+from utils import TITLE_BAR_STYLE, apply_theme
 
 
-class DarkTitleBar(QWidget):
-    """Custom dark title bar with close and minimize buttons."""
+class TitleBar(QWidget):
+    """Custom title bar with close and minimize buttons."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAutoFillBackground(True)
-        # Initial style for the title bar is taken from the dark theme
-        self.setStyleSheet(DARK_TITLE_BAR_STYLE)
+        self.setStyleSheet(TITLE_BAR_STYLE)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 0, 5, 0)
@@ -32,12 +30,6 @@ class DarkTitleBar(QWidget):
         self.min_button.setText("-")
         self.min_button.clicked.connect(parent.showMinimized)
         layout.addWidget(self.min_button)
-
-        self.theme_button = QToolButton()
-        self.theme_button.setText("\u2600")
-        if parent is not None:
-            self.theme_button.clicked.connect(parent.toggle_theme)
-        layout.addWidget(self.theme_button)
 
         self.close_button = QToolButton()
         self.close_button.setText("x")
@@ -72,12 +64,15 @@ class RateApp(QWidget):
         self.setGeometry(100, 100, 1200, 800)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
 
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app)
+
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.main_layout)
-        self.dark_mode = True
 
-        self.title_bar = DarkTitleBar(self)
+        self.title_bar = TitleBar(self)
         self.main_layout.addWidget(self.title_bar)
 
         self.tab_widget = QTabWidget()
@@ -95,17 +90,3 @@ class RateApp(QWidget):
         self.memoq_tab = MemoqTab()
         self.tab_widget.addTab(self.memoq_tab, "MemoQ")
 
-    def toggle_theme(self):
-        app = QApplication.instance()
-        if self.dark_mode:
-            apply_light_theme(app)
-            self.dark_mode = False
-            self.title_bar.theme_button.setText("\u263E")
-            self.title_bar.setStyleSheet(LIGHT_TITLE_BAR_STYLE)
-            self.rate_tab.set_theme(False)
-        else:
-            apply_dark_theme(app)
-            self.dark_mode = True
-            self.title_bar.theme_button.setText("\u2600")
-            self.title_bar.setStyleSheet(DARK_TITLE_BAR_STYLE)
-            self.rate_tab.set_theme(True)
