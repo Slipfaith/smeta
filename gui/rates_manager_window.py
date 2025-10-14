@@ -84,7 +84,7 @@ class RatesMappingWidget(QWidget):
         apply_layout.addWidget(apply_label)
 
         self.apply_combo = QComboBox()
-        self.apply_combo.addItems(["Basic", "Complex"])
+        self.apply_combo.addItems(["Basic", "Complex", "Hour"])
         self.apply_combo.setFixedWidth(110)
         apply_layout.addWidget(self.apply_combo)
         apply_layout.addStretch()
@@ -124,6 +124,10 @@ class RatesMappingWidget(QWidget):
         self.table.setColumnWidth(5, 80)
         self.table.setColumnWidth(6, 80)
         layout.addWidget(self.table, 1)
+
+        self._rate_columns = {"basic": 4, "complex": 5, "hour": 6}
+        self._update_visible_rate_columns(self.selected_rate_key())
+        self.apply_combo.currentTextChanged.connect(self._handle_rate_mode_change)
 
         import_layout = QHBoxLayout()
         import_layout.addStretch()
@@ -203,6 +207,9 @@ class RatesMappingWidget(QWidget):
 
     def selected_rate_key(self) -> str:
         return self.apply_combo.currentText().lower()
+
+    def current_currency(self) -> str:
+        return self._currency.strip().upper() if self._currency else ""
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -291,6 +298,9 @@ class RatesMappingWidget(QWidget):
     def _handle_combo_change(self, row: int, _text: str) -> None:
         self._update_rate_from_row(row)
 
+    def _handle_rate_mode_change(self, _text: str) -> None:
+        self._update_visible_rate_columns(self.selected_rate_key())
+
     def _update_rate_from_row(self, row: int, force: bool = False) -> None:
         if not force and not self.auto_update_checkbox.isChecked():
             return
@@ -335,6 +345,10 @@ class RatesMappingWidget(QWidget):
             item.setText("")
         else:
             item.setText(f"{value:.2f}")
+
+    def _update_visible_rate_columns(self, selected_key: str) -> None:
+        for key, column in self._rate_columns.items():
+            self.table.setColumnHidden(column, key != selected_key)
 
     def _safe_item_text(self, row: int, column: int) -> str:
         item = self.table.item(row, column)
@@ -439,6 +453,9 @@ class RatesManagerWindow(QMainWindow):
                 tr("Данные не загружены", self._main_window.gui_lang),
             )
             return
+        currency = self.mapping_widget.current_currency()
+        if currency:
+            self._main_window.set_currency_code(currency)
         self._main_window._apply_rates_from_matches(matches, rate_key)
 
     # ------------------------------------------------------------------
