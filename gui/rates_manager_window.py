@@ -169,6 +169,7 @@ class RatesMappingWidget(QWidget):
         self._source_label: str = ""
         self._currency: str = ""
         self._rate_type: str = ""
+        self._last_matches: List[rates_importer.PairMatch] = []
 
         self._setup_ui()
         self.setStyleSheet(RATES_IMPORT_DIALOG_STYLE)
@@ -257,6 +258,7 @@ class RatesMappingWidget(QWidget):
     # ------------------------------------------------------------------
     def set_pairs(self, pairs: Iterable[Tuple[str, str]]) -> None:
         self._pairs = list(pairs)
+        self._last_matches = []
         self._rebuild_rows()
 
     def set_rates_data(
@@ -374,6 +376,7 @@ class RatesMappingWidget(QWidget):
             return
 
         matches = rates_importer.match_pairs(self._pairs, self._rates)
+        self._last_matches = matches
         for row, match in enumerate(matches):
             src_cell = self._ensure_lang_cell(row, 0)
             tgt_cell = self._ensure_lang_cell(row, 1)
@@ -419,6 +422,9 @@ class RatesMappingWidget(QWidget):
             self._apply_rate_values(row, rate)
         elif force or self.auto_update_checkbox.isChecked():
             self._clear_rate_values(row)
+
+    def matched_pairs(self) -> List[rates_importer.PairMatch]:
+        return list(self._last_matches)
 
     def _apply_rate_values(self, row: int, rate: RateRow) -> None:
         basic = rate.get("basic")
@@ -575,6 +581,9 @@ class RatesManagerWindow(QMainWindow):
         currency = str(payload.get("currency", ""))
         rate_type = str(payload.get("rate_type", ""))
         self.mapping_widget.set_rates_data(rates, source_label, currency, rate_type)
+        matches = self.mapping_widget.matched_pairs()
+        if matches:
+            self.rate_tab.set_excel_matches(matches)
 
     def _apply_to_main_window(self) -> None:
         matches = self.mapping_widget.selected_rates()
