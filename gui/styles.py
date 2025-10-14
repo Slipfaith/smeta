@@ -1,3 +1,8 @@
+# Основной стиль приложения: фон окна и базовые параметры общих виджетов
+# - QMainWindow: светло-серый фон (#f5f5f5)
+# - QGroupBox: серые рамки и скругления, отдельное оформление для drag&drop
+# - QPushButton: зелёная кнопка (#059669) с состояниями hover/pressed/disabled
+# - Поля ввода и таблицы: светлые рамки, скругления и подсказки
 APP_STYLE = """
 QMainWindow {
     background-color: #f5f5f5;
@@ -55,6 +60,7 @@ QToolTip {
 """
 
 
+# Базовый стиль зоны перетаскивания: светло-серая пунктирная рамка и фон
 DROP_AREA_BASE_STYLE = """
 QScrollArea {
     border: 2px dashed #e5e7eb;
@@ -68,6 +74,7 @@ QScrollArea[dragOver="true"] {
 """
 
 
+# Стиль зоны перетаскивания в момент drag&drop: синяя пунктирная рамка и фон
 DROP_AREA_DRAG_ONLY_STYLE = """
 QScrollArea[dragOver="true"] {
     border: 2px dashed #2563eb;
@@ -76,6 +83,7 @@ QScrollArea[dragOver="true"] {
 """
 
 
+# Подсказка внутри зоны перетаскивания: серый текст и пунктирная рамка
 DROP_HINT_LABEL_STYLE = """
 QLabel {
     color: #9ca3af;
@@ -90,15 +98,19 @@ QLabel {
 """
 
 
+# Стиль подсказки с итогами: компактный шрифт 12px и серый цвет текста
 SUMMARY_HINT_LABEL_STYLE = "font-size: 12px; padding: 4px; color: #555;"
 
 
+# Стиль отображения итоговой суммы: полужирный текст 14px и тёмно-серый цвет
 TOTAL_LABEL_STYLE = "font-weight: bold; font-size: 14px; padding: 6px; color: #333;"
 
 
+# Стиль вспомогательных подписей к отчётам: маленький текст 11px серого цвета
 REPORTS_LABEL_STYLE = "color: #555; font-size: 11px;"
 
 
+# Стиль диалога импорта расценок: белый фон, синие акценты и таблицы
 RATES_IMPORT_DIALOG_STYLE = """
 QDialog {
     background-color: #ffffff;
@@ -198,30 +210,43 @@ QTableWidget QComboBox {
 """
 
 
+# Начальный размер окна расценок: ширина 1400 px, высота 720 px
 RATES_WINDOW_INITIAL_SIZE = (1400, 720)
 
+# Отступы главного layout окна расценок: 10 px со всех сторон
 RATES_WINDOW_LAYOUT_MARGINS = (10, 10, 10, 10)
 
+# Расстояние между элементами главного layout окна расценок
 RATES_WINDOW_LAYOUT_SPACING = 0
 
+# Коэффициенты растяжения сплиттера: левая панель 1, правая 2
 RATES_WINDOW_SPLITTER_STRETCH_FACTORS = (1, 2)
 
+# Базовые размеры панелей сплиттера в пикселях: 420 и 980
 RATES_WINDOW_SPLITTER_SIZES = [420, 980]
 
+# Отступы layout области сопоставления: 12 px
 RATES_MAPPING_LAYOUT_MARGINS = (12, 12, 12, 12)
 
+# Расстояние между элементами layout сопоставления: 10 px
 RATES_MAPPING_LAYOUT_SPACING = 10
 
+# Отступы между элементами панели управления сопоставления: 8 px
 RATES_MAPPING_CONTROLS_SPACING = 8
 
+# Ширина комбобокса «Применить ко всем»: 110 px
 RATES_MAPPING_APPLY_COMBO_WIDTH = 110
 
+# Ширины колонок таблицы сопоставления в пикселях
 RATES_MAPPING_TABLE_COLUMN_WIDTHS = [140, 140, 160, 160, 80, 80, 80]
 
+# Цвет подписи статуса по умолчанию: серый #666666
 STATUS_LABEL_DEFAULT_STYLE = "color: #666666;"
 
 
+# Цвет подписи статуса при успехе: зелёный #107c10
 STATUS_LABEL_SUCCESS_STYLE = "color: #107c10;"
 
 
+# Цвет подписи статуса при ошибке: красный #d13438
 STATUS_LABEL_ERROR_STYLE = "color: #d13438;"
