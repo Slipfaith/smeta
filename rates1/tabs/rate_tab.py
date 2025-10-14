@@ -23,7 +23,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # =================== rates importer helpers ===================
 from logic import rates_importer
-from logic.xml_parser_common import language_identity
+from logic.xml_parser_common import expand_target_matches, language_identity
 from logic.translation_config import tr
 
 # =================== Сервисы MS Graph ===================
@@ -624,6 +624,14 @@ class RateTab(QWidget):
                 norm for norm in targets_by_source[src_norm] if norm in available_norms
             }
             if matched_norms:
+                source_norm = self._normalize_language_name(display_source)
+                matched_norms = expand_target_matches(
+                    matched_norms,
+                    available_norms.keys(),
+                    source_norm,
+                )
+                if not matched_norms:
+                    continue
                 if (
                     best_choice is None
                     or len(matched_norms) > len(best_choice[2])

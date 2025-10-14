@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Tuple
+from typing import Iterable, Set, Tuple
 
 import langcodes
 
@@ -162,6 +162,41 @@ def language_identity(value: str) -> Tuple[str, str, str]:
         return language, script, territory
 
     return "", "", ""
+
+
+def expand_target_matches(
+    matched_norms: Iterable[str],
+    available_norms: Iterable[str],
+    source_norm: str = "",
+) -> Set[str]:
+    """Expand *matched_norms* with other variants of the same base language.
+
+    The helper ensures that all target languages that belong to the same base
+    language as items from *matched_norms* are selected.  The source language
+    itself is removed from the result when ``source_norm`` is provided.
+    """
+
+    expanded_norms: Set[str] = set()
+    base_languages: Set[str] = set()
+
+    for norm in matched_norms:
+        if not norm:
+            continue
+        expanded_norms.add(norm)
+        base_languages.add(norm.split("-", 1)[0])
+
+    if base_languages:
+        for norm in available_norms:
+            if not norm:
+                continue
+            base = norm.split("-", 1)[0]
+            if base in base_languages:
+                expanded_norms.add(norm)
+
+    if source_norm:
+        expanded_norms.discard(source_norm)
+
+    return expanded_norms
 
 
 def normalize_language_name(name: str, locale: str = "ru") -> str:
