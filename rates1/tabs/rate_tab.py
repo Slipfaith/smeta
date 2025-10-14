@@ -125,7 +125,7 @@ class RateTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(420, 600)
         self.layout_main = QVBoxLayout()
         self.setLayout(self.layout_main)
 
