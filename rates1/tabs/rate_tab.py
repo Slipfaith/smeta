@@ -477,7 +477,7 @@ class RateTab(QWidget):
     def _apply_auto_selection(self) -> None:
         if self._auto_selection_done:
             return
-        if self.df is None or self.is_second_file:
+        if self.df is None:
             return
         if not self._gui_pairs or self.source_lang_combo.count() == 0:
             return
