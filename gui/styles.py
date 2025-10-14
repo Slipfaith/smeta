@@ -274,8 +274,8 @@ RATES_MAPPING_APPLY_COMBO_WIDTH = 110
 
 # Ширины колонок таблицы сопоставления в пикселях
 RATES_MAPPING_TABLE_COLUMN_WIDTHS = [180, 180, 100]
-# Высота строк таблицы панели ставок (примерно 12 мм при 96 DPI)
-RATES_MAPPING_TABLE_ROW_HEIGHT = 48
+# Высота строк таблицы панели ставок (примерно 13 мм при 96 DPI)
+RATES_MAPPING_TABLE_ROW_HEIGHT = 54
 
 # Цвет подписи статуса по умолчанию: серый #666666
 STATUS_LABEL_DEFAULT_STYLE = "color: #666666;"
