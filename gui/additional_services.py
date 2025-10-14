@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QWidgetAction,
     QButtonGroup,
+    QCheckBox,
 )
 from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
@@ -43,6 +44,11 @@ class AdditionalServiceTable(QWidget):
         layout = QVBoxLayout()
 
         header = QHBoxLayout()
+        self.enabled_checkbox = QCheckBox()
+        self.enabled_checkbox.setChecked(True)
+        self.enabled_checkbox.toggled.connect(self._on_enabled_toggled)
+        header.addWidget(self.enabled_checkbox)
+
         self.header_edit = QLineEdit(tr(title, self.lang))
         header.addWidget(self.header_edit)
         header.addStretch()
@@ -95,6 +101,7 @@ class AdditionalServiceTable(QWidget):
 
         self.setLayout(layout)
         self.update_sums()
+        self._on_enabled_toggled(True)
 
     # ----------------------------------------------------------------- menu
     def _show_menu(self, pos) -> None:
@@ -193,15 +200,21 @@ class AdditionalServiceTable(QWidget):
         return item.text() if item else "0"
 
     def get_subtotal(self) -> float:
+        if not self.is_enabled():
+            return 0.0
         base = self._subtotal
         discount_amount = base * (self._discount_percent / 100.0)
         markup_amount = base * (self._markup_percent / 100.0)
         return base - discount_amount + markup_amount
 
     def get_discount_amount(self) -> float:
+        if not self.is_enabled():
+            return 0.0
         return self._subtotal * (self._discount_percent / 100.0)
 
     def get_markup_amount(self) -> float:
+        if not self.is_enabled():
+            return 0.0
         return self._subtotal * (self._markup_percent / 100.0)
 
     def _update_discount_label(self) -> None:
@@ -209,8 +222,8 @@ class AdditionalServiceTable(QWidget):
             return
 
         base_total = self._subtotal
-        discount_percent = self._discount_percent
-        markup_percent = self._markup_percent
+        discount_percent = self._discount_percent if self.is_enabled() else 0.0
+        markup_percent = self._markup_percent if self.is_enabled() else 0.0
         discount_amount = base_total * (discount_percent / 100.0)
         markup_amount = base_total * (markup_percent / 100.0)
         final_total = self.get_subtotal()
@@ -225,7 +238,8 @@ class AdditionalServiceTable(QWidget):
                 f"+ {self._format_currency(markup_amount)} ({self._format_percent(markup_percent)})"
             )
 
-        prefix = f"{tr('Промежуточная сумма', self.lang)}: {self._format_currency(base_total)}"
+        prefix_amount = base_total if self.is_enabled() else self.get_subtotal()
+        prefix = f"{tr('Промежуточная сумма', self.lang)}: {self._format_currency(prefix_amount)}"
         if parts:
             self.subtotal_label.setText(
                 f"{prefix} {' '.join(parts)} = {self._format_currency(final_total)}"
@@ -265,6 +279,9 @@ class AdditionalServiceTable(QWidget):
         return f"{value:.1f}%"
 
     def _show_modifiers_menu(self) -> None:
+        if not self.is_enabled():
+            return
+
         menu = QMenu(self)
         menu.setSeparatorsCollapsible(False)
 
@@ -393,6 +410,8 @@ class AdditionalServiceTable(QWidget):
 
     # --------------------------------------------------------------- data i/o
     def get_data(self) -> Dict:
+        if not self.is_enabled():
+            return {}
         rows = []
         for r in range(self.table.rowCount()):
             rows.append({
@@ -466,6 +485,18 @@ class AdditionalServiceTable(QWidget):
         self.set_currency(self.currency_symbol, self.currency_code)
         self.update_sums()
         self._update_discount_label()
+
+    def is_enabled(self) -> bool:
+        return getattr(self, "enabled_checkbox", None) is None or self.enabled_checkbox.isChecked()
+
+    def _on_enabled_toggled(self, checked: bool) -> None:
+        self.header_edit.setEnabled(checked)
+        self.table.setEnabled(checked)
+        self.subtotal_label.setEnabled(checked)
+        if hasattr(self, "modifiers_button"):
+            self.modifiers_button.setEnabled(checked)
+        self._update_discount_label()
+        self.subtotal_changed.emit(self.get_subtotal())
 
 
 class AdditionalServicesWidget(QWidget):
