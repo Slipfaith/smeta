@@ -20,6 +20,9 @@ import pandas as pd
 # =================== typing ===================
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+# =================== rates importer helpers ===================
+from logic import rates_importer
+
 # =================== Сервисы MS Graph ===================
 from services.ms_graph import (
     authenticate_with_msal,
@@ -578,7 +581,14 @@ class RateTab(QWidget):
 
     @staticmethod
     def _normalize_language_name(value: str) -> str:
-        return str(value).strip().casefold()
+        text = str(value).strip()
+        if not text:
+            return ""
+        try:
+            normalized = rates_importer._normalize_language(text)
+        except Exception:
+            normalized = ""
+        return normalized or text.casefold()
 
     def move_to_selected(self, item):
         try:
