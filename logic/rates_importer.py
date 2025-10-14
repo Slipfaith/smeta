@@ -26,7 +26,7 @@ def _normalize_language(name: str) -> str:
     lower-cased input.
     """
     cleaned = re.sub(r"\s*\(.*?\)", "", name)
-    cleaned = re.split(r"[,/\-]", cleaned, 1)[0].strip()
+    cleaned = re.split(r"[,/\-]", cleaned, maxsplit=1)[0].strip()
     try:
         return langcodes.find(cleaned).language
     except LookupError:
