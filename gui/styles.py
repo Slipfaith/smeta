@@ -60,6 +60,41 @@ QToolTip {
 """
 
 
+# Специальные стили кнопок, используемые в виджете ставок
+MLV_RATES_BUTTON_STYLE = """
+QPushButton {
+    background-color: #E2E8F0;
+    border: 1px solid #CBD5E0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+}
+QPushButton:hover {
+    background-color: #CBD5E0;
+}
+QPushButton:pressed {
+    background-color: #A0AEC0;
+}
+"""
+
+
+TEP_BUTTON_STYLE = """
+QPushButton {
+    background-color: #EDF2F7;
+    border: 1px solid #D6BCFA;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+}
+QPushButton:hover {
+    background-color: #D6BCFA;
+}
+QPushButton:pressed {
+    background-color: #B794F4;
+}
+"""
+
+
 # Базовый стиль зоны перетаскивания: светло-серая пунктирная рамка и фон
 DROP_AREA_BASE_STYLE = """
 QScrollArea {
