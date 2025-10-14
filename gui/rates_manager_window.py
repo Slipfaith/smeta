@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -113,15 +114,12 @@ class RatesMappingWidget(QWidget):
         self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.Fixed)
-        header.setSectionResizeMode(5, QHeaderView.Fixed)
-        header.setSectionResizeMode(6, QHeaderView.Fixed)
+        for column in range(self.table.columnCount()):
+            header.setSectionResizeMode(column, QHeaderView.Interactive)
         self.table.setColumnWidth(0, 140)
         self.table.setColumnWidth(1, 140)
+        self.table.setColumnWidth(2, 160)
+        self.table.setColumnWidth(3, 160)
         self.table.setColumnWidth(4, 80)
         self.table.setColumnWidth(5, 80)
         self.table.setColumnWidth(6, 80)
@@ -393,13 +391,21 @@ class RatesManagerWindow(QMainWindow):
         central = QWidget()
         root_layout = QHBoxLayout(central)
         root_layout.setContentsMargins(10, 10, 10, 10)
-        root_layout.setSpacing(12)
+        root_layout.setSpacing(0)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        root_layout.addWidget(splitter)
 
         self.rate_tab = RateTab()
-        root_layout.addWidget(self.rate_tab, 1)
+        splitter.addWidget(self.rate_tab)
 
         self.mapping_widget = RatesMappingWidget(lambda: self._main_window.gui_lang, self)
-        root_layout.addWidget(self.mapping_widget, 1)
+        splitter.addWidget(self.mapping_widget)
+
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([420, 980])
 
         self.setCentralWidget(central)
 
