@@ -30,6 +30,7 @@ from gui.styles import (
     RATES_MAPPING_LAYOUT_MARGINS,
     RATES_MAPPING_LAYOUT_SPACING,
     RATES_MAPPING_TABLE_COLUMN_WIDTHS,
+    RATES_MAPPING_TABLE_ROW_HEIGHT,
     RATES_WINDOW_INITIAL_SIZE,
     RATES_WINDOW_LAYOUT_MARGINS,
     RATES_WINDOW_LAYOUT_SPACING,
@@ -232,6 +233,9 @@ class RatesMappingWidget(QWidget):
         for column, width in enumerate(RATES_MAPPING_TABLE_COLUMN_WIDTHS):
             header.setSectionResizeMode(column, QHeaderView.Interactive)
             self.table.setColumnWidth(column, width)
+        vertical_header = self.table.verticalHeader()
+        vertical_header.setDefaultSectionSize(RATES_MAPPING_TABLE_ROW_HEIGHT)
+        vertical_header.setMinimumSectionSize(RATES_MAPPING_TABLE_ROW_HEIGHT)
         self.table.itemChanged.connect(self._handle_item_changed)
         layout.addWidget(self.table, 1)
 
@@ -344,6 +348,7 @@ class RatesMappingWidget(QWidget):
             self._rate_values = self._rate_values[:target_rows]
 
         for row, (src, tgt) in enumerate(self._pairs):
+            self.table.setRowHeight(row, RATES_MAPPING_TABLE_ROW_HEIGHT)
             src_cell = self._ensure_lang_cell(row, 0, src)
             src_cell.set_main_value(src)
 
