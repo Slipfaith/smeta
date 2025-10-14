@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import partial
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -31,7 +32,6 @@ from gui.styles import (
     RATES_MAPPING_LAYOUT_SPACING,
     RATES_MAPPING_TABLE_COLUMN_WIDTHS,
     RATES_MAPPING_TABLE_ROW_HEIGHT,
-    RATES_WINDOW_INITIAL_SIZE,
     RATES_WINDOW_LAYOUT_MARGINS,
     RATES_WINDOW_LAYOUT_SPACING,
     RATES_WINDOW_SPLITTER_SIZES,
@@ -44,6 +44,8 @@ from logic.translation_config import tr
 from rates1 import RateTab
 
 RateRow = Dict[str, Optional[float]]
+
+logger = logging.getLogger(__name__)
 
 
 class SourceTargetCell(QWidget):
@@ -173,6 +175,9 @@ class RatesMappingWidget(QWidget):
 
         self._setup_ui()
         self.setStyleSheet(RATES_IMPORT_DIALOG_STYLE)
+        self._update_language_texts()
+        self._update_status()
+        self._update_import_button_state()
 
     # ------------------------------------------------------------------
     # UI
@@ -185,13 +190,11 @@ class RatesMappingWidget(QWidget):
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
 
-        self.auto_update_checkbox = QCheckBox(
-            tr("Автоматически подставлять ставки", self._lang())
-        )
+        self.auto_update_checkbox = QCheckBox()
         self.auto_update_checkbox.setChecked(True)
         controls_layout.addWidget(self.auto_update_checkbox)
 
-        self.auto_fill_btn = QPushButton(tr("Подставить ставки сейчас", self._lang()))
+        self.auto_fill_btn = QPushButton()
         self.auto_fill_btn.clicked.connect(lambda: self.auto_fill_from_rates(force=True))
         controls_layout.addWidget(self.auto_fill_btn)
 
@@ -201,11 +204,10 @@ class RatesMappingWidget(QWidget):
         apply_layout = QHBoxLayout()
         apply_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
 
-        apply_label = QLabel(tr("Применить", self._lang()) + ":")
-        apply_layout.addWidget(apply_label)
+        self.apply_label = QLabel()
+        apply_layout.addWidget(self.apply_label)
 
         self.apply_combo = QComboBox()
-        self.apply_combo.addItems(["Basic", "Complex", "Hour"])
         self.apply_combo.setFixedWidth(RATES_MAPPING_APPLY_COMBO_WIDTH)
         apply_layout.addWidget(self.apply_combo)
         apply_layout.addStretch()
@@ -220,12 +222,6 @@ class RatesMappingWidget(QWidget):
         layout.addLayout(status_layout)
 
         self.table = QTableWidget(0, 3)
-        headers = [
-            "Source",
-            "Target",
-            "Basic",
-        ]
-        self.table.setHorizontalHeaderLabels(headers)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
@@ -241,17 +237,90 @@ class RatesMappingWidget(QWidget):
         layout.addWidget(self.table, 1)
 
         self._rate_headers = {"basic": "Basic", "complex": "Complex", "hour": "Hour"}
+        self._rate_order = ("basic", "complex", "hour")
+        self._populate_apply_combo(self._lang())
+        self._update_table_headers()
         self._rate_values: List[Dict[str, str]] = []
         self._updating_rate_item = False
-        self._update_rate_header(self.selected_rate_key())
-        self.apply_combo.currentTextChanged.connect(self._handle_rate_mode_change)
+        self.apply_combo.currentIndexChanged.connect(self._handle_rate_mode_change)
 
         import_layout = QHBoxLayout()
         import_layout.addStretch()
-        self.import_btn = QPushButton(tr("Импортировать в программу", self._lang()))
+        self.import_btn = QPushButton()
         self.import_btn.clicked.connect(self.import_requested.emit)
         import_layout.addWidget(self.import_btn)
         layout.addLayout(import_layout)
+
+    def set_language(self, _lang: str) -> None:
+        self._update_language_texts()
+        self._update_status()
+        self._refresh_all_rate_display()
+        self._update_import_button_state()
+
+    def _update_language_texts(self) -> None:
+        lang = self._lang()
+        self.auto_update_checkbox.setText(
+            tr("Автоматически подставлять ставки", lang)
+        )
+        self.auto_fill_btn.setText(tr("Подставить ставки сейчас", lang))
+        self.apply_label.setText(tr("Применить", lang) + ":")
+        self.import_btn.setText(tr("Импортировать в программу", lang))
+        self._populate_apply_combo(lang)
+        self._update_table_headers()
+
+    def _populate_apply_combo(self, lang: str) -> None:
+        current_key = self.selected_rate_key()
+        self.apply_combo.blockSignals(True)
+        self.apply_combo.clear()
+        for key in self._rate_order:
+            label_key = self._rate_headers.get(key, "")
+            self.apply_combo.addItem(tr(label_key, lang), userData=key)
+        index = self.apply_combo.findData(current_key)
+        self.apply_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.apply_combo.blockSignals(False)
+
+    def _update_table_headers(self) -> None:
+        lang = self._lang()
+        headers = [
+            tr("Исходный язык", lang),
+            tr("Язык перевода", lang),
+            tr(self._rate_headers.get(self.selected_rate_key(), "Basic"), lang),
+        ]
+        for idx, text in enumerate(headers):
+            item = self.table.horizontalHeaderItem(idx)
+            if item is None:
+                item = QTableWidgetItem(text)
+                self.table.setHorizontalHeaderItem(idx, item)
+            else:
+                item.setText(text)
+
+    def _update_import_button_state(self) -> None:
+        enabled = self._can_import()
+        self.import_btn.setEnabled(enabled)
+        self.import_btn.setStyleSheet("" if enabled else "color: #888888;")
+
+    def _can_import(self) -> bool:
+        if not self._rates or self.table.rowCount() == 0:
+            return False
+        key = self.selected_rate_key()
+        for row in range(self.table.rowCount()):
+            src_widget = self.table.cellWidget(row, 0)
+            tgt_widget = self.table.cellWidget(row, 1)
+            src_text = (
+                src_widget.excel_text().strip()
+                if isinstance(src_widget, SourceTargetCell)
+                else ""
+            )
+            tgt_text = (
+                tgt_widget.excel_text().strip()
+                if isinstance(tgt_widget, SourceTargetCell)
+                else ""
+            )
+            storage = self._ensure_rate_storage(row)
+            value = storage.get(key, "").strip()
+            if not src_text or not tgt_text or not value:
+                return False
+        return True
 
     # ------------------------------------------------------------------
     # Public API
@@ -291,6 +360,7 @@ class RatesMappingWidget(QWidget):
         allow_force = force or self.auto_update_checkbox.isChecked()
         for row in range(self.table.rowCount()):
             self._update_rate_from_row(row, force=allow_force)
+        self._update_import_button_state()
 
     def selected_rates(self) -> List[rates_importer.PairMatch]:
         matches: List[rates_importer.PairMatch] = []
@@ -327,7 +397,8 @@ class RatesMappingWidget(QWidget):
         return matches
 
     def selected_rate_key(self) -> str:
-        return self.apply_combo.currentText().lower()
+        data = self.apply_combo.currentData()
+        return data if isinstance(data, str) else "basic"
 
     def current_currency(self) -> str:
         return self._currency.strip().upper() if self._currency else ""
@@ -365,6 +436,8 @@ class RatesMappingWidget(QWidget):
 
             self._refresh_rate_display(row)
 
+        self._update_import_button_state()
+
     def _refresh_language_combos(self) -> None:
         for row in range(self.table.rowCount()):
             for column in (0, 1):
@@ -386,6 +459,8 @@ class RatesMappingWidget(QWidget):
             if auto_fill and match.rates:
                 self._apply_rate_values(row, match.rates)
 
+        self._update_import_button_state()
+
     def _ensure_lang_cell(self, row: int, column: int, main_value: Optional[str] = None) -> SourceTargetCell:
         widget = self.table.cellWidget(row, column)
         if isinstance(widget, SourceTargetCell):
@@ -400,14 +475,16 @@ class RatesMappingWidget(QWidget):
 
     def _handle_excel_value_change(self, row: int, _text: str) -> None:
         self._update_rate_from_row(row)
+        self._update_import_button_state()
 
     def _handle_rate_mode_change(self, _text: str) -> None:
-        selected = self.selected_rate_key()
-        self._update_rate_header(selected)
+        self._update_table_headers()
         self._refresh_all_rate_display()
+        self._update_import_button_state()
 
     def _update_rate_from_row(self, row: int, force: bool = False) -> None:
         if not force and not self.auto_update_checkbox.isChecked():
+            self._update_import_button_state()
             return
 
         src_cell = self._ensure_lang_cell(row, 0)
@@ -415,6 +492,7 @@ class RatesMappingWidget(QWidget):
         src_code = self._name_to_code.get(src_cell.excel_text())
         tgt_code = self._name_to_code.get(tgt_cell.excel_text())
         if not src_code or not tgt_code:
+            self._update_import_button_state()
             return
 
         rate = self._rates.get((src_code, tgt_code))
@@ -422,6 +500,7 @@ class RatesMappingWidget(QWidget):
             self._apply_rate_values(row, rate)
         elif force or self.auto_update_checkbox.isChecked():
             self._clear_rate_values(row)
+        self._update_import_button_state()
 
     def matched_pairs(self) -> List[rates_importer.PairMatch]:
         return list(self._last_matches)
@@ -440,6 +519,7 @@ class RatesMappingWidget(QWidget):
         for key in ("basic", "complex", "hour"):
             storage[key] = ""
         self._refresh_rate_display(row)
+        self._update_import_button_state()
 
     def _set_rate_value(self, row: int, key: str, value: Optional[float]) -> None:
         storage = self._ensure_rate_storage(row)
@@ -467,19 +547,14 @@ class RatesMappingWidget(QWidget):
         self._updating_rate_item = True
         item.setText(value)
         self._updating_rate_item = False
+        self._update_import_button_state()
 
     def _refresh_all_rate_display(self) -> None:
         for row in range(self.table.rowCount()):
             self._refresh_rate_display(row)
 
     def _update_rate_header(self, selected_key: str) -> None:
-        header_text = self._rate_headers.get(selected_key, "")
-        header_item = self.table.horizontalHeaderItem(2)
-        if header_item is None:
-            header_item = QTableWidgetItem(header_text)
-            self.table.setHorizontalHeaderItem(2, header_item)
-        else:
-            header_item.setText(header_text)
+        self._update_table_headers()
 
     def _parse_rate(self, basic: str, complex_: str, hour: str) -> Optional[RateRow]:
         def _to_float(value: str) -> Optional[float]:
@@ -500,6 +575,7 @@ class RatesMappingWidget(QWidget):
         if not self._rates:
             self.status_label.setText(tr("Данные не загружены", lang))
             self.status_label.setStyleSheet(STATUS_LABEL_DEFAULT_STYLE)
+            self._update_import_button_state()
             return
 
         pieces = [f"{tr('Загружено пар', lang)}: {len(self._rates)}"]
@@ -512,6 +588,7 @@ class RatesMappingWidget(QWidget):
 
         self.status_label.setText(" | ".join(pieces))
         self.status_label.setStyleSheet(STATUS_LABEL_SUCCESS_STYLE)
+        self._update_import_button_state()
 
     def _empty_rate_dict(self) -> Dict[str, str]:
         return {"basic": "", "complex": "", "hour": ""}
@@ -521,6 +598,7 @@ class RatesMappingWidget(QWidget):
             return
         storage = self._ensure_rate_storage(item.row())
         storage[self.selected_rate_key()] = item.text()
+        self._update_import_button_state()
 
     def _lang_cell_excel_text(self, row: int, column: int) -> str:
         widget = self.table.cellWidget(row, column)
@@ -538,7 +616,8 @@ class RatesManagerWindow(QMainWindow):
         self._current_pairs: List[Tuple[str, str]] = []
 
         self.setWindowTitle(tr("Панель ставок", main_window.gui_lang))
-        self.resize(*RATES_WINDOW_INITIAL_SIZE)
+        self.resize(main_window.size())
+        self.move(main_window.pos())
 
         central = QWidget()
         root_layout = QHBoxLayout(central)
@@ -549,7 +628,7 @@ class RatesManagerWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         root_layout.addWidget(splitter)
 
-        self.rate_tab = RateTab()
+        self.rate_tab = RateTab(lambda: self._main_window.gui_lang)
         splitter.addWidget(self.rate_tab)
 
         self.mapping_widget = RatesMappingWidget(lambda: self._main_window.gui_lang, self)
@@ -563,6 +642,12 @@ class RatesManagerWindow(QMainWindow):
 
         self.rate_tab.rates_updated.connect(self._handle_rate_payload)
         self.mapping_widget.import_requested.connect(self._apply_to_main_window)
+
+    def set_language(self, lang: str) -> None:
+        """Update visible texts to the requested language."""
+        self.setWindowTitle(tr("Панель ставок", lang))
+        self.mapping_widget.set_language(lang)
+        self.rate_tab.set_language(lang)
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -596,13 +681,38 @@ class RatesManagerWindow(QMainWindow):
             )
             return
         currency = self.mapping_widget.current_currency()
-        if currency:
-            self._main_window.set_currency_code(currency)
-        self._main_window._apply_rates_from_matches(matches, rate_key)
+        success = True
+        error_message = ""
+        try:
+            if currency:
+                self._main_window.set_currency_code(currency)
+            self._main_window._apply_rates_from_matches(matches, rate_key)
+        except Exception as exc:  # pragma: no cover - GUI level safeguard
+            success = False
+            error_message = str(exc)
+            logger.exception("Failed to import rates from mapping widget")
+
+        self._show_import_result(success, error_message)
 
     # ------------------------------------------------------------------
     # Data helpers
     # ------------------------------------------------------------------
+    def _show_import_result(self, success: bool, details: str = "") -> None:
+        lang = self._main_window.gui_lang
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Импорт ставок", lang))
+        box.setIcon(QMessageBox.Information if success else QMessageBox.Critical)
+        text_key = "Ставки успешно добавлены." if success else "Не удалось импортировать ставки."
+        message = tr(text_key, lang)
+        if not success and details:
+            message += f"\n{details}"
+        box.setText(message)
+        ok_button = box.addButton(tr("Ок", lang), QMessageBox.AcceptRole)
+        close_button = box.addButton(tr("Закрыть панель", lang), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() == close_button:
+            self.close()
+
     def _build_rates_map(self, payload: Dict[str, object]) -> rates_importer.RatesMap:
         rows = payload.get("rows") or []
         result: rates_importer.RatesMap = {}

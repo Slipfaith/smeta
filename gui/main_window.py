@@ -318,6 +318,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.only_new_repeats_btn.setText(
                 tr("Только новые слова и повторы", lang)
             )
+        if self.rates_window:
+            self.rates_window.set_language(lang)
         self.update_menu_texts()
 
     def update_menu_texts(self):

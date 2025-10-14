@@ -24,6 +24,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 # =================== rates importer helpers ===================
 from logic import rates_importer
 from logic.xml_parser_common import language_identity
+from logic.translation_config import tr
 
 # =================== Сервисы MS Graph ===================
 from services.ms_graph import (
@@ -124,15 +125,14 @@ class CustomDelegate(QStyledItemDelegate):
         super().paint(painter, option, index)
 
 class RateTab(QWidget):
-    """
-    Вкладка «Ставки», поддерживающая 2 Excel:
-      - "MLV_Rates_USD_EUR_RUR_CNY"
-      - "TEP (Source RU)"
-    """
+    """Rates tab responsible for downloading and previewing rate tables."""
+
     rates_updated = Signal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, lang_getter, parent=None):
         super().__init__(parent)
+        self._lang_getter = lang_getter
+        self._current_lang = self._lang()
         self.setMinimumSize(420, 600)
         self.layout_main = QVBoxLayout()
         self.setLayout(self.layout_main)
@@ -151,10 +151,10 @@ class RateTab(QWidget):
 
         # --- Поля ввода языков ---
         self.lang_layout = QHBoxLayout()
-        self.source_lang_label = QLabel("Исходный язык:")
+        self.source_lang_label = QLabel()
         self.source_lang_combo = QComboBox()
-        self.target_lang_label = QLabel("Языки перевода:")
-        self.selected_target_lang_label = QLabel("Выбрано языков: 0")
+        self.target_lang_label = QLabel()
+        self.selected_target_lang_label = QLabel()
 
         self.lang_layout.addWidget(self.source_lang_label)
         self.lang_layout.addWidget(self.source_lang_combo)
@@ -174,10 +174,9 @@ class RateTab(QWidget):
         self.available_container.setMaximumWidth(260)
         self.available_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.available_search = QLineEdit()
-        self.available_search.setPlaceholderText("Поиск...")
         self.available_search.setClearButtonEnabled(True)
         self.available_search.textChanged.connect(self.filter_available_languages)
-        self.available_label = QLabel("Доступные языки:")
+        self.available_label = QLabel()
         self.available_lang_list = QListWidget()
         self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.available_lang_list.itemClicked.connect(self.move_to_selected)
@@ -188,8 +187,8 @@ class RateTab(QWidget):
         self.available_layout.addWidget(self.available_lang_list)
 
         self.select_buttons_layout = QHBoxLayout()
-        self.select_all_button = QPushButton("Выбрать все")
-        self.deselect_all_button = QPushButton("Снять выбор")
+        self.select_all_button = QPushButton()
+        self.deselect_all_button = QPushButton()
         self.select_all_button.clicked.connect(self.select_all_available)
         self.deselect_all_button.clicked.connect(self.deselect_all_available)
         self.select_buttons_layout.setContentsMargins(0, 0, 0, 0)
@@ -203,7 +202,7 @@ class RateTab(QWidget):
         self.selected_layout = QVBoxLayout()
         self.selected_layout.setContentsMargins(0, 0, 0, 0)
         self.selected_layout.setSpacing(6)
-        self.selected_label = QLabel("Выбранные языки:")
+        self.selected_label = QLabel()
         self.selected_lang_list = QListWidget()
         self.selected_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.selected_lang_list.itemClicked.connect(self.move_to_available)
@@ -216,32 +215,30 @@ class RateTab(QWidget):
         # -- Removed text size slider --
 
         # --- Отображение списка выбранных языков ---
-        self.selected_languages_display = QLabel("Список выбранных языков: (не выбрано)")
+        self.selected_languages_display = QLabel()
         self.selected_languages_display.setWordWrap(True)
         self.selected_languages_display.setStyleSheet("border: 1px solid #ccc; padding: 5px;")
         self.layout_main.addWidget(self.selected_languages_display)
 
         # --- Выбор ставки (Client rates 1/2) ---
         self.rate_layout = QHBoxLayout()
-        self.rate_label = QLabel("Выберите ставки:")
+        self.rate_label = QLabel()
         self.rate_combo = QComboBox()
-        self.rate_combo.addItems(["Client rates 1", "Client rates 2"])
         self.rate_layout.addWidget(self.rate_label)
         self.rate_layout.addWidget(self.rate_combo)
         self.layout_main.addLayout(self.rate_layout)
 
         # --- Выбор валюты (USD, EUR, RUB, CNY) ---
         self.currency_layout = QHBoxLayout()
-        self.currency_label = QLabel("Выберите валюту:")
+        self.currency_label = QLabel()
         self.currency_combo = QComboBox()
-        self.currency_combo.addItems(["Долл США (USD)", "Евро (EUR)", "Рубль (RUB)", "Юань (CNY)"])
         self.currency_layout.addWidget(self.currency_label)
         self.currency_layout.addWidget(self.currency_combo)
         self.layout_main.addLayout(self.currency_layout)
 
         # --- История выбора языков ---
         self.history_layout = QHBoxLayout()
-        self.history_label = QLabel("История:")
+        self.history_label = QLabel()
         self.history_combo = QComboBox()
         self.history_layout.addWidget(self.history_label)
         self.history_layout.addWidget(self.history_combo)
@@ -260,7 +257,7 @@ class RateTab(QWidget):
         self.copy_shortcut.activated.connect(self.copy_to_clipboard)
 
         # --- Кнопка экспорта ---
-        self.export_button = QPushButton("Экспорт в Excel")
+        self.export_button = QPushButton()
         self.export_button.clicked.connect(self.export_rates_to_excel)
         self.layout_main.addWidget(self.export_button)
 
@@ -280,13 +277,6 @@ class RateTab(QWidget):
 
         self.history_data = []
         self.last_saved_selection = None
-
-        self.currency_map = {
-            "Долл США (USD)": "USD",
-            "Евро (EUR)": "EUR",
-            "Рубль (RUB)": "RUB",
-            "Юань (CNY)": "CNY",
-        }
 
         # MS Graph настройки через .env
         self.client_id = os.getenv('CLIENT_ID')
@@ -310,7 +300,97 @@ class RateTab(QWidget):
         self.source_lang_combo.currentIndexChanged.connect(self.update_target_languages)
 
         self.history_combo.currentIndexChanged.connect(self.apply_history_selection)
+        self._currency_order = ["USD", "EUR", "RUB", "CNY"]
+        self._currency_labels = {
+            "USD": "Долл США (USD)",
+            "EUR": "Евро (EUR)",
+            "RUB": "Рубль (RUB)",
+            "CNY": "Юань (CNY)",
+        }
+        self._rate_labels = {1: "Client rates 1", 2: "Client rates 2"}
+
+        self._update_language_texts()
         self.load_history_combo()
+
+    # ------------------------------------------------------------------
+    # Language helpers
+    # ------------------------------------------------------------------
+    def _lang(self) -> str:
+        return self._lang_getter() if callable(self._lang_getter) else "ru"
+
+    def set_language(self, lang: str) -> None:
+        """Update visible texts when the application language changes."""
+        self._current_lang = lang
+        self._update_language_texts()
+        self.load_history_combo()
+
+    def _update_language_texts(self) -> None:
+        lang = self._lang()
+        self.source_lang_label.setText(tr("Исходный язык", lang) + ":")
+        self.target_lang_label.setText(tr("Языки перевода", lang) + ":")
+        self.selected_label.setText(tr("Выбранные языки", lang) + ":")
+        self.available_label.setText(tr("Доступные языки", lang) + ":")
+        self.available_search.setPlaceholderText(tr("Поиск...", lang))
+        self.select_all_button.setText(tr("Выбрать все", lang))
+        self.deselect_all_button.setText(tr("Снять выбор", lang))
+        self.rate_label.setText(tr("Выберите ставки", lang) + ":")
+        self.currency_label.setText(tr("Выберите валюту", lang) + ":")
+        self.history_label.setText(tr("История", lang) + ":")
+        self.export_button.setText(tr("Экспорт в Excel", lang))
+
+        self._populate_rate_combo(lang)
+        self._populate_currency_combo(lang)
+        self._update_selection_summary()
+        self._update_history_placeholder(lang)
+
+    def _populate_rate_combo(self, lang: str) -> None:
+        current_rate = self.rate_combo.currentData()
+        self.rate_combo.blockSignals(True)
+        self.rate_combo.clear()
+        for rate_id in (1, 2):
+            label_key = self._rate_labels[rate_id]
+            self.rate_combo.addItem(tr(label_key, lang), userData=rate_id)
+        if current_rate not in (1, 2):
+            current_rate = 1
+        index = self.rate_combo.findData(current_rate)
+        self.rate_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.rate_combo.blockSignals(False)
+
+    def _populate_currency_combo(self, lang: str) -> None:
+        current_code = self.currency_combo.currentData()
+        self.currency_combo.blockSignals(True)
+        self.currency_combo.clear()
+        for code in self._currency_order:
+            label_key = self._currency_labels[code]
+            self.currency_combo.addItem(tr(label_key, lang), userData=code)
+        if current_code not in self._currency_order:
+            current_code = self._currency_order[0]
+        index = self.currency_combo.findData(current_code)
+        self.currency_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.currency_combo.blockSignals(False)
+
+    def _update_history_placeholder(self, lang: str) -> None:
+        if self.history_combo.count() == 0:
+            return
+        self.history_combo.setItemText(0, tr("История...", lang))
+
+    def _update_selection_summary(self) -> None:
+        lang = self._lang()
+        count = self.selected_lang_list.count()
+        self.selected_target_lang_label.setText(
+            tr("Выбрано языков: {0}", lang).format(count)
+        )
+        if count == 0:
+            self.selected_languages_display.setText(
+                tr("Список выбранных языков: (не выбрано)", lang)
+            )
+        else:
+            names = [
+                self.selected_lang_list.item(i).text()
+                for i in range(self.selected_lang_list.count())
+            ]
+            header = tr("Список выбранных языков:", lang)
+            self.selected_languages_display.setText(f"{header}\n{', '.join(names)}")
 
     # ----------------------------------------------------------------
     # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY
@@ -413,8 +493,7 @@ class RateTab(QWidget):
 
         self.available_lang_list.clear()
         self.selected_lang_list.clear()
-        self.selected_target_lang_label.setText("Выбрано языков: 0")
-        self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+        self._update_selection_summary()
 
         if not self.is_second_file:
             # MLV_Rates_USD_EUR_RUR_CNY
@@ -442,8 +521,7 @@ class RateTab(QWidget):
 
         self.available_lang_list.clear()
         self.selected_lang_list.clear()
-        self.selected_target_lang_label.setText("Выбрано языков: 0")
-        self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+        self._update_selection_summary()
 
         if not self.is_second_file:
             filtered = self.df[self.df.iloc[:,0] == source_lang]
@@ -722,24 +800,32 @@ class RateTab(QWidget):
             return
 
         source_lang = self.source_lang_combo.currentText()
-        target_languages = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
+        target_languages = [
+            self.selected_lang_list.item(i).text()
+            for i in range(self.selected_lang_list.count())
+        ]
+        lang = self._lang()
         if not target_languages:
-            self.selected_target_lang_label.setText("Выбрано языков: 0")
-            self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
+            self._update_selection_summary()
             self.table.setRowCount(0)
             print("process_data: нет target_languages => return")
             self._emit_current_selection()
             return
 
-        self.selected_target_lang_label.setText(f"Выбрано языков: {len(target_languages)}")
-        self.selected_languages_display.setText("Список выбранных языков:\n" + ", ".join(target_languages))
+        self._update_selection_summary()
 
-        selected_currency = self.currency_map[self.currency_combo.currentText()]
+        selected_currency = self.currency_combo.currentData() or "USD"
 
-        rate_number = 1 if self.rate_combo.currentText() == "Client rates 1" else 2
+        rate_number = self.rate_combo.currentData() or 1
 
         self.table.setColumnCount(5)
-        headers = ["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"]
+        headers = [
+            tr("Исходный язык", lang),
+            tr("Язык перевода", lang),
+            tr("Basic", lang),
+            tr("Complex", lang),
+            tr("Hour", lang),
+        ]
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(0)
 
@@ -952,9 +1038,9 @@ class RateTab(QWidget):
     def _emit_current_selection(self, selected_currency=None, rate_number=None):
         """Emit the currently displayed rates for embedding into other UIs."""
         if selected_currency is None:
-            selected_currency = self.currency_map.get(self.currency_combo.currentText(), "USD")
+            selected_currency = self.currency_combo.currentData() or "USD"
         if rate_number is None:
-            rate_number = 1 if self.rate_combo.currentText() == "Client rates 1" else 2
+            rate_number = self.rate_combo.currentData() or 1
 
         rows = []
         for row in range(self.table.rowCount()):
@@ -1017,7 +1103,8 @@ class RateTab(QWidget):
     def load_history_combo(self):
         self.history_combo.blockSignals(True)
         self.history_combo.clear()
-        self.history_combo.addItem("История...")
+        lang = self._lang()
+        self.history_combo.addItem(tr("История...", lang))
         self.history_data = load_history()
         for entry in self.history_data:
             file_text = "TEP" if entry.get('file', 1) == 2 else "MLV"
@@ -1069,7 +1156,13 @@ class RateTab(QWidget):
         if not target_languages:
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить ставки", "", "Excel Files (*.xlsx)")
+        lang = self._lang()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("Сохранить ставки", lang),
+            "",
+            "Excel Files (*.xlsx)",
+        )
         if not file_path:
             return
         if not file_path.endswith(".xlsx"):
