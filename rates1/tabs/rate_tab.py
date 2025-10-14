@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QHeaderView, QSizePolicy, QLineEdit,
     QDialog, QApplication, QFileDialog
 )
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import Qt, QRect, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
 from utils import dark_theme, light_theme
@@ -121,6 +121,8 @@ class RateTab(QWidget):
       - "MLV_Rates_USD_EUR_RUR_CNY"
       - "TEP (Source RU)"
     """
+    rates_updated = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(1000, 700)
@@ -256,6 +258,13 @@ class RateTab(QWidget):
 
         self.history_data = []
         self.last_saved_selection = None
+
+        self.currency_map = {
+            "Долл США (USD)": "USD",
+            "Евро (EUR)": "EUR",
+            "Рубль (RUB)": "RUB",
+            "Юань (CNY)": "CNY",
+        }
 
         # MS Graph настройки через .env
         self.client_id = os.getenv('CLIENT_ID')
@@ -496,6 +505,7 @@ class RateTab(QWidget):
         print("=> process_data() called.")
         if self.df is None:
             print("process_data: df is None => return")
+            self._emit_current_selection()
             return
 
         source_lang = self.source_lang_combo.currentText()
@@ -505,18 +515,13 @@ class RateTab(QWidget):
             self.selected_languages_display.setText("Список выбранных языков: (не выбрано)")
             self.table.setRowCount(0)
             print("process_data: нет target_languages => return")
+            self._emit_current_selection()
             return
 
         self.selected_target_lang_label.setText(f"Выбрано языков: {len(target_languages)}")
         self.selected_languages_display.setText("Список выбранных языков:\n" + ", ".join(target_languages))
 
-        currency_map = {
-            "Долл США (USD)": "USD",
-            "Евро (EUR)":    "EUR",
-            "Рубль (RUB)":   "RUB",
-            "Юань (CNY)":    "CNY"
-        }
-        selected_currency = currency_map[self.currency_combo.currentText()]
+        selected_currency = self.currency_map[self.currency_combo.currentText()]
 
         rate_number = 1 if self.rate_combo.currentText() == "Client rates 1" else 2
 
@@ -726,7 +731,51 @@ class RateTab(QWidget):
         header.setStretchLastSection(False)
         self.table.viewport().update()
         self.save_current_selection()
+        self._emit_current_selection(selected_currency, rate_number)
         print("=> process_data() done.")
+
+    def _emit_current_selection(self, selected_currency=None, rate_number=None):
+        """Emit the currently displayed rates for embedding into other UIs."""
+        if selected_currency is None:
+            selected_currency = self.currency_map.get(self.currency_combo.currentText(), "USD")
+        if rate_number is None:
+            rate_number = 1 if self.rate_combo.currentText() == "Client rates 1" else 2
+
+        rows = []
+        for row in range(self.table.rowCount()):
+            rows.append(
+                {
+                    "source": self._safe_text(self.table.item(row, 0)),
+                    "target": self._safe_text(self.table.item(row, 1)),
+                    "basic": self._parse_float(self._safe_text(self.table.item(row, 2))),
+                    "complex": self._parse_float(self._safe_text(self.table.item(row, 3))),
+                    "hour": self._parse_float(self._safe_text(self.table.item(row, 4))),
+                }
+            )
+
+        payload = {
+            "rows": rows,
+            "currency": selected_currency,
+            "rate_number": rate_number,
+            "rate_type": f"R{rate_number}",
+            "source_label": "TEP (Source RU)" if self.is_second_file else "MLV_Rates_USD_EUR_RUR_CNY",
+            "is_second_file": self.is_second_file,
+            "source_language": self.source_lang_combo.currentText(),
+        }
+        self.rates_updated.emit(payload)
+
+    @staticmethod
+    def _safe_text(item):
+        return "" if item is None else item.text()
+
+    @staticmethod
+    def _parse_float(value):
+        try:
+            if value in ("", "N/A"):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def load_history_combo(self):
         self.history_combo.blockSignals(True)

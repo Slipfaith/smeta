@@ -36,7 +36,8 @@ from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
 from gui.utils import format_language_display
-from gui.rates_import_dialog import ExcelRatesDialog
+from gui.rates_manager_window import RatesManagerWindow
+from logic import rates_importer
 from logic.user_config import add_language, load_languages
 from logic.importers import import_project_info, import_xml_reports
 from logic.service_config import ServiceConfig
@@ -77,7 +78,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.legal_entities = load_legal_entities()
         self.legal_entity_meta = get_legal_entity_metadata()
         self.currency_symbol = ""
-        self.excel_dialog = None
+        self.rates_window: Optional[RatesManagerWindow] = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
         # Create labels early so slots triggered during initialization
         # (e.g. vat spin value changes) can safely update them.
@@ -120,9 +121,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.save_pdf_action.triggered.connect(self.project_manager.save_pdf)
         self.export_menu.addAction(self.save_pdf_action)
 
-        self.rates_menu = self.menuBar().addMenu(tr("Импорт ставок", lang))
-        self.import_rates_action = QAction(tr("Импортировать из Excel", lang), self)
-        self.import_rates_action.triggered.connect(self.import_rates_from_excel)
+        self.rates_menu = self.menuBar().addMenu(tr("Ставки", lang))
+        self.import_rates_action = QAction(tr("Открыть панель ставок", lang), self)
+        self.import_rates_action.triggered.connect(self.open_rates_panel)
         self.rates_menu.addAction(self.import_rates_action)
 
         self.pm_action = QAction(tr("Проджект менеджер", lang), self)
@@ -822,7 +823,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
         self.update_total()
 
-    def import_rates_from_excel(self) -> None:
+    def open_rates_panel(self) -> None:
         if not self.language_pairs:
             lang = self.gui_lang
             QMessageBox.warning(
@@ -831,8 +832,30 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 tr("Сначала добавьте языковые пары", lang),
             )
             return
-        pairs = []
-        pair_map = {}
+
+        pairs, pair_map = self._collect_pairs_for_rates()
+        if not pairs:
+            return
+
+        self._import_pair_map = pair_map
+
+        if self.rates_window is None:
+            self.rates_window = RatesManagerWindow(self)
+            self.rates_window.destroyed.connect(self._on_rates_window_destroyed)
+
+        self.rates_window.update_pairs(pairs)
+        self.rates_window.show()
+        self.rates_window.raise_()
+        self.rates_window.activateWindow()
+
+    def import_rates_from_excel(self) -> None:
+        """Backward-compatible alias for external integrations."""
+
+        self.open_rates_panel()
+
+    def _collect_pairs_for_rates(self) -> Tuple[List[Tuple[str, str]], Dict[Tuple[str, str], str]]:
+        pairs: List[Tuple[str, str]] = []
+        pair_map: Dict[Tuple[str, str], str] = {}
         for key in self.language_pairs:
             parts = re.split(r"\s*(?:→|->|-|>)\s*", key, maxsplit=1)
             if len(parts) != 2:
@@ -840,24 +863,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             src, tgt = parts
             pairs.append((src, tgt))
             pair_map[(src, tgt)] = key
-        self._import_pair_map = pair_map
-        self.excel_dialog = ExcelRatesDialog(pairs, self)
-        self.excel_dialog.finished.connect(self._on_rates_dialog_closed)
-        self.excel_dialog.apply_requested.connect(self._apply_rates_from_dialog)
-        self.excel_dialog.show()
+        return pairs, pair_map
 
-    def _on_rates_dialog_closed(self, result: int) -> None:
-        self._apply_rates_from_dialog()
-        if self.excel_dialog:
-            self.excel_dialog.deleteLater()
-            self.excel_dialog = None
+    def _on_rates_window_destroyed(self) -> None:
+        self.rates_window = None
         self._import_pair_map = {}
 
-    def _apply_rates_from_dialog(self) -> None:
-        if not self.excel_dialog:
-            return
-        rate_key = self.excel_dialog.selected_rate_key()
-        for match in self.excel_dialog.selected_rates():
+    def _apply_rates_from_matches(
+        self, matches: Iterable[rates_importer.PairMatch], rate_key: str
+    ) -> None:
+        for match in matches:
             if not match.rates:
                 continue
             pair_key = self._import_pair_map.get((match.gui_source, match.gui_target))
@@ -865,7 +880,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 continue
             widget = self.language_pairs.get(pair_key)
             if widget:
-                widget.set_basic_rate(match.rates.get(rate_key, 0))
+                value = match.rates.get(rate_key)
+                if value is not None:
+                    widget.set_basic_rate(value)
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
         result, errors = import_xml_reports(paths)
