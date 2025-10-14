@@ -273,7 +273,7 @@ RATES_MAPPING_CONTROLS_SPACING = 8
 RATES_MAPPING_APPLY_COMBO_WIDTH = 110
 
 # Ширины колонок таблицы сопоставления в пикселях
-RATES_MAPPING_TABLE_COLUMN_WIDTHS = [140, 140, 160, 160, 80, 80, 80]
+RATES_MAPPING_TABLE_COLUMN_WIDTHS = [180, 180, 100]
 
 # Цвет подписи статуса по умолчанию: серый #666666
 STATUS_LABEL_DEFAULT_STYLE = "color: #666666;"

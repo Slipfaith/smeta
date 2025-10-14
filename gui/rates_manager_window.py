@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -43,6 +44,114 @@ from rates1 import RateTab
 
 RateRow = Dict[str, Optional[float]]
 
+
+class SourceTargetCell(QWidget):
+    """Composite cell that shows GUI value and editable Excel value."""
+
+    excel_changed = Signal(str)
+
+    def __init__(self, main_value: str, lang_getter, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._lang_getter = lang_getter
+        self._main_value = main_value
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+
+        self.main_label = QLabel(main_value)
+        font = self.main_label.font()
+        font.setBold(True)
+        self.main_label.setFont(font)
+        layout.addWidget(self.main_label)
+
+        self.excel_combo = QComboBox()
+        self.excel_combo.setEditable(True)
+        self.excel_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.excel_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.excel_combo.currentTextChanged.connect(self._on_excel_changed)
+        self.excel_combo.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.excel_combo.customContextMenuRequested.connect(self._show_combo_menu)
+        layout.addWidget(self.excel_combo)
+
+        self.main_label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.main_label.customContextMenuRequested.connect(self._show_label_menu)
+
+        self.setContextMenuPolicy(Qt.DefaultContextMenu)
+        self.update_highlight()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def set_main_value(self, text: str) -> None:
+        self._main_value = text
+        self.main_label.setText(text)
+        self.update_highlight()
+
+    def set_language_names(self, names: Iterable[str]) -> None:
+        current = self.excel_combo.currentText()
+        self.excel_combo.blockSignals(True)
+        self.excel_combo.clear()
+        self.excel_combo.addItems(list(names))
+        self.excel_combo.setEditText(current)
+        self.excel_combo.blockSignals(False)
+        self.update_highlight()
+
+    def set_excel_text(self, text: str, emit: bool = False) -> None:
+        current = self.excel_combo.currentText()
+        if current == text:
+            self.update_highlight()
+            if emit:
+                self.excel_changed.emit(text)
+            return
+        self.excel_combo.blockSignals(True)
+        self.excel_combo.setEditText(text or "")
+        self.excel_combo.blockSignals(False)
+        self.update_highlight()
+        if emit:
+            self.excel_changed.emit(self.excel_combo.currentText())
+
+    def excel_text(self) -> str:
+        return self.excel_combo.currentText()
+
+    def update_highlight(self) -> None:
+        text = self.excel_combo.currentText().strip()
+        highlight = bool(text) and text != self._main_value
+        self.excel_combo.setStyleSheet("color: #d97706;" if highlight else "")
+
+    # ------------------------------------------------------------------
+    # Qt events
+    # ------------------------------------------------------------------
+    def contextMenuEvent(self, event) -> None:  # noqa: D401 - Qt override
+        self._show_menu(event.globalPos())
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _lang(self) -> str:
+        return self._lang_getter() if callable(self._lang_getter) else "ru"
+
+    def _on_excel_changed(self, _text: str) -> None:
+        self.update_highlight()
+        self.excel_changed.emit(self.excel_combo.currentText())
+
+    def _show_combo_menu(self, pos) -> None:
+        self._show_menu(self.excel_combo.mapToGlobal(pos))
+
+    def _show_label_menu(self, pos) -> None:
+        self._show_menu(self.main_label.mapToGlobal(pos))
+
+    def _show_menu(self, global_pos) -> None:
+        menu = QMenu(self)
+        copy_action = menu.addAction(
+            tr("Скопировать основное → Excel", self._lang())
+        )
+        reset_action = menu.addAction(tr("Сбросить Excel-значение", self._lang()))
+        chosen = menu.exec(global_pos)
+        if chosen == copy_action:
+            self.set_excel_text(self._main_value, emit=True)
+        elif chosen == reset_action:
+            self.set_excel_text("", emit=True)
 
 class RatesMappingWidget(QWidget):
     """Widget responsible for mapping remote rates to GUI language pairs."""
@@ -108,15 +217,11 @@ class RatesMappingWidget(QWidget):
         status_layout.addWidget(self.status_label)
         layout.addLayout(status_layout)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 3)
         headers = [
             "Source",
             "Target",
-            "Excel Source",
-            "Excel Target",
             "Basic",
-            "Complex",
-            "Hour",
         ]
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setAlternatingRowColors(True)
@@ -127,10 +232,13 @@ class RatesMappingWidget(QWidget):
         for column, width in enumerate(RATES_MAPPING_TABLE_COLUMN_WIDTHS):
             header.setSectionResizeMode(column, QHeaderView.Interactive)
             self.table.setColumnWidth(column, width)
+        self.table.itemChanged.connect(self._handle_item_changed)
         layout.addWidget(self.table, 1)
 
-        self._rate_columns = {"basic": 4, "complex": 5, "hour": 6}
-        self._update_visible_rate_columns(self.selected_rate_key())
+        self._rate_headers = {"basic": "Basic", "complex": "Complex", "hour": "Hour"}
+        self._rate_values: List[Dict[str, str]] = []
+        self._updating_rate_item = False
+        self._update_rate_header(self.selected_rate_key())
         self.apply_combo.currentTextChanged.connect(self._handle_rate_mode_change)
 
         import_layout = QHBoxLayout()
@@ -181,15 +289,18 @@ class RatesMappingWidget(QWidget):
     def selected_rates(self) -> List[rates_importer.PairMatch]:
         matches: List[rates_importer.PairMatch] = []
         for row in range(self.table.rowCount()):
-            gui_src = self._safe_item_text(row, 0)
-            gui_tgt = self._safe_item_text(row, 1)
+            if row < len(self._pairs):
+                gui_src, gui_tgt = self._pairs[row]
+            else:
+                gui_src, gui_tgt = "", ""
 
-            excel_src = self._combo_text(row, 2)
-            excel_tgt = self._combo_text(row, 3)
+            excel_src = self._lang_cell_excel_text(row, 0)
+            excel_tgt = self._lang_cell_excel_text(row, 1)
 
-            basic = self._safe_item_text(row, 4)
-            complex_ = self._safe_item_text(row, 5)
-            hour = self._safe_item_text(row, 6)
+            storage = self._ensure_rate_storage(row)
+            basic = storage.get("basic", "")
+            complex_ = storage.get("complex", "")
+            hour = storage.get("hour", "")
 
             rate: Optional[RateRow]
             if basic or complex_ or hour:
@@ -227,44 +338,31 @@ class RatesMappingWidget(QWidget):
         if target_rows != current_rows:
             self.table.setRowCount(target_rows)
 
+        if len(self._rate_values) < target_rows:
+            self._rate_values.extend(self._empty_rate_dict() for _ in range(target_rows - len(self._rate_values)))
+        elif len(self._rate_values) > target_rows:
+            self._rate_values = self._rate_values[:target_rows]
+
         for row, (src, tgt) in enumerate(self._pairs):
-            src_item = self.table.item(row, 0)
-            if src_item is None:
-                src_item = QTableWidgetItem(src)
-                src_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.table.setItem(row, 0, src_item)
-            else:
-                src_item.setText(src)
+            src_cell = self._ensure_lang_cell(row, 0, src)
+            src_cell.set_main_value(src)
 
-            tgt_item = self.table.item(row, 1)
-            if tgt_item is None:
-                tgt_item = QTableWidgetItem(tgt)
-                tgt_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.table.setItem(row, 1, tgt_item)
-            else:
-                tgt_item.setText(tgt)
+            tgt_cell = self._ensure_lang_cell(row, 1, tgt)
+            tgt_cell.set_main_value(tgt)
 
-            for column in (4, 5, 6):
-                item = self.table.item(row, column)
-                if item is None:
-                    item = QTableWidgetItem("")
-                    item.setTextAlignment(Qt.AlignCenter)
-                    self.table.setItem(row, column, item)
+            rate_item = self.table.item(row, 2)
+            if rate_item is None:
+                rate_item = QTableWidgetItem("")
+                rate_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, 2, rate_item)
 
-            self._ensure_combo(row, 2)
-            self._ensure_combo(row, 3)
+            self._refresh_rate_display(row)
 
     def _refresh_language_combos(self) -> None:
         for row in range(self.table.rowCount()):
-            for column in (2, 3):
-                combo = self._ensure_combo(row, column)
-                previous = combo.currentText()
-                combo.blockSignals(True)
-                combo.clear()
-                combo.addItems(self._lang_names)
-                if previous:
-                    self._set_combo_text(combo, previous)
-                combo.blockSignals(False)
+            for column in (0, 1):
+                cell = self._ensure_lang_cell(row, column)
+                cell.set_language_names(self._lang_names)
 
     def _apply_matches(self, auto_fill: bool) -> None:
         if not self._pairs:
@@ -272,50 +370,42 @@ class RatesMappingWidget(QWidget):
 
         matches = rates_importer.match_pairs(self._pairs, self._rates)
         for row, match in enumerate(matches):
-            src_combo = self._ensure_combo(row, 2)
-            tgt_combo = self._ensure_combo(row, 3)
-            self._set_combo_text(src_combo, match.excel_source)
-            self._set_combo_text(tgt_combo, match.excel_target)
+            src_cell = self._ensure_lang_cell(row, 0)
+            tgt_cell = self._ensure_lang_cell(row, 1)
+            src_cell.set_excel_text(match.excel_source or "")
+            tgt_cell.set_excel_text(match.excel_target or "")
 
             if auto_fill and match.rates:
                 self._apply_rate_values(row, match.rates)
 
-    def _set_combo_text(self, combo: QComboBox, text: str) -> None:
-        if not text:
-            return
-        index = combo.findText(text)
-        if index == -1:
-            combo.addItem(text)
-            index = combo.findText(text)
-        combo.setCurrentIndex(index if index >= 0 else 0)
-
-    def _ensure_combo(self, row: int, column: int) -> QComboBox:
+    def _ensure_lang_cell(self, row: int, column: int, main_value: Optional[str] = None) -> SourceTargetCell:
         widget = self.table.cellWidget(row, column)
-        if isinstance(widget, QComboBox):
+        if isinstance(widget, SourceTargetCell):
+            if main_value is not None:
+                widget.set_main_value(main_value)
             return widget
-        combo = QComboBox()
-        combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-        combo.currentTextChanged.connect(partial(self._handle_combo_change, row))
-        self.table.setCellWidget(row, column, combo)
-        return combo
+        cell = SourceTargetCell(main_value or "", self._lang_getter)
+        cell.excel_changed.connect(partial(self._handle_excel_value_change, row))
+        self.table.setCellWidget(row, column, cell)
+        cell.set_language_names(self._lang_names)
+        return cell
 
-    def _handle_combo_change(self, row: int, _text: str) -> None:
+    def _handle_excel_value_change(self, row: int, _text: str) -> None:
         self._update_rate_from_row(row)
 
     def _handle_rate_mode_change(self, _text: str) -> None:
-        self._update_visible_rate_columns(self.selected_rate_key())
+        selected = self.selected_rate_key()
+        self._update_rate_header(selected)
+        self._refresh_all_rate_display()
 
     def _update_rate_from_row(self, row: int, force: bool = False) -> None:
         if not force and not self.auto_update_checkbox.isChecked():
             return
 
-        src_combo = self.table.cellWidget(row, 2)
-        tgt_combo = self.table.cellWidget(row, 3)
-        if not isinstance(src_combo, QComboBox) or not isinstance(tgt_combo, QComboBox):
-            return
-
-        src_code = self._name_to_code.get(src_combo.currentText())
-        tgt_code = self._name_to_code.get(tgt_combo.currentText())
+        src_cell = self._ensure_lang_cell(row, 0)
+        tgt_cell = self._ensure_lang_cell(row, 1)
+        src_code = self._name_to_code.get(src_cell.excel_text())
+        tgt_code = self._name_to_code.get(tgt_cell.excel_text())
         if not src_code or not tgt_code:
             return
 
@@ -329,38 +419,56 @@ class RatesMappingWidget(QWidget):
         basic = rate.get("basic")
         complex_ = rate.get("complex")
         hour = rate.get("hour")
-        self._set_rate_text(row, 4, basic)
-        self._set_rate_text(row, 5, complex_)
-        self._set_rate_text(row, 6, hour)
+        self._set_rate_value(row, "basic", basic)
+        self._set_rate_value(row, "complex", complex_)
+        self._set_rate_value(row, "hour", hour)
+        self._refresh_rate_display(row)
 
     def _clear_rate_values(self, row: int) -> None:
-        for column in (4, 5, 6):
-            item = self.table.item(row, column)
-            if item is not None:
-                item.setText("")
+        storage = self._ensure_rate_storage(row)
+        for key in ("basic", "complex", "hour"):
+            storage[key] = ""
+        self._refresh_rate_display(row)
 
-    def _set_rate_text(self, row: int, column: int, value: Optional[float]) -> None:
-        item = self.table.item(row, column)
+    def _set_rate_value(self, row: int, key: str, value: Optional[float]) -> None:
+        storage = self._ensure_rate_storage(row)
+        if value is None:
+            storage[key] = ""
+        else:
+            storage[key] = f"{value:.2f}"
+
+    def _ensure_rate_storage(self, row: int) -> Dict[str, str]:
+        while len(self._rate_values) <= row:
+            self._rate_values.append(self._empty_rate_dict())
+        return self._rate_values[row]
+
+    def _refresh_rate_display(self, row: int) -> None:
+        if row >= self.table.rowCount():
+            return
+        item = self.table.item(row, 2)
         if item is None:
             item = QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, column, item)
-        if value is None:
-            item.setText("")
+            self.table.setItem(row, 2, item)
+        key = self.selected_rate_key()
+        storage = self._ensure_rate_storage(row)
+        value = storage.get(key, "")
+        self._updating_rate_item = True
+        item.setText(value)
+        self._updating_rate_item = False
+
+    def _refresh_all_rate_display(self) -> None:
+        for row in range(self.table.rowCount()):
+            self._refresh_rate_display(row)
+
+    def _update_rate_header(self, selected_key: str) -> None:
+        header_text = self._rate_headers.get(selected_key, "")
+        header_item = self.table.horizontalHeaderItem(2)
+        if header_item is None:
+            header_item = QTableWidgetItem(header_text)
+            self.table.setHorizontalHeaderItem(2, header_item)
         else:
-            item.setText(f"{value:.2f}")
-
-    def _update_visible_rate_columns(self, selected_key: str) -> None:
-        for key, column in self._rate_columns.items():
-            self.table.setColumnHidden(column, key != selected_key)
-
-    def _safe_item_text(self, row: int, column: int) -> str:
-        item = self.table.item(row, column)
-        return item.text() if item else ""
-
-    def _combo_text(self, row: int, column: int) -> str:
-        widget = self.table.cellWidget(row, column)
-        return widget.currentText() if isinstance(widget, QComboBox) else ""
+            header_item.setText(header_text)
 
     def _parse_rate(self, basic: str, complex_: str, hour: str) -> Optional[RateRow]:
         def _to_float(value: str) -> Optional[float]:
@@ -393,6 +501,21 @@ class RatesMappingWidget(QWidget):
 
         self.status_label.setText(" | ".join(pieces))
         self.status_label.setStyleSheet(STATUS_LABEL_SUCCESS_STYLE)
+
+    def _empty_rate_dict(self) -> Dict[str, str]:
+        return {"basic": "", "complex": "", "hour": ""}
+
+    def _handle_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._updating_rate_item or item.column() != 2:
+            return
+        storage = self._ensure_rate_storage(item.row())
+        storage[self.selected_rate_key()] = item.text()
+
+    def _lang_cell_excel_text(self, row: int, column: int) -> str:
+        widget = self.table.cellWidget(row, column)
+        if isinstance(widget, SourceTargetCell):
+            return widget.excel_text()
+        return ""
 
 
 class RatesManagerWindow(QMainWindow):
