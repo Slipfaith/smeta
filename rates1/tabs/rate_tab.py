@@ -23,6 +23,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # =================== rates importer helpers ===================
 from logic import rates_importer
+from logic.xml_parser_common import language_identity
 
 # =================== Сервисы MS Graph ===================
 from services.ms_graph import (
@@ -588,6 +589,14 @@ class RateTab(QWidget):
         text = str(value).strip()
         if not text:
             return ""
+        language, script, territory = language_identity(text)
+        if language:
+            parts: List[str] = [language.lower()]
+            if script:
+                parts.append(script.lower())
+            if territory:
+                parts.append(territory.lower())
+            return "-".join(parts)
         try:
             normalized = rates_importer._normalize_language(text)
         except Exception:
