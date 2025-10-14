@@ -275,6 +275,7 @@ class RateTab(QWidget):
         self.is_second_file = False
         self._gui_pairs: List[Tuple[str, str]] = []
         self._auto_selection_done = False
+        self._excel_matches: List[rates_importer.PairMatch] = []
         self._missing_rate_color = QColor("#FFF3CD")
 
         self.history_data = []
@@ -474,6 +475,19 @@ class RateTab(QWidget):
         self._auto_selection_done = False
         self._apply_auto_selection()
 
+    def set_excel_matches(self, matches: Iterable[rates_importer.PairMatch]) -> None:
+        self._excel_matches = [
+            match
+            for match in matches
+            if isinstance(match, rates_importer.PairMatch)
+            and getattr(match, "excel_source", "").strip()
+            and getattr(match, "excel_target", "").strip()
+        ]
+        if self.selected_lang_list.count() > 0:
+            return
+        self._auto_selection_done = False
+        self._apply_auto_selection()
+
     def _apply_auto_selection(self) -> None:
         if self._auto_selection_done:
             return
@@ -496,15 +510,28 @@ class RateTab(QWidget):
 
         order: List[str] = []
         targets_by_source: Dict[str, Set[str]] = {}
-        for src, tgt in self._gui_pairs:
-            norm_src = self._normalize_language_name(src)
-            norm_tgt = self._normalize_language_name(tgt)
-            if not norm_src or not norm_tgt:
-                continue
-            if norm_src not in targets_by_source:
-                targets_by_source[norm_src] = set()
-                order.append(norm_src)
-            targets_by_source[norm_src].add(norm_tgt)
+
+        if self._excel_matches:
+            for match in self._excel_matches:
+                norm_src = self._normalize_language_name(match.excel_source)
+                norm_tgt = self._normalize_language_name(match.excel_target)
+                if not norm_src or not norm_tgt:
+                    continue
+                if norm_src not in targets_by_source:
+                    targets_by_source[norm_src] = set()
+                    order.append(norm_src)
+                targets_by_source[norm_src].add(norm_tgt)
+
+        if not targets_by_source:
+            for src, tgt in self._gui_pairs:
+                norm_src = self._normalize_language_name(src)
+                norm_tgt = self._normalize_language_name(tgt)
+                if not norm_src or not norm_tgt:
+                    continue
+                if norm_src not in targets_by_source:
+                    targets_by_source[norm_src] = set()
+                    order.append(norm_src)
+                targets_by_source[norm_src].add(norm_tgt)
 
         best_choice: Optional[Tuple[int, str, Set[str]]] = None
         for src_norm in order:
