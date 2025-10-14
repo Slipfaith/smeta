@@ -328,6 +328,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.save_action.setText(tr("Сохранить проект", lang))
         self.load_action.setText(tr("Загрузить проект", lang))
         self.clear_action.setText(tr("Очистить", lang))
+        self.open_log_action.setText(tr("Открыть лог", lang))
         self.export_menu.setTitle(tr("Экспорт", lang))
         self.save_excel_action.setText(tr("Сохранить Excel", lang))
         self.save_pdf_action.setText(tr("Сохранить PDF", lang))
@@ -858,13 +859,41 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
     def _collect_pairs_for_rates(self) -> Tuple[List[Tuple[str, str]], Dict[Tuple[str, str], str]]:
         pairs: List[Tuple[str, str]] = []
         pair_map: Dict[Tuple[str, str], str] = {}
+        lang_key = "ru" if self.lang_display_ru else "en"
+        locale = "ru" if self.lang_display_ru else "en"
         for key in self.language_pairs:
-            parts = re.split(r"\s*(?:→|->|-|>)\s*", key, maxsplit=1)
-            if len(parts) != 2:
+            entries = self._pair_language_inputs.get(key, {})
+            src_entry = entries.get("source") if isinstance(entries, dict) else None
+            tgt_entry = entries.get("target") if isinstance(entries, dict) else None
+
+            src_label = ""
+            if isinstance(src_entry, dict):
+                src_labels = self._labels_from_entry(src_entry)
+                src_label = src_labels.get(lang_key, "")
+            tgt_label = ""
+            if isinstance(tgt_entry, dict):
+                tgt_labels = self._labels_from_entry(tgt_entry)
+                tgt_label = tgt_labels.get(lang_key, "")
+
+            if not src_label or not tgt_label:
+                parts = re.split(r"\s*(?:→|->|-|>)\s*", key, maxsplit=1)
+                if len(parts) == 2:
+                    fallback_src, fallback_tgt = parts
+                else:
+                    fallback_src, fallback_tgt = key, ""
+                if not src_label:
+                    src_label = self._prepare_language_label(fallback_src, locale)
+                if not tgt_label and fallback_tgt:
+                    tgt_label = self._prepare_language_label(fallback_tgt, locale)
+
+            src_label = src_label.strip()
+            tgt_label = tgt_label.strip()
+            if not src_label or not tgt_label:
                 continue
-            src, tgt = parts
-            pairs.append((src, tgt))
-            pair_map[(src, tgt)] = key
+
+            pair = (src_label, tgt_label)
+            pairs.append(pair)
+            pair_map[pair] = key
         return pairs, pair_map
 
     def _on_rates_window_destroyed(self) -> None:
