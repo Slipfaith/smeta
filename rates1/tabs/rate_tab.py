@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QDialog, QApplication, QFileDialog
 )
 from PySide6.QtCore import Qt, QRect, Signal
-from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 
-from utils import MLV_RATES_BUTTON_STYLE, TEP_BUTTON_STYLE
+from utils import MLV_RATES_BUTTON_STYLE
 
 # =================== pandas ===================
 import pandas as pd
@@ -129,18 +129,15 @@ class RateTab(QWidget):
         self.layout_main = QVBoxLayout()
         self.setLayout(self.layout_main)
 
-        # --- Кнопки загрузки (две) ---
+        # --- Кнопки загрузки ---
         self.load_layout = QHBoxLayout()
 
         self.load_url_button = QPushButton("MLV_Rates_USD_EUR_RUR_CNY")
         self.load_url_button.clicked.connect(self.load_url)
         self.load_url_button.setStyleSheet(MLV_RATES_BUTTON_STYLE)
         self.load_layout.addWidget(self.load_url_button)
-
-        self.load_url_button_2 = QPushButton("TEP (Source RU)")
-        self.load_url_button_2.clicked.connect(self.load_url_2)
-        self.load_url_button_2.setStyleSheet(TEP_BUTTON_STYLE)
-        self.load_layout.addWidget(self.load_url_button_2)
+        self.load_layout.addStretch()
+        self.load_url_button_2 = None
 
         self.layout_main.addLayout(self.load_layout)
 
@@ -159,14 +156,24 @@ class RateTab(QWidget):
 
         # --- Списки доступных/выбранных языков ---
         self.target_layout = QHBoxLayout()
+        self.target_layout.setContentsMargins(0, 0, 0, 0)
+        self.target_layout.setSpacing(12)
         self.available_layout = QVBoxLayout()
+        self.available_layout.setContentsMargins(0, 0, 0, 0)
+        self.available_layout.setSpacing(6)
+        self.available_container = QWidget()
+        self.available_container.setLayout(self.available_layout)
+        self.available_container.setMaximumWidth(260)
+        self.available_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.available_search = QLineEdit()
         self.available_search.setPlaceholderText("Поиск...")
+        self.available_search.setClearButtonEnabled(True)
         self.available_search.textChanged.connect(self.filter_available_languages)
         self.available_label = QLabel("Доступные языки:")
         self.available_lang_list = QListWidget()
         self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.available_lang_list.itemClicked.connect(self.move_to_selected)
+        self.available_lang_list.setMinimumWidth(200)
 
         self.available_layout.addWidget(self.available_search)
         self.available_layout.addWidget(self.available_label)
@@ -177,13 +184,17 @@ class RateTab(QWidget):
         self.deselect_all_button = QPushButton("Снять выбор")
         self.select_all_button.clicked.connect(self.select_all_available)
         self.deselect_all_button.clicked.connect(self.deselect_all_available)
+        self.select_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.select_buttons_layout.setSpacing(6)
         self.select_buttons_layout.addWidget(self.select_all_button)
         self.select_buttons_layout.addWidget(self.deselect_all_button)
         self.available_layout.addLayout(self.select_buttons_layout)
 
-        self.target_layout.addLayout(self.available_layout)
+        self.target_layout.addWidget(self.available_container)
 
         self.selected_layout = QVBoxLayout()
+        self.selected_layout.setContentsMargins(0, 0, 0, 0)
+        self.selected_layout.setSpacing(6)
         self.selected_label = QLabel("Выбранные языки:")
         self.selected_lang_list = QListWidget()
         self.selected_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -254,6 +265,7 @@ class RateTab(QWidget):
         self.setFont(self.default_font)
 
         self.is_second_file = False
+        self._missing_rate_color = QColor("#FFF3CD")
 
         self.history_data = []
         self.last_saved_selection = None
@@ -293,9 +305,8 @@ class RateTab(QWidget):
     # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY
     # ----------------------------------------------------------------
     def load_url(self):
-        # Disable this button to prevent repeated clicks and enable the other
+        # Disable this button to prevent repeated clicks during loading
         self.load_url_button.setEnabled(False)
-        self.load_url_button_2.setEnabled(True)
 
         overlay = LoadingOverlay(self, text="Loading MLV_Rates_USD_EUR_RUR_CNY...")
         overlay.show()
@@ -320,13 +331,15 @@ class RateTab(QWidget):
             self.process_data()
         finally:
             overlay.close()
+            self.load_url_button.setEnabled(True)
 
     # ----------------------------------------------------------------
     # 2) Загрузка TEP (Source RU)
     # ----------------------------------------------------------------
     def load_url_2(self):
-        # Disable this button to prevent repeated clicks and enable the other
-        self.load_url_button_2.setEnabled(False)
+        # Disable auxiliary button (if present) to prevent repeated clicks and enable the main one
+        if self.load_url_button_2 is not None:
+            self.load_url_button_2.setEnabled(False)
         self.load_url_button.setEnabled(True)
 
         overlay = LoadingOverlay(self, text="Loading TEP (Source RU)...")
@@ -375,6 +388,8 @@ class RateTab(QWidget):
             self.process_data()
         finally:
             overlay.close()
+            if self.load_url_button_2 is not None:
+                self.load_url_button_2.setEnabled(True)
 
     # ----------------------------------------------------------------
     # Обновляем список SourceLang
@@ -706,6 +721,8 @@ class RateTab(QWidget):
                         na_item.setTextAlignment(Qt.AlignCenter)
                         self.table.setItem(rr, cc, na_item)
 
+        self._refresh_missing_rate_highlights()
+
         # Настройка ширин
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -753,6 +770,28 @@ class RateTab(QWidget):
             "source_language": self.source_lang_combo.currentText(),
         }
         self.rates_updated.emit(payload)
+
+    def _refresh_missing_rate_highlights(self) -> None:
+        for row in range(self.table.rowCount()):
+            self._apply_missing_rate_highlight(row)
+
+    def _apply_missing_rate_highlight(self, row: int) -> None:
+        missing = False
+        for col in range(2, min(5, self.table.columnCount())):
+            item = self.table.item(row, col)
+            text = item.text() if item else ""
+            if not text or text == "N/A":
+                missing = True
+                break
+
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row, col)
+            if not item:
+                continue
+            if missing:
+                item.setData(Qt.BackgroundRole, self._missing_rate_color)
+            else:
+                item.setData(Qt.BackgroundRole, None)
 
     @staticmethod
     def _safe_text(item):
