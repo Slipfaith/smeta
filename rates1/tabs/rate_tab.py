@@ -17,6 +17,9 @@ from gui.styles import MLV_RATES_BUTTON_STYLE
 # =================== pandas ===================
 import pandas as pd
 
+# =================== typing ===================
+from typing import Dict, Iterable, List, Optional, Set, Tuple
+
 # =================== Сервисы MS Graph ===================
 from services.ms_graph import (
     authenticate_with_msal,
@@ -265,6 +268,8 @@ class RateTab(QWidget):
         self.setFont(self.default_font)
 
         self.is_second_file = False
+        self._gui_pairs: List[Tuple[str, str]] = []
+        self._auto_selection_done = False
         self._missing_rate_color = QColor("#FFF3CD")
 
         self.history_data = []
@@ -327,6 +332,7 @@ class RateTab(QWidget):
             print(f"MLV_Rates_USD_EUR_RUR_CNY Excel загружен: {df_temp.shape}")
             self.df = df_temp
             self.is_second_file = False
+            self._auto_selection_done = False
             self.setup_languages()
             self.process_data()
         finally:
@@ -384,6 +390,7 @@ class RateTab(QWidget):
 
             self.df = df_temp
             self.is_second_file = True
+            self._auto_selection_done = False
             self.setup_languages()
             self.process_data()
         finally:
@@ -420,6 +427,8 @@ class RateTab(QWidget):
             self.source_lang_combo.clear()
             self.source_lang_combo.addItems(source_list)
 
+        self._apply_auto_selection()
+
     def update_target_languages(self):
         if self.df is None:
             return
@@ -442,6 +451,134 @@ class RateTab(QWidget):
             targets = filtered["TargetLang"].dropna().unique().tolist()
             targets = [str(t) for t in targets if str(t).lower() != "target"]
             self.available_lang_list.addItems(targets)
+
+    def set_gui_pairs(self, pairs: Iterable[Tuple[str, str]]):
+        cleaned: List[Tuple[str, str]] = []
+        for pair in pairs:
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                continue
+            src, tgt = pair
+            src_text = str(src).strip()
+            tgt_text = str(tgt).strip()
+            if src_text and tgt_text:
+                cleaned.append((src_text, tgt_text))
+        self._gui_pairs = cleaned
+        if self.selected_lang_list.count() > 0:
+            self._auto_selection_done = True
+            return
+        self._auto_selection_done = False
+        self._apply_auto_selection()
+
+    def _apply_auto_selection(self) -> None:
+        if self._auto_selection_done:
+            return
+        if self.df is None or self.is_second_file:
+            return
+        if not self._gui_pairs or self.source_lang_combo.count() == 0:
+            return
+        if self.selected_lang_list.count() > 0:
+            return
+
+        source_map: Dict[str, Tuple[int, str]] = {}
+        for idx in range(self.source_lang_combo.count()):
+            text = self.source_lang_combo.itemText(idx).strip()
+            if not text:
+                continue
+            source_map[self._normalize_language_name(text)] = (idx, text)
+
+        if not source_map:
+            return
+
+        order: List[str] = []
+        targets_by_source: Dict[str, Set[str]] = {}
+        for src, tgt in self._gui_pairs:
+            norm_src = self._normalize_language_name(src)
+            norm_tgt = self._normalize_language_name(tgt)
+            if not norm_src or not norm_tgt:
+                continue
+            if norm_src not in targets_by_source:
+                targets_by_source[norm_src] = set()
+                order.append(norm_src)
+            targets_by_source[norm_src].add(norm_tgt)
+
+        best_choice: Optional[Tuple[int, str, Set[str]]] = None
+        for src_norm in order:
+            if src_norm not in source_map:
+                continue
+            idx, display_source = source_map[src_norm]
+            available_targets = self._collect_targets_for_source(display_source)
+            available_norms = {
+                self._normalize_language_name(val): val for val in available_targets
+            }
+            matched_norms = {
+                norm for norm in targets_by_source[src_norm] if norm in available_norms
+            }
+            if matched_norms:
+                if (
+                    best_choice is None
+                    or len(matched_norms) > len(best_choice[2])
+                ):
+                    best_choice = (idx, display_source, matched_norms)
+
+        if best_choice is None:
+            return
+
+        idx, display_source, matched_norms = best_choice
+        current_index = self.source_lang_combo.currentIndex()
+        if current_index != idx:
+            self.source_lang_combo.blockSignals(True)
+            self.source_lang_combo.setCurrentIndex(idx)
+            self.source_lang_combo.blockSignals(False)
+            self.update_target_languages()
+        else:
+            # ensure the available list reflects the current source
+            self.update_target_languages()
+
+        moved = False
+        row = 0
+        while row < self.available_lang_list.count():
+            item = self.available_lang_list.item(row)
+            if self._normalize_language_name(item.text()) in matched_norms:
+                self.selected_lang_list.addItem(item.text())
+                self.available_lang_list.takeItem(row)
+                moved = True
+            else:
+                row += 1
+
+        self._auto_selection_done = True
+        if moved:
+            self.process_data()
+
+    def _collect_targets_for_source(self, source_value: str) -> List[str]:
+        if self.df is None:
+            return []
+        if not self.is_second_file:
+            filtered = self.df[self.df.iloc[:, 0] == source_value]
+            values = filtered.iloc[:, 1].dropna().tolist()
+        else:
+            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
+                return []
+            filtered = self.df[self.df["SourceLang"] == source_value]
+            values = filtered["TargetLang"].dropna().tolist()
+
+        seen: Set[str] = set()
+        result: List[str] = []
+        for val in values:
+            text = str(val).strip()
+            if not text:
+                continue
+            if text.lower() == "target":
+                continue
+            norm = self._normalize_language_name(text)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            result.append(text)
+        return result
+
+    @staticmethod
+    def _normalize_language_name(value: str) -> str:
+        return str(value).strip().casefold()
 
     def move_to_selected(self, item):
         try:
