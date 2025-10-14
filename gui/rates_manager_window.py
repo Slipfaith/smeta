@@ -564,6 +564,7 @@ class RatesManagerWindow(QMainWindow):
     def update_pairs(self, pairs: Iterable[Tuple[str, str]]) -> None:
         self._current_pairs = list(pairs)
         self.mapping_widget.set_pairs(self._current_pairs)
+        self.rate_tab.set_gui_pairs(self._current_pairs)
 
     # ------------------------------------------------------------------
     # Slots
