@@ -1,5 +1,6 @@
 
 import os
+import re
 
 # =================== PySide6 ===================
 from PySide6.QtWidgets import (
@@ -564,8 +565,8 @@ class RateTab(QWidget):
             filtered = self.df[self.df["SourceLang"] == source_value]
             values = filtered["TargetLang"].dropna().tolist()
 
-        seen: Set[str] = set()
-        result: List[str] = []
+        choices: Dict[str, str] = {}
+        order: List[str] = []
         for val in values:
             text = str(val).strip()
             if not text:
@@ -573,11 +574,14 @@ class RateTab(QWidget):
             if text.lower() == "target":
                 continue
             norm = self._normalize_language_name(text)
-            if norm in seen:
+            if not norm:
                 continue
-            seen.add(norm)
-            result.append(text)
-        return result
+            if norm not in choices:
+                choices[norm] = text
+                order.append(norm)
+                continue
+            choices[norm] = self._prefer_language_label(choices[norm], text)
+        return [choices[norm] for norm in order]
 
     @staticmethod
     def _normalize_language_name(value: str) -> str:
@@ -589,6 +593,27 @@ class RateTab(QWidget):
         except Exception:
             normalized = ""
         return normalized or text.casefold()
+
+    @staticmethod
+    def _prefer_language_label(current: str, candidate: str) -> str:
+        """Return the more user-friendly label between two variants."""
+
+        def _score(text: str) -> tuple[int, int, str]:
+            has_region = bool(re.search(r"[()/\\,-]", text))
+            return (
+                1 if has_region else 0,
+                len(text.strip()),
+                text,
+            )
+
+        if not current:
+            return candidate
+        if not candidate:
+            return current
+
+        current_score = _score(current)
+        candidate_score = _score(candidate)
+        return candidate if candidate_score < current_score else current
 
     def move_to_selected(self, item):
         try:
