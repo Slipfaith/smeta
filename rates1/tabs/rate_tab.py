@@ -23,7 +23,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # =================== rates importer helpers ===================
 from logic import rates_importer
-from logic.xml_parser_common import expand_target_matches, language_identity
+from logic.xml_parser_common import language_identity
 from logic.translation_config import tr
 
 # =================== Сервисы MS Graph ===================
@@ -571,131 +571,184 @@ class RateTab(QWidget):
             return
         if self.df is None:
             return
-        if not self._gui_pairs or self.source_lang_combo.count() == 0:
+        if self.source_lang_combo.count() == 0:
             return
         if self.selected_lang_list.count() > 0:
             return
 
-        source_map: Dict[str, Tuple[int, str]] = {}
-        for idx in range(self.source_lang_combo.count()):
-            text = self.source_lang_combo.itemText(idx).strip()
-            if not text:
-                continue
-            source_map[self._normalize_language_name(text)] = (idx, text)
-
+        source_map = self._build_source_map()
         if not source_map:
             return
 
-        order: List[str] = []
-        targets_by_source: Dict[str, Set[str]] = {}
-
-        if self._excel_matches:
-            for match in self._excel_matches:
-                norm_src = self._normalize_language_name(match.excel_source)
-                norm_tgt = self._normalize_language_name(match.excel_target)
-                if not norm_src or not norm_tgt:
-                    continue
-                if norm_src not in targets_by_source:
-                    targets_by_source[norm_src] = set()
-                    order.append(norm_src)
-                targets_by_source[norm_src].add(norm_tgt)
-
-        if not targets_by_source:
-            for src, tgt in self._gui_pairs:
-                norm_src = self._normalize_language_name(src)
-                norm_tgt = self._normalize_language_name(tgt)
-                if not norm_src or not norm_tgt:
-                    continue
-                if norm_src not in targets_by_source:
-                    targets_by_source[norm_src] = set()
-                    order.append(norm_src)
-                targets_by_source[norm_src].add(norm_tgt)
-
-        best_choice: Optional[Tuple[int, str, Set[str]]] = None
-        for src_norm in order:
-            if src_norm not in source_map:
-                continue
-            idx, display_source = source_map[src_norm]
-            available_targets = self._collect_targets_for_source(display_source)
-            available_norms = {
-                self._normalize_language_name(val): val for val in available_targets
-            }
-            matched_norms = {
-                norm for norm in targets_by_source[src_norm] if norm in available_norms
-            }
-            if matched_norms:
-                source_norm = self._normalize_language_name(display_source)
-                matched_norms = expand_target_matches(
-                    matched_norms,
-                    available_norms.keys(),
-                    source_norm,
-                )
-                if not matched_norms:
-                    continue
-                if (
-                    best_choice is None
-                    or len(matched_norms) > len(best_choice[2])
-                ):
-                    best_choice = (idx, display_source, matched_norms)
-
-        if best_choice is None:
+        selection = self._find_auto_selection(source_map)
+        if selection is None:
             return
 
-        idx, display_source, matched_norms = best_choice
+        idx, display_source, target_norms = selection
         current_index = self.source_lang_combo.currentIndex()
         if current_index != idx:
             self.source_lang_combo.blockSignals(True)
             self.source_lang_combo.setCurrentIndex(idx)
             self.source_lang_combo.blockSignals(False)
-            self.update_target_languages()
-        else:
-            # ensure the available list reflects the current source
-            self.update_target_languages()
 
-        moved = False
-        row = 0
-        while row < self.available_lang_list.count():
-            item = self.available_lang_list.item(row)
-            if self._normalize_language_name(item.text()) in matched_norms:
-                self.selected_lang_list.addItem(item.text())
-                self.available_lang_list.takeItem(row)
-                moved = True
-            else:
-                row += 1
+        self.update_target_languages()
+
+        source_norm = self._normalize_language_name(display_source)
+        expanded_norms = self._expand_target_norms(target_norms, source_norm)
+        moved = self._move_targets_to_selected(expanded_norms, source_norm)
 
         self._auto_selection_done = True
         if moved:
             self.process_data()
 
-    def _collect_targets_for_source(self, source_value: str) -> List[str]:
-        if self.df is None:
-            return []
-        if not self.is_second_file:
-            filtered = self.df[self.df.iloc[:, 0] == source_value]
-            values = filtered.iloc[:, 1].dropna().tolist()
-        else:
-            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                return []
-            filtered = self.df[self.df["SourceLang"] == source_value]
-            values = filtered["TargetLang"].dropna().tolist()
-
-        choices: Dict[str, str] = {}
-        order: List[str] = []
-        for val in values:
-            text = str(val).strip()
+    def _build_source_map(self) -> Dict[str, Tuple[int, str]]:
+        mapping: Dict[str, Tuple[int, str]] = {}
+        for idx in range(self.source_lang_combo.count()):
+            text = self.source_lang_combo.itemText(idx).strip()
             if not text:
                 continue
-            if text.lower() == "target":
+            mapping[self._normalize_language_name(text)] = (idx, text)
+        return mapping
+
+    def _find_auto_selection(
+        self,
+        source_map: Dict[str, Tuple[int, str]],
+    ) -> Optional[Tuple[int, str, Set[str]]]:
+        excel_selection = self._gather_excel_targets(source_map)
+        if excel_selection is not None:
+            return excel_selection
+
+        gui_selection = self._gather_gui_targets(source_map)
+        if gui_selection is not None:
+            return gui_selection
+
+        return None
+
+    def _gather_excel_targets(
+        self,
+        source_map: Dict[str, Tuple[int, str]],
+    ) -> Optional[Tuple[int, str, Set[str]]]:
+        if not self._excel_matches:
+            return None
+
+        order: List[str] = []
+        targets_by_source: Dict[str, Set[str]] = {}
+        for match in self._excel_matches:
+            norm_src = self._normalize_language_name(match.excel_source)
+            norm_tgt = self._normalize_language_name(match.excel_target)
+            if not norm_src or not norm_tgt:
                 continue
-            norm = self._normalize_language_name(text)
+            if norm_src not in targets_by_source:
+                targets_by_source[norm_src] = set()
+                order.append(norm_src)
+            targets_by_source[norm_src].add(norm_tgt)
+
+        for src_norm in order:
+            if src_norm not in source_map:
+                continue
+            targets = {norm for norm in targets_by_source[src_norm] if norm}
+            if not targets:
+                continue
+            idx, display_source = source_map[src_norm]
+            return idx, display_source, targets
+
+        return None
+
+    def _gather_gui_targets(
+        self,
+        source_map: Dict[str, Tuple[int, str]],
+    ) -> Optional[Tuple[int, str, Set[str]]]:
+        if not self._gui_pairs:
+            return None
+
+        order: List[str] = []
+        targets_by_source: Dict[str, Set[str]] = {}
+        for src, tgt in self._gui_pairs:
+            norm_src = self._normalize_language_name(src)
+            norm_tgt = self._normalize_language_name(tgt)
+            if not norm_src or not norm_tgt:
+                continue
+            if norm_src not in targets_by_source:
+                targets_by_source[norm_src] = set()
+                order.append(norm_src)
+            targets_by_source[norm_src].add(norm_tgt)
+
+        best: Optional[Tuple[int, str, Set[str]]] = None
+        for src_norm in order:
+            if src_norm not in source_map:
+                continue
+            targets = {norm for norm in targets_by_source[src_norm] if norm}
+            if not targets:
+                continue
+            idx, display_source = source_map[src_norm]
+            if best is None or len(targets) > len(best[2]):
+                best = (idx, display_source, targets)
+
+        return best
+
+    def _expand_target_norms(
+        self,
+        target_norms: Set[str],
+        source_norm: str,
+    ) -> Set[str]:
+        expanded = {norm for norm in target_norms if norm}
+        base_languages = {norm.split("-", 1)[0] for norm in expanded if norm}
+
+        if base_languages:
+            for idx in range(self.available_lang_list.count()):
+                item = self.available_lang_list.item(idx)
+                norm = self._normalize_language_name(item.text())
+                if not norm:
+                    continue
+                base = norm.split("-", 1)[0]
+                if base in base_languages:
+                    expanded.add(norm)
+
+        expanded.discard(source_norm)
+        return expanded
+
+    def _move_targets_to_selected(
+        self,
+        target_norms: Set[str],
+        source_norm: str,
+    ) -> bool:
+        if not target_norms:
+            self._update_selection_summary()
+            return False
+
+        source_base = source_norm.split("-", 1)[0] if source_norm else ""
+        target_bases = {norm.split("-", 1)[0] for norm in target_norms if norm}
+        existing_norms = {
+            self._normalize_language_name(self.selected_lang_list.item(i).text())
+            for i in range(self.selected_lang_list.count())
+        }
+
+        moved = False
+        row = self.available_lang_list.count() - 1
+        while row >= 0:
+            item = self.available_lang_list.item(row)
+            norm = self._normalize_language_name(item.text())
             if not norm:
+                row -= 1
                 continue
-            if norm not in choices:
-                choices[norm] = text
-                order.append(norm)
+            base = norm.split("-", 1)[0]
+            if norm in existing_norms or base == source_base:
+                row -= 1
                 continue
-            choices[norm] = self._prefer_language_label(choices[norm], text)
-        return [choices[norm] for norm in order]
+
+            matches_target = norm in target_norms or (base and base in target_bases)
+            if not matches_target:
+                row -= 1
+                continue
+
+            self.selected_lang_list.addItem(item.text())
+            self.available_lang_list.takeItem(row)
+            existing_norms.add(norm)
+            moved = True
+            row -= 1
+
+        self._update_selection_summary()
+        return moved
 
     @staticmethod
     def _normalize_language_name(value: str) -> str:
