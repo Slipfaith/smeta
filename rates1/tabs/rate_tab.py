@@ -692,18 +692,6 @@ class RateTab(QWidget):
         source_norm: str,
     ) -> Set[str]:
         expanded = {norm for norm in target_norms if norm}
-        base_languages = {norm.split("-", 1)[0] for norm in expanded if norm}
-
-        if base_languages:
-            for idx in range(self.available_lang_list.count()):
-                item = self.available_lang_list.item(idx)
-                norm = self._normalize_language_name(item.text())
-                if not norm:
-                    continue
-                base = norm.split("-", 1)[0]
-                if base in base_languages:
-                    expanded.add(norm)
-
         expanded.discard(source_norm)
         return expanded
 
