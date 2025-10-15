@@ -8,7 +8,6 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QHeaderView,
     QHBoxLayout,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 from gui.styles import (
     EXCEL_COMBO_HIGHLIGHT_STYLE,
     IMPORT_BUTTON_DISABLED_STYLE,
+    IMPORT_BUTTON_ENABLED_STYLE,
     RATES_IMPORT_DIALOG_STYLE,
     RATES_MAPPING_APPLY_COMBO_WIDTH,
     RATES_MAPPING_CONTROLS_SPACING,
@@ -193,20 +193,6 @@ class RatesMappingWidget(QWidget):
         layout.setContentsMargins(*RATES_MAPPING_LAYOUT_MARGINS)
         layout.setSpacing(RATES_MAPPING_LAYOUT_SPACING)
 
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
-
-        self.auto_update_checkbox = QCheckBox()
-        self.auto_update_checkbox.setChecked(True)
-        controls_layout.addWidget(self.auto_update_checkbox)
-
-        self.auto_fill_btn = QPushButton()
-        self.auto_fill_btn.clicked.connect(lambda: self.auto_fill_from_rates(force=True))
-        controls_layout.addWidget(self.auto_fill_btn)
-
-        controls_layout.addStretch()
-        layout.addLayout(controls_layout)
-
         apply_layout = QHBoxLayout()
         apply_layout.setSpacing(RATES_MAPPING_CONTROLS_SPACING)
 
@@ -265,10 +251,6 @@ class RatesMappingWidget(QWidget):
 
     def _update_language_texts(self) -> None:
         lang = self._lang()
-        self.auto_update_checkbox.setText(
-            tr("Автоматически подставлять ставки", lang)
-        )
-        self.auto_fill_btn.setText(tr("Подставить ставки сейчас", lang))
         self.apply_label.setText(tr("Применить", lang) + ":")
         self.import_btn.setText(tr("Импортировать в программу", lang))
         self._populate_apply_combo(lang)
@@ -304,7 +286,7 @@ class RatesMappingWidget(QWidget):
         enabled = self._can_import()
         self.import_btn.setEnabled(enabled)
         self.import_btn.setStyleSheet(
-            "" if enabled else IMPORT_BUTTON_DISABLED_STYLE
+            IMPORT_BUTTON_ENABLED_STYLE if enabled else IMPORT_BUTTON_DISABLED_STYLE
         )
 
     def _can_import(self) -> bool:
@@ -361,13 +343,13 @@ class RatesMappingWidget(QWidget):
         self._lang_names = sorted(self._name_to_code.keys())
 
         self._refresh_language_combos()
-        self._apply_matches(auto_fill=self.auto_update_checkbox.isChecked())
+        self._apply_matches(auto_fill=True)
         self._update_status()
 
     def auto_fill_from_rates(self, force: bool = False) -> None:
-        allow_force = force or self.auto_update_checkbox.isChecked()
+        _ = force  # параметр сохранён для совместимости с существующими вызовами
         for row in range(self.table.rowCount()):
-            self._update_rate_from_row(row, force=allow_force)
+            self._update_rate_from_row(row)
         self._update_import_button_state()
 
     def selected_rates(self) -> List[rates_importer.PairMatch]:
@@ -490,11 +472,7 @@ class RatesMappingWidget(QWidget):
         self._refresh_all_rate_display()
         self._update_import_button_state()
 
-    def _update_rate_from_row(self, row: int, force: bool = False) -> None:
-        if not force and not self.auto_update_checkbox.isChecked():
-            self._update_import_button_state()
-            return
-
+    def _update_rate_from_row(self, row: int) -> None:
         src_cell = self._ensure_lang_cell(row, 0)
         tgt_cell = self._ensure_lang_cell(row, 1)
         src_code = self._name_to_code.get(src_cell.excel_text())
@@ -506,7 +484,7 @@ class RatesMappingWidget(QWidget):
         rate = self._rates.get((src_code, tgt_code))
         if rate:
             self._apply_rate_values(row, rate)
-        elif force or self.auto_update_checkbox.isChecked():
+        else:
             self._clear_rate_values(row)
         self._update_import_button_state()
 

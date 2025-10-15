@@ -87,6 +87,31 @@ QPushButton:pressed {
 }
 """
 
+RATE_SELECTION_ACTION_BUTTON_STYLE = """
+QPushButton {
+    background-color: #e5e7eb;         /* slate-200 */
+    color: #1f2937;                    /* slate-800 */
+    border: 1px solid #d1d5db;         /* slate-300 */
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #d1d5db;
+}
+
+QPushButton:pressed {
+    background-color: #cbd5f5;
+}
+
+QPushButton:disabled {
+    background-color: #f3f4f6;
+    color: #9ca3af;
+    border-color: #e5e7eb;
+}
+"""
+
 # Базовый стиль зоны перетаскивания: светло-серая пунктирная рамка и фон
 DROP_AREA_BASE_STYLE = """
 QScrollArea {
@@ -322,4 +347,34 @@ EXCEL_COMBO_HIGHLIGHT_STYLE = "color: #d97706;"
 
 
 # Цвет текста кнопки «Импортировать в программу» в отключённом состоянии
-IMPORT_BUTTON_DISABLED_STYLE = "color: #888888;"
+IMPORT_BUTTON_ENABLED_STYLE = """
+QPushButton {
+    background-color: #2563eb;         /* насыщенный синий */
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #1d4ed8;
+}
+
+QPushButton:pressed {
+    background-color: #1e40af;
+}
+"""
+
+IMPORT_BUTTON_DISABLED_STYLE = """
+QPushButton {
+    background-color: #9ca3af;         /* мягкий серый */
+    color: #e5e7eb;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 600;
+}
+"""
