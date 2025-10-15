@@ -531,9 +531,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             bullets = "\n  • ".join(unique_values)
             return f"{title}:\n  • {bullets}"
 
-        message_sections: List[str] = [
-            f"{tr('Outlook письмо', lang)}: {os.path.basename(payload.get('source_path', ''))}"
-        ]
+        subject = (payload.get("subject") or "").strip()
+        source_name = os.path.basename(payload.get("source_path", ""))
+        if subject:
+            header = f"{tr('Outlook письмо', lang)}: {subject}"
+            if source_name and source_name not in subject:
+                header += f"\n{tr('Файл', lang)}: {source_name}"
+        else:
+            header = f"{tr('Outlook письмо', lang)}: {source_name}"
+
+        message_sections: List[str] = [header]
 
         section = format_section(tr("Обновлены поля", lang), updated_fields)
         if section:

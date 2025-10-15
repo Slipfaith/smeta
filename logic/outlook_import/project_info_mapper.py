@@ -55,6 +55,7 @@ class ProjectInfoParseResult:
     sender_email: Optional[str]
     sent_at: Optional[str]
     warnings: List[str] = field(default_factory=list)
+    subject: Optional[str] = None
 
 
 def _normalize_key(value: str) -> str:
@@ -190,9 +191,11 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
         if not mapped_values:
             warnings.append("Таблица в письме не найдена")
 
+    raw_subject = (message.subject or "").strip() or None
+
     project_name = None
-    if message.subject:
-        project_name = _SUBJECT_BRACKETS_RE.sub(" ", message.subject)
+    if raw_subject:
+        project_name = _SUBJECT_BRACKETS_RE.sub(" ", raw_subject)
         project_name = re.sub(r"\s+", " ", project_name).strip()
         if not project_name:
             project_name = None
@@ -265,4 +268,5 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
         sender_email=message.sender_email,
         sent_at=sent_at,
         warnings=warnings,
+        subject=raw_subject,
     )

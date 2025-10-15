@@ -71,6 +71,7 @@ def _prepare_project_info_payload(parse_result, source_path: str) -> Dict[str, A
 
     payload: Dict[str, Any] = {
         "source_path": source_path,
+        "subject": parse_result.subject or "",
         "data": {
             "project_name": data.project_name or "",
             "client_name": data.client_name or "",
