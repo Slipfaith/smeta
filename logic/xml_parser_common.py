@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from typing import Iterable, Set, Tuple
 
 import langcodes
@@ -117,6 +118,25 @@ def _language_tag_from_value(value: str) -> str:
         return ""
 
 
+def _canonical_language_code(code: str) -> str:
+    """Return a normalised ISO language code for ``code``."""
+
+    if not code:
+        return ""
+
+    lowered = code.strip().lower()
+    if re.fullmatch(r"[a-z]{2,3}", lowered):
+        return lowered
+
+    with suppress(LookupError, langcodes.LanguageTagError):
+        match = langcodes.find(lowered)
+        language = (match.language or "").lower()
+        if re.fullmatch(r"[a-z]{2,3}", language):
+            return language
+
+    return lowered
+
+
 def expand_language_code(code: str, locale: str = "ru") -> str:
     """Преобразует языковой код в человекочитаемое название."""
 
@@ -156,7 +176,7 @@ def language_identity(value: str) -> Tuple[str, str, str]:
         except langcodes.LanguageTagError:
             continue
 
-        language = (lang.language or "").lower()
+        language = _canonical_language_code(lang.language or "")
         script = (lang.script or "").title() if lang.script else ""
         territory = (lang.territory or "").upper()
         return language, script, territory
