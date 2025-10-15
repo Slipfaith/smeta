@@ -145,6 +145,34 @@ TOTAL_LABEL_STYLE = "font-weight: bold; font-size: 14px; padding: 6px; color: #3
 REPORTS_LABEL_STYLE = "color: #555; font-size: 11px;"
 
 
+# Интервал между блоками на правой панели вкладок (основной QVBoxLayout)
+RIGHT_PANEL_MAIN_SPACING = 12
+
+
+# Интервал между блоками на левой панели вкладок (основной QVBoxLayout)
+LEFT_PANEL_MAIN_SPACING = 12
+
+
+# Интервал между строками внутри группы «Информация о проекте» слева
+LEFT_PANEL_PROJECT_SECTION_SPACING = 8
+
+
+# Интервал между элементами внутри группы «Языковые пары» слева
+LEFT_PANEL_PAIRS_SECTION_SPACING = 8
+
+
+# Фиксированная ширина слайдера «Названия языков» на левой панели (в пикселях)
+LEFT_PANEL_LANG_MODE_SLIDER_WIDTH = 70
+
+
+# Максимальная высота поля «Текущие пары» (QTextEdit) на левой панели (в пикселях)
+LEFT_PANEL_PAIRS_LIST_MAX_HEIGHT = 100
+
+
+# Интервал между строками внутри блока «Добавить язык в справочник» слева
+LEFT_PANEL_ADD_LANG_SECTION_SPACING = 8
+
+
 # Стиль диалога импорта расценок: белый фон, синие акценты и таблицы
 RATES_IMPORT_DIALOG_STYLE = """
 QDialog {
@@ -287,3 +315,19 @@ STATUS_LABEL_SUCCESS_STYLE = "color: #107c10;"
 
 # Цвет подписи статуса при ошибке: красный #d13438
 STATUS_LABEL_ERROR_STYLE = "color: #d13438;"
+
+
+# Внутренние отступы ячейки сопоставления языков (SourceTargetCell)
+SOURCE_TARGET_CELL_MARGINS = (2, 2, 2, 2)
+
+
+# Вертикальный зазор между подписью и комбобоксом в ячейке сопоставления
+SOURCE_TARGET_CELL_SPACING = 2
+
+
+# Цвет текста комбобокса выбора названия Excel при необходимости выделения
+EXCEL_COMBO_HIGHLIGHT_STYLE = "color: #d97706;"
+
+
+# Цвет текста кнопки «Импортировать в программу» в отключённом состоянии
+IMPORT_BUTTON_DISABLED_STYLE = "color: #888888;"
