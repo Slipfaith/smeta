@@ -161,11 +161,25 @@ class RateTab(QWidget):
         self.layout_main.addLayout(self.lang_layout)
 
         # --- Списки доступных/выбранных языков ---
+        lang_list_width = 260
+        lang_list_height = 280
+
+        self.languages_section_layout = QVBoxLayout()
+        self.languages_section_layout.setContentsMargins(0, 0, 0, 0)
+        self.languages_section_layout.setSpacing(6)
+
+        self.available_search = QLineEdit()
+        self.available_search.setClearButtonEnabled(True)
+        self.available_search.setMinimumWidth(lang_list_width)
+        self.available_search.setMaximumWidth(lang_list_width)
+        self.available_search.textChanged.connect(self.filter_available_languages)
+        self.languages_section_layout.addWidget(
+            self.available_search, alignment=Qt.AlignLeft
+        )
+
         self.target_layout = QHBoxLayout()
         self.target_layout.setContentsMargins(0, 0, 0, 0)
         self.target_layout.setSpacing(12)
-        lang_list_width = 260
-        lang_list_height = 280
 
         self.available_layout = QVBoxLayout()
         self.available_layout.setContentsMargins(0, 0, 0, 0)
@@ -176,11 +190,6 @@ class RateTab(QWidget):
         self.available_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.available_label = QLabel()
         self.available_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.available_search = QLineEdit()
-        self.available_search.setClearButtonEnabled(True)
-        self.available_search.setMinimumWidth(lang_list_width)
-        self.available_search.setMaximumWidth(lang_list_width)
-        self.available_search.textChanged.connect(self.filter_available_languages)
         self.available_lang_list = QListWidget()
         self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.available_lang_list.itemClicked.connect(self.move_to_selected)
@@ -189,7 +198,6 @@ class RateTab(QWidget):
         self.available_lang_list.setMinimumHeight(lang_list_height)
         self.available_lang_list.setMaximumHeight(lang_list_height)
 
-        self.available_layout.addWidget(self.available_search)
         self.available_layout.addWidget(self.available_label)
         self.available_layout.addWidget(self.available_lang_list)
 
@@ -215,7 +223,9 @@ class RateTab(QWidget):
         self.selected_container.setFixedWidth(lang_list_width)
         self.selected_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.target_layout.addWidget(self.selected_container)
-        self.layout_main.addLayout(self.target_layout)
+
+        self.languages_section_layout.addLayout(self.target_layout)
+        self.layout_main.addLayout(self.languages_section_layout)
 
         self.select_buttons_layout = QHBoxLayout()
         self.select_buttons_layout.setContentsMargins(0, 0, 0, 0)
@@ -226,7 +236,6 @@ class RateTab(QWidget):
         self.deselect_all_button.clicked.connect(self.deselect_all_available)
         self.select_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
         self.deselect_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
-        self.select_buttons_layout.addStretch(1)
         self.select_buttons_layout.addWidget(self.select_all_button)
         self.select_buttons_layout.addWidget(self.deselect_all_button)
         self.select_buttons_layout.addStretch(1)
