@@ -14,6 +14,7 @@ from gui.additional_services import AdditionalServicesWidget
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import (
     DROP_HINT_LABEL_STYLE,
+    RIGHT_PANEL_MAIN_SPACING,
     SUMMARY_HINT_LABEL_STYLE,
     TOTAL_LABEL_STYLE,
 )
@@ -26,6 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover - only for type checking
 def create_right_panel(window: "TranslationCostCalculator") -> QWidget:
     widget = QWidget()
     layout = QVBoxLayout()
+    layout.setSpacing(RIGHT_PANEL_MAIN_SPACING)
     window.tabs = QTabWidget()
     gui_lang = window.gui_lang
     estimate_lang = "ru" if window.lang_display_ru else "en"
@@ -37,7 +39,7 @@ def create_right_panel(window: "TranslationCostCalculator") -> QWidget:
 
     window.pairs_container_widget = QWidget()
     window.pairs_layout = QVBoxLayout()
-    window.pairs_layout.setSpacing(12)
+    window.pairs_layout.setSpacing(RIGHT_PANEL_MAIN_SPACING)
 
     window.only_new_repeats_btn = QPushButton(
         tr("Только новые слова и повторы", gui_lang)

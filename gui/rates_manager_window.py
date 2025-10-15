@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 )
 
 from gui.styles import (
+    EXCEL_COMBO_HIGHLIGHT_STYLE,
+    IMPORT_BUTTON_DISABLED_STYLE,
     RATES_IMPORT_DIALOG_STYLE,
     RATES_MAPPING_APPLY_COMBO_WIDTH,
     RATES_MAPPING_CONTROLS_SPACING,
@@ -36,6 +38,8 @@ from gui.styles import (
     RATES_WINDOW_LAYOUT_SPACING,
     RATES_WINDOW_SPLITTER_SIZES,
     RATES_WINDOW_SPLITTER_STRETCH_FACTORS,
+    SOURCE_TARGET_CELL_MARGINS,
+    SOURCE_TARGET_CELL_SPACING,
     STATUS_LABEL_DEFAULT_STYLE,
     STATUS_LABEL_SUCCESS_STYLE,
 )
@@ -59,8 +63,8 @@ class SourceTargetCell(QWidget):
         self._main_value = main_value
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
+        layout.setContentsMargins(*SOURCE_TARGET_CELL_MARGINS)
+        layout.setSpacing(SOURCE_TARGET_CELL_SPACING)
 
         self.main_label = QLabel(main_value)
         font = self.main_label.font()
@@ -120,7 +124,9 @@ class SourceTargetCell(QWidget):
     def update_highlight(self) -> None:
         text = self.excel_combo.currentText().strip()
         highlight = bool(text) and text != self._main_value
-        self.excel_combo.setStyleSheet("color: #d97706;" if highlight else "")
+        self.excel_combo.setStyleSheet(
+            EXCEL_COMBO_HIGHLIGHT_STYLE if highlight else ""
+        )
 
     # ------------------------------------------------------------------
     # Qt events
@@ -297,7 +303,9 @@ class RatesMappingWidget(QWidget):
     def _update_import_button_state(self) -> None:
         enabled = self._can_import()
         self.import_btn.setEnabled(enabled)
-        self.import_btn.setStyleSheet("" if enabled else "color: #888888;")
+        self.import_btn.setStyleSheet(
+            "" if enabled else IMPORT_BUTTON_DISABLED_STYLE
+        )
 
     def _can_import(self) -> bool:
         if not self._rates or self.table.rowCount() == 0:

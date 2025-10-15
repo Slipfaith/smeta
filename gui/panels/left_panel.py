@@ -17,6 +17,14 @@ from PySide6.QtWidgets import (
 )
 
 from gui.drop_areas import ProjectInfoDropArea
+from gui.styles import (
+    LEFT_PANEL_ADD_LANG_SECTION_SPACING,
+    LEFT_PANEL_LANG_MODE_SLIDER_WIDTH,
+    LEFT_PANEL_MAIN_SPACING,
+    LEFT_PANEL_PAIRS_LIST_MAX_HEIGHT,
+    LEFT_PANEL_PAIRS_SECTION_SPACING,
+    LEFT_PANEL_PROJECT_SECTION_SPACING,
+)
 from logic.translation_config import tr
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -26,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover - only for type checking
 def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     container = QWidget()
     layout = QVBoxLayout()
-    layout.setSpacing(12)
+    layout.setSpacing(LEFT_PANEL_MAIN_SPACING)
 
     lang = window.gui_lang
 
@@ -36,7 +44,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
         lambda: window.gui_lang,
     )
     project_layout = QVBoxLayout()
-    project_layout.setSpacing(8)
+    project_layout.setSpacing(LEFT_PANEL_PROJECT_SECTION_SPACING)
 
     window.project_name_label = QLabel(tr("Название проекта", lang) + ":")
     project_layout.addWidget(window.project_name_label)
@@ -107,7 +115,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
 
     window.pairs_group = QGroupBox(tr("Языковые пары", lang))
     pairs_layout = QVBoxLayout()
-    pairs_layout.setSpacing(8)
+    pairs_layout.setSpacing(LEFT_PANEL_PAIRS_SECTION_SPACING)
 
     mode_layout = QHBoxLayout()
     window.language_names_label = QLabel(tr("Названия языков", lang) + ":")
@@ -117,7 +125,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     window.lang_mode_slider = QSlider(Qt.Horizontal)
     window.lang_mode_slider.setRange(0, 1)
     window.lang_mode_slider.setValue(1)
-    window.lang_mode_slider.setFixedWidth(70)
+    window.lang_mode_slider.setFixedWidth(LEFT_PANEL_LANG_MODE_SLIDER_WIDTH)
     window.lang_mode_slider.valueChanged.connect(window.on_lang_mode_changed)
     mode_layout.addWidget(window.lang_mode_slider)
     mode_layout.addWidget(QLabel("RU"))
@@ -140,7 +148,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     window.current_pairs_label = QLabel(tr("Текущие пары", lang) + ":")
     pairs_layout.addWidget(window.current_pairs_label)
     window.pairs_list = QTextEdit()
-    window.pairs_list.setMaximumHeight(100)
+    window.pairs_list.setMaximumHeight(LEFT_PANEL_PAIRS_LIST_MAX_HEIGHT)
     window.pairs_list.setReadOnly(True)
     pairs_layout.addWidget(window.pairs_list)
 
@@ -171,7 +179,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
 
     window.add_lang_group = QGroupBox(tr("Добавить язык в справочник", lang))
     add_lang_layout = QVBoxLayout()
-    add_lang_layout.setSpacing(8)
+    add_lang_layout.setSpacing(LEFT_PANEL_ADD_LANG_SECTION_SPACING)
 
     row_ru = QHBoxLayout()
     window.lang_ru_label = QLabel(tr("Название RU", lang) + ":")
