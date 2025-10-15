@@ -16,6 +16,34 @@ class OutlookMsgError(Exception):
     """Raised when an Outlook .msg file cannot be parsed."""
 
 
+def _count_cyrillic(text: str) -> int:
+    return sum(
+        "А" <= ch <= "я" or ch in {"Ё", "ё"}
+        for ch in text
+    )
+
+
+def normalize_outlook_text(value: str) -> str:
+    """Normalize Outlook strings, fixing common CP1251 mojibake."""
+
+    if not value:
+        return value
+
+    baseline = _count_cyrillic(value)
+    if baseline:
+        return value
+
+    try:
+        candidate = value.encode("latin-1", errors="strict").decode("cp1251")
+    except UnicodeEncodeError:
+        return value
+
+    candidate_cyrillic = _count_cyrillic(candidate)
+    if candidate_cyrillic > baseline and candidate_cyrillic > 0:
+        return candidate
+    return value
+
+
 @dataclass
 class OutlookMessage:
     """Normalized representation of an Outlook message."""
@@ -26,6 +54,9 @@ class OutlookMessage:
     sent_at: Optional[_dt.datetime]
     body: str
     html_body: Optional[str]
+
+    def __post_init__(self) -> None:
+        self.subject = normalize_outlook_text((self.subject or "").strip())
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[_dt.datetime]:
@@ -61,11 +92,13 @@ def parse_msg_file(path: str) -> OutlookMessage:
         raise OutlookMsgError(str(exc)) from exc
 
     try:
-        subject = msg.subject or ""
+        subject = normalize_outlook_text((msg.subject or "").strip())
         body = msg.body or ""
         html_body = getattr(msg, "htmlBody", None) or None
 
         sender_name = getattr(msg, "sender", None) or getattr(msg, "sender_name", None)
+        if isinstance(sender_name, str):
+            sender_name = normalize_outlook_text(sender_name.strip()) or None
         sender_email = getattr(msg, "sender_email", None) or getattr(
             msg, "sender_email_address", None
         )

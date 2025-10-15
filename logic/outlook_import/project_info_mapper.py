@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .msg_reader import OutlookMessage
+from .msg_reader import OutlookMessage, normalize_outlook_text
 from .table_parser import extract_first_table
 
 _SUBJECT_BRACKETS_RE = re.compile(r"\[[^\[\]]*\]")
@@ -191,7 +191,7 @@ def map_message_to_project_info(message: OutlookMessage) -> ProjectInfoParseResu
         if not mapped_values:
             warnings.append("Таблица в письме не найдена")
 
-    raw_subject = (message.subject or "").strip() or None
+    raw_subject = normalize_outlook_text((message.subject or "").strip()) or None
 
     project_name = None
     if raw_subject:
