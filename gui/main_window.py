@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
 
 from logic.project_manager import ProjectManager
 from updater import (
@@ -53,7 +53,6 @@ from logic.calculations import (
     set_currency_code as calculate_set_currency_code,
     update_total as calculate_update_total,
 )
-from resource_utils import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +139,12 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.about_action.triggered.connect(self.show_about_dialog)
         self.menuBar().addAction(self.about_action)
 
-        planet_icon_path = resource_path(os.path.join("gui", "assets", "planet.svg"))
-        self.language_menu = self.menuBar().addMenu("")
-        self.language_menu.setIcon(QIcon(str(planet_icon_path)))
+        self.language_menu = self.menuBar().addMenu("Lang")
         self.language_menu.setToolTip(tr("Язык", lang))
         self.language_menu.menuAction().setToolTip(tr("Язык", lang))
         self.lang_action_group = QActionGroup(self)
-        self.lang_ru_action = QAction(tr("Русский", lang), self)
-        self.lang_en_action = QAction(tr("Английский", lang), self)
+        self.lang_ru_action = QAction("русский", self)
+        self.lang_en_action = QAction("english", self)
         self.lang_ru_action.setCheckable(True)
         self.lang_en_action.setCheckable(True)
         self.lang_action_group.addAction(self.lang_ru_action)
@@ -344,12 +341,12 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_menu.setTitle(tr("Обновление", lang))
         self.check_updates_action.setText(tr("Проверить обновления", lang))
         self.about_action.setText(tr("О программе", lang))
-        self.language_menu.setTitle("")
+        self.language_menu.setTitle("Lang")
         self.language_menu.setToolTip(tr("Язык", lang))
-        self.language_menu.menuAction().setText("")
+        self.language_menu.menuAction().setText("Lang")
         self.language_menu.menuAction().setToolTip(tr("Язык", lang))
-        self.lang_ru_action.setText(tr("Русский", lang))
-        self.lang_en_action.setText(tr("Английский", lang))
+        self.lang_ru_action.setText("русский")
+        self.lang_en_action.setText("english")
 
     def manual_update_check(self):
         check_for_updates(self, force=True)
