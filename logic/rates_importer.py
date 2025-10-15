@@ -148,12 +148,14 @@ def match_pairs(gui_pairs: Iterable[Tuple[str, str]], rates: RatesMap) -> List[P
         rate was not found, ``rates`` attribute will be ``None``.
     """
     results: List[PairMatch] = []
+    available_sources = {src for src, _ in rates}
+    available_targets = {tgt for _, tgt in rates}
     for gui_src, gui_tgt in gui_pairs:
         src_code = _normalize_language(gui_src)
         tgt_code = _normalize_language(gui_tgt)
         rate = rates.get((src_code, tgt_code))
-        excel_src = _language_name(src_code)
-        excel_tgt = _language_name(tgt_code)
+        excel_src = _language_name(src_code) if src_code in available_sources else ""
+        excel_tgt = _language_name(tgt_code) if tgt_code in available_targets else ""
         results.append(
             PairMatch(
                 gui_source=gui_src,
