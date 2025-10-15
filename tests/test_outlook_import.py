@@ -83,6 +83,24 @@ def test_map_message_strips_bracket_tags_from_subject():
     assert result.subject == "[Tag] Новая тема [Internal]"
 
 
+def test_outlook_message_normalizes_cp1251_subject():
+    garbled = "Òåõíè÷åñêèé ïåðåâîä íà àíãëèéñêèé"
+    message = OutlookMessage(
+        subject=garbled,
+        sender_name="",
+        sender_email="manager@example.com",
+        sent_at=dt.datetime(2023, 11, 5, 10, 15),
+        body="",
+        html_body=HTML_TABLE,
+    )
+
+    assert message.subject == "Технический перевод на английский"
+
+    result = map_message_to_project_info(message)
+    assert result.data.project_name == "Технический перевод на английский"
+    assert result.subject == "Технический перевод на английский"
+
+
 def test_map_message_falls_back_to_plain_text_rows():
     plain_text = """
 Название клиента
