@@ -487,6 +487,30 @@ class RateTab(QWidget):
     # ----------------------------------------------------------------
     # Обновляем список SourceLang
     # ----------------------------------------------------------------
+    @staticmethod
+    def _clean_language_items(values: Iterable, forbidden: Optional[Set[str]] = None) -> List[str]:
+        cleaned: List[str] = []
+        seen: Set[str] = set()
+        forbidden_norm = {item.casefold() for item in (forbidden or set()) if item}
+
+        for raw in values:
+            if raw is None:
+                continue
+            if isinstance(raw, float) and pd.isna(raw):
+                continue
+            text = str(raw).strip()
+            if not text:
+                continue
+            lowered = text.casefold()
+            if forbidden_norm and lowered in forbidden_norm:
+                continue
+            if lowered in seen:
+                continue
+            cleaned.append(text)
+            seen.add(lowered)
+
+        return cleaned
+
     def setup_languages(self):
         if self.df is None or self.df.shape[0] == 0:
             return
@@ -499,16 +523,20 @@ class RateTab(QWidget):
             # MLV_Rates_USD_EUR_RUR_CNY
             if self.df.shape[1] < 2:
                 return
-            source_list = self.df.iloc[:, 0].dropna().unique().tolist()
-            source_list = [x for x in source_list if isinstance(x, str) and x.lower() != "source"]
+            source_list = self._clean_language_items(
+                self.df.iloc[:, 0].dropna().tolist(),
+                {"source"},
+            )
             self.source_lang_combo.clear()
             self.source_lang_combo.addItems(source_list)
         else:
             # TEP (Source RU)
             if "SourceLang" not in self.df.columns:
                 return
-            source_list = self.df["SourceLang"].dropna().unique().tolist()
-            source_list = [str(x) for x in source_list if str(x).lower() != "source"]
+            source_list = self._clean_language_items(
+                self.df["SourceLang"].dropna().tolist(),
+                {"source"},
+            )
             self.source_lang_combo.clear()
             self.source_lang_combo.addItems(source_list)
 
@@ -524,16 +552,20 @@ class RateTab(QWidget):
         self._update_selection_summary()
 
         if not self.is_second_file:
-            filtered = self.df[self.df.iloc[:,0] == source_lang]
-            targets = filtered.iloc[:,1].dropna().unique().tolist()
-            targets = [t for t in targets if isinstance(t,str) and t.lower() != "target"]
+            filtered = self.df[self.df.iloc[:, 0] == source_lang]
+            targets = self._clean_language_items(
+                filtered.iloc[:, 1].dropna().tolist(),
+                {"target"},
+            )
             self.available_lang_list.addItems(targets)
         else:
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
                 return
             filtered = self.df[self.df["SourceLang"] == source_lang]
-            targets = filtered["TargetLang"].dropna().unique().tolist()
-            targets = [str(t) for t in targets if str(t).lower() != "target"]
+            targets = self._clean_language_items(
+                filtered["TargetLang"].dropna().tolist(),
+                {"target"},
+            )
             self.available_lang_list.addItems(targets)
 
     def set_gui_pairs(self, pairs: Iterable[Tuple[str, str]]):
