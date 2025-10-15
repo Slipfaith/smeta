@@ -23,12 +23,14 @@ def collect_static_tree(path: Path, target: str) -> list[tuple[str, str]]:
         return []
 
     entries: list[tuple[str, str]] = []
-    target_path = Path(target) if target else None
+    target_path = Path(target) if target else Path(".")
     for file_path in path.rglob("*"):
         if file_path.is_file():
             relative = file_path.relative_to(path)
-            destination_base = target_path if target_path is not None else Path()
-            destination = str(destination_base / relative)
+            destination_dir = target_path / relative.parent
+            destination = str(destination_dir)
+            if destination in {"", "."}:
+                destination = "."
             entries.append((str(file_path), destination))
     return entries
 
@@ -44,7 +46,6 @@ language_data_files = collect_data_files("language_data", subdir="data")
 templates_data = collect_static_tree(project_root / "templates", "templates")
 
 additional_datas = [
-    (str(project_root / "templates" / "*"), "templates"),
     (str(project_root / "logic" / "legal_entities.json"), "logic"),
     (str(babel_locale_data_path), "babel/locale-data"),
     (str(langcodes_data_path), "langcodes/data"),
