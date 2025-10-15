@@ -243,6 +243,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self._update_gui_language(lang)
         self.lang_ru_action.setChecked(lang == "ru")
         self.lang_en_action.setChecked(lang == "en")
+        desired_slider_value = 1 if lang == "ru" else 0
+        if self.lang_mode_slider.value() != desired_slider_value:
+            self.lang_mode_slider.setValue(desired_slider_value)
 
     def on_lang_mode_changed(self, value: int):
         """Handle slider changes – update language pair names everywhere."""
