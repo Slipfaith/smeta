@@ -41,6 +41,7 @@ def test_map_message_extracts_project_fields():
     assert result.sender_name == "Ivan Manager"
     assert result.sender_email == "manager@example.com"
     assert result.sent_at == "2023-11-05 10:15"
+    assert result.subject == "Коммерческое предложение [Project Phoenix]"
 
 
 def test_map_message_handles_missing_table():
@@ -61,6 +62,7 @@ def test_map_message_handles_byte_html_body():
 
     assert result.data.client_name == "ООО Клиент"
     assert result.warnings == []
+    assert result.subject == "Коммерческое предложение [Project Phoenix]"
 
 
 def test_map_message_normalizes_logrus_usa_entity():
@@ -78,6 +80,7 @@ def test_map_message_strips_bracket_tags_from_subject():
     result = map_message_to_project_info(message)
 
     assert result.data.project_name == "Новая тема"
+    assert result.subject == "[Tag] Новая тема [Internal]"
 
 
 def test_map_message_falls_back_to_plain_text_rows():
@@ -116,3 +119,4 @@ Jane Smith <jane.smith@example.com>
     assert data.currency_code == "USD"
     assert data.contact_email == "jane.smith@example.com"
     assert data.email == "jane.smith@example.com"
+    assert result.subject == "Коммерческое предложение"

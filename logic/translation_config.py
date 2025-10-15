@@ -253,6 +253,7 @@ TRANSLATIONS = {
         "en": "Failed to process Outlook file",
     },
     "Outlook письмо": {"ru": "Outlook письмо", "en": "Outlook message"},
+    "Файл": {"ru": "Файл", "en": "File"},
     "Обновление": {"ru": "Обновление", "en": "Update"},
     "Проверить обновления": {"ru": "Проверить обновления", "en": "Check for updates"},
     "О программе": {"ru": "О программе", "en": "About"},
