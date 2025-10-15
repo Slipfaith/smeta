@@ -10,6 +10,8 @@ from typing import Dict, Iterable, IO, List, Optional, Tuple, Union
 import langcodes
 import openpyxl
 
+from .xml_parser_common import expand_language_code, language_identity
+
 RateRecord = Dict[str, float]
 RatesMap = Dict[Tuple[str, str], RateRecord]
 
@@ -17,28 +19,71 @@ RatesMap = Dict[Tuple[str, str], RateRecord]
 def _normalize_language(name: str) -> str:
     """Return a normalized ISO language code for *name*.
 
-    The function is tolerant to different spellings and languages
-    (e.g. "русский", "Russian (US)").  Region information in
-    parentheses or after dashes/commas/slashes is ignored so that
-    "English (US)" and "English/US" both normalize to ``"en"``.
-    If the language still cannot be resolved via :func:`langcodes.find`,
-    we fall back to :func:`langcodes.standardize_tag` and finally to the
-    lower-cased input.
+    The helper first tries :func:`logic.xml_parser_common.language_identity`
+    so that script or territory hints from the Excel sheet are preserved.
+    When the value cannot be resolved that way, we fall back to the
+    previous heuristics based on :func:`langcodes.standardize_tag` and
+    :func:`langcodes.find`, finally returning the lower-cased input if all
+    lookups fail.
     """
+    language, script, territory = language_identity(name)
+    if language:
+        parts = [language]
+        if script:
+            parts.append(script.lower())
+        if territory:
+            parts.append(territory.lower())
+        return "-".join(parts)
+
     cleaned = re.sub(r"\s*\(.*?\)", "", name)
     cleaned = re.split(r"[,/\-]", cleaned, maxsplit=1)[0].strip()
     try:
+        tag = langcodes.standardize_tag(cleaned)
+    except Exception:
+        tag = ""
+    if tag:
+        try:
+            lang = langcodes.Language.get(tag)
+        except langcodes.LanguageTagError:
+            lang = None
+        if lang and lang.is_valid():
+            return tag.replace("_", "-").lower()
+
+    try:
         return langcodes.find(cleaned).language
     except LookupError:
-        try:
-            return langcodes.standardize_tag(cleaned).split("-")[0]
-        except Exception:
-            return cleaned.lower()
+        return cleaned.lower()
 
 
 def _language_name(code: str) -> str:
     """Return English display name for a language *code*."""
-    return langcodes.Language.make(code).display_name("en")
+    if not code:
+        return ""
+
+    normalized = code.replace("_", "-")
+    try:
+        tag = langcodes.standardize_tag(normalized)
+    except Exception:
+        tag = normalized
+    else:
+        try:
+            lang = langcodes.Language.get(tag)
+        except langcodes.LanguageTagError:
+            lang = None
+        if lang and not lang.is_valid():
+            tag = normalized
+
+    pretty = expand_language_code(tag, locale="en")
+    if pretty:
+        return pretty
+
+    try:
+        return langcodes.Language.get(tag).display_name("en")
+    except Exception:
+        try:
+            return langcodes.Language.make(tag).display_name("en")
+        except Exception:
+            return code
 
 
 def load_rates_from_excel(

@@ -1,6 +1,5 @@
 
 import os
-import re
 
 # =================== PySide6 ===================
 from PySide6.QtWidgets import (
@@ -487,6 +486,30 @@ class RateTab(QWidget):
     # ----------------------------------------------------------------
     # Обновляем список SourceLang
     # ----------------------------------------------------------------
+    @staticmethod
+    def _clean_language_items(values: Iterable, forbidden: Optional[Set[str]] = None) -> List[str]:
+        cleaned: List[str] = []
+        seen: Set[str] = set()
+        forbidden_norm = {item.casefold() for item in (forbidden or set()) if item}
+
+        for raw in values:
+            if raw is None:
+                continue
+            if isinstance(raw, float) and pd.isna(raw):
+                continue
+            text = str(raw).strip()
+            if not text:
+                continue
+            lowered = text.casefold()
+            if forbidden_norm and lowered in forbidden_norm:
+                continue
+            if lowered in seen:
+                continue
+            cleaned.append(text)
+            seen.add(lowered)
+
+        return cleaned
+
     def setup_languages(self):
         if self.df is None or self.df.shape[0] == 0:
             return
@@ -499,16 +522,20 @@ class RateTab(QWidget):
             # MLV_Rates_USD_EUR_RUR_CNY
             if self.df.shape[1] < 2:
                 return
-            source_list = self.df.iloc[:, 0].dropna().unique().tolist()
-            source_list = [x for x in source_list if isinstance(x, str) and x.lower() != "source"]
+            source_list = self._clean_language_items(
+                self.df.iloc[:, 0].dropna().tolist(),
+                {"source"},
+            )
             self.source_lang_combo.clear()
             self.source_lang_combo.addItems(source_list)
         else:
             # TEP (Source RU)
             if "SourceLang" not in self.df.columns:
                 return
-            source_list = self.df["SourceLang"].dropna().unique().tolist()
-            source_list = [str(x) for x in source_list if str(x).lower() != "source"]
+            source_list = self._clean_language_items(
+                self.df["SourceLang"].dropna().tolist(),
+                {"source"},
+            )
             self.source_lang_combo.clear()
             self.source_lang_combo.addItems(source_list)
 
@@ -524,16 +551,20 @@ class RateTab(QWidget):
         self._update_selection_summary()
 
         if not self.is_second_file:
-            filtered = self.df[self.df.iloc[:,0] == source_lang]
-            targets = filtered.iloc[:,1].dropna().unique().tolist()
-            targets = [t for t in targets if isinstance(t,str) and t.lower() != "target"]
+            filtered = self.df[self.df.iloc[:, 0] == source_lang]
+            targets = self._clean_language_items(
+                filtered.iloc[:, 1].dropna().tolist(),
+                {"target"},
+            )
             self.available_lang_list.addItems(targets)
         else:
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
                 return
             filtered = self.df[self.df["SourceLang"] == source_lang]
-            targets = filtered["TargetLang"].dropna().unique().tolist()
-            targets = [str(t) for t in targets if str(t).lower() != "target"]
+            targets = self._clean_language_items(
+                filtered["TargetLang"].dropna().tolist(),
+                {"target"},
+            )
             self.available_lang_list.addItems(targets)
 
     def set_gui_pairs(self, pairs: Iterable[Tuple[str, str]]):
@@ -704,6 +735,17 @@ class RateTab(QWidget):
             self._update_selection_summary()
             return False
 
+        available_norms = {
+            self._normalize_language_name(self.available_lang_list.item(i).text())
+            for i in range(self.available_lang_list.count())
+        }
+        target_norms = {
+            norm for norm in target_norms if norm and norm in available_norms
+        }
+        if not target_norms:
+            self._update_selection_summary()
+            return False
+
         source_base = source_norm.split("-", 1)[0] if source_norm else ""
         existing_norms = {
             self._normalize_language_name(self.selected_lang_list.item(i).text())
@@ -711,7 +753,6 @@ class RateTab(QWidget):
         }
 
         moved = False
-        matched_norms: Set[str] = set()
         row = self.available_lang_list.count() - 1
         while row >= 0:
             item = self.available_lang_list.item(row)
@@ -731,26 +772,8 @@ class RateTab(QWidget):
             self.selected_lang_list.addItem(item.text())
             self.available_lang_list.takeItem(row)
             existing_norms.add(norm)
-            matched_norms.add(norm)
             moved = True
             row -= 1
-
-        missing_norms = {
-            norm
-            for norm in target_norms
-            if norm and norm not in existing_norms and norm not in matched_norms
-        }
-        if missing_norms:
-            labels = self._labels_for_norms_from_matches(source_norm, missing_norms)
-            for norm in sorted(missing_norms):
-                label = labels.get(norm) or self._label_from_norm(norm)
-                if not label:
-                    continue
-                if self._normalize_language_name(label) in existing_norms:
-                    continue
-                self.selected_lang_list.addItem(label)
-                existing_norms.add(norm)
-                moved = True
 
         self._update_selection_summary()
         return moved
@@ -774,57 +797,6 @@ class RateTab(QWidget):
             normalized = ""
         return normalized or text.casefold()
 
-    @staticmethod
-    def _prefer_language_label(current: str, candidate: str) -> str:
-        """Return the more user-friendly label between two variants."""
-
-        def _score(text: str) -> tuple[int, int, str]:
-            has_region = bool(re.search(r"[()/\\,-]", text))
-            return (
-                1 if has_region else 0,
-                len(text.strip()),
-                text,
-            )
-
-        if not current:
-            return candidate
-        if not candidate:
-            return current
-
-        current_score = _score(current)
-        candidate_score = _score(candidate)
-        return candidate if candidate_score < current_score else current
-
-    def _labels_for_norms_from_matches(
-        self,
-        source_norm: str,
-        target_norms: Set[str],
-    ) -> Dict[str, str]:
-        labels: Dict[str, str] = {}
-        if not target_norms:
-            return labels
-        for match in self._excel_matches:
-            if self._normalize_language_name(match.excel_source) != source_norm:
-                continue
-            norm = self._normalize_language_name(match.excel_target)
-            if norm not in target_norms:
-                continue
-            candidate = str(match.excel_target).strip()
-            if not candidate:
-                continue
-            labels[norm] = self._prefer_language_label(labels.get(norm, ""), candidate)
-        return labels
-
-    def _label_from_norm(self, norm: str) -> str:
-        if not norm:
-            return ""
-        base = norm.split("-", 1)[0]
-        if not base:
-            return norm
-        try:
-            return rates_importer._language_name(base)
-        except Exception:
-            return base
 
     def move_to_selected(self, item):
         try:

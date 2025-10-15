@@ -57,7 +57,12 @@ def _language_tag_from_parts(base: str, region: str) -> str:
     if script_hint:
         try:
             kwargs["script"] = script_hint
-            return langcodes.Language.make(**kwargs).to_tag()
+            tag = langcodes.Language.make(**kwargs).to_tag()
+        except langcodes.LanguageTagError:
+            return ""
+        try:
+            if langcodes.Language.get(tag).is_valid():
+                return tag
         except langcodes.LanguageTagError:
             return ""
 
@@ -65,7 +70,12 @@ def _language_tag_from_parts(base: str, region: str) -> str:
     if territory_code:
         try:
             kwargs["territory"] = territory_code
-            return langcodes.Language.make(**kwargs).to_tag()
+            tag = langcodes.Language.make(**kwargs).to_tag()
+        except langcodes.LanguageTagError:
+            return ""
+        try:
+            if langcodes.Language.get(tag).is_valid():
+                return tag
         except langcodes.LanguageTagError:
             return ""
 
@@ -83,9 +93,15 @@ def _language_tag_from_value(value: str) -> str:
     normalized = stripped.replace("_", "-")
 
     try:
-        return langcodes.standardize_tag(normalized)
+        candidate = langcodes.standardize_tag(normalized)
     except Exception:
-        pass
+        candidate = ""
+    if candidate:
+        try:
+            if langcodes.Language.get(candidate).is_valid():
+                return candidate
+        except langcodes.LanguageTagError:
+            candidate = ""
 
     match = re.match(r"(.+?)\s*\(([^()]+)\)$", stripped)
     if match:
@@ -128,6 +144,8 @@ def expand_language_code(code: str, locale: str = "ru") -> str:
     try:
         tag = _language_tag_from_value(normalized) or normalized
         language = langcodes.Language.get(tag)
+        if not language.is_valid():
+            raise langcodes.LanguageTagError(f"Invalid tag: {tag}")
         result = language.display_name(locale)
         return _format_display(result, locale)
     except langcodes.LanguageTagError:
@@ -154,6 +172,9 @@ def language_identity(value: str) -> Tuple[str, str, str]:
         try:
             lang = langcodes.Language.get(candidate)
         except langcodes.LanguageTagError:
+            continue
+
+        if not lang.is_valid():
             continue
 
         language = (lang.language or "").lower()
