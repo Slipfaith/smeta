@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
 
 from logic.project_manager import ProjectManager
 from updater import (
@@ -53,6 +53,7 @@ from logic.calculations import (
     set_currency_code as calculate_set_currency_code,
     update_total as calculate_update_total,
 )
+from resource_utils import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.about_action.triggered.connect(self.show_about_dialog)
         self.menuBar().addAction(self.about_action)
 
-        self.language_menu = self.menuBar().addMenu(tr("Язык", lang))
+        planet_icon_path = resource_path(os.path.join("gui", "assets", "planet.svg"))
+        self.language_menu = self.menuBar().addMenu("")
+        self.language_menu.setIcon(QIcon(str(planet_icon_path)))
+        self.language_menu.setToolTip(tr("Язык", lang))
+        self.language_menu.menuAction().setToolTip(tr("Язык", lang))
         self.lang_action_group = QActionGroup(self)
         self.lang_ru_action = QAction(tr("Русский", lang), self)
         self.lang_en_action = QAction(tr("Английский", lang), self)
@@ -318,6 +323,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.only_new_repeats_btn.setText(
                 tr("Только новые слова и повторы", lang)
             )
+        self.update_title()
         if self.rates_window:
             self.rates_window.set_language(lang)
         self.update_menu_texts()
@@ -338,7 +344,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_menu.setTitle(tr("Обновление", lang))
         self.check_updates_action.setText(tr("Проверить обновления", lang))
         self.about_action.setText(tr("О программе", lang))
-        self.language_menu.setTitle(tr("Язык", lang))
+        self.language_menu.setTitle("")
+        self.language_menu.setToolTip(tr("Язык", lang))
+        self.language_menu.menuAction().setText("")
+        self.language_menu.menuAction().setToolTip(tr("Язык", lang))
         self.lang_ru_action.setText(tr("Русский", lang))
         self.lang_en_action.setText(tr("Английский", lang))
 
@@ -574,7 +583,13 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.setStyleSheet(APP_STYLE)
 
     def update_title(self):
-        name = self.current_pm.get("name_ru") or self.current_pm.get("name_en") or ""
+        lang = getattr(self, "gui_lang", "ru")
+        name = ""
+        preferred_keys = ("name_en", "name_ru") if lang == "en" else ("name_ru", "name_en")
+        for key in preferred_keys:
+            name = (self.current_pm or {}).get(key) or ""
+            if name:
+                break
         if name:
             self.setWindowTitle(f"RateApp - {name}")
         else:
