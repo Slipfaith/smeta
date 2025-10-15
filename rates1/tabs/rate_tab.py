@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 
-from gui.styles import MLV_RATES_BUTTON_STYLE
+from gui.styles import MLV_RATES_BUTTON_STYLE, RATE_SELECTION_ACTION_BUTTON_STYLE
 
 # =================== pandas ===================
 import pandas as pd
@@ -139,7 +139,7 @@ class RateTab(QWidget):
         # --- Кнопки загрузки ---
         self.load_layout = QHBoxLayout()
 
-        self.load_url_button = QPushButton("MLV_Rates_USD_EUR_RUR_CNY")
+        self.load_url_button = QPushButton()
         self.load_url_button.clicked.connect(self.load_url)
         self.load_url_button.setStyleSheet(MLV_RATES_BUTTON_STYLE)
         self.load_layout.addWidget(self.load_url_button)
@@ -170,7 +170,7 @@ class RateTab(QWidget):
         self.available_layout.setSpacing(6)
         self.available_container = QWidget()
         self.available_container.setLayout(self.available_layout)
-        self.available_container.setMaximumWidth(260)
+        self.available_container.setFixedWidth(260)
         self.available_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.available_search = QLineEdit()
         self.available_search.setClearButtonEnabled(True)
@@ -179,7 +179,10 @@ class RateTab(QWidget):
         self.available_lang_list = QListWidget()
         self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.available_lang_list.itemClicked.connect(self.move_to_selected)
-        self.available_lang_list.setMinimumWidth(200)
+        self.available_lang_list.setMinimumWidth(240)
+        self.available_lang_list.setMaximumWidth(240)
+        self.available_lang_list.setMinimumHeight(280)
+        self.available_lang_list.setMaximumHeight(280)
 
         self.available_layout.addWidget(self.available_search)
         self.available_layout.addWidget(self.available_label)
@@ -190,6 +193,8 @@ class RateTab(QWidget):
         self.deselect_all_button = QPushButton()
         self.select_all_button.clicked.connect(self.select_all_available)
         self.deselect_all_button.clicked.connect(self.deselect_all_available)
+        self.select_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
+        self.deselect_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
         self.select_buttons_layout.setContentsMargins(0, 0, 0, 0)
         self.select_buttons_layout.setSpacing(6)
         self.select_buttons_layout.addWidget(self.select_all_button)
@@ -207,8 +212,16 @@ class RateTab(QWidget):
         self.selected_lang_list.itemClicked.connect(self.move_to_available)
         self.selected_layout.addWidget(self.selected_label)
         self.selected_lang_list.setSortingEnabled(True)
+        self.selected_lang_list.setMinimumWidth(240)
+        self.selected_lang_list.setMaximumWidth(240)
+        self.selected_lang_list.setMinimumHeight(280)
+        self.selected_lang_list.setMaximumHeight(280)
         self.selected_layout.addWidget(self.selected_lang_list)
-        self.target_layout.addLayout(self.selected_layout)
+        self.selected_container = QWidget()
+        self.selected_container.setLayout(self.selected_layout)
+        self.selected_container.setFixedWidth(260)
+        self.selected_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.target_layout.addWidget(self.selected_container)
         self.layout_main.addLayout(self.target_layout)
 
         # -- Removed text size slider --
@@ -325,6 +338,7 @@ class RateTab(QWidget):
 
     def _update_language_texts(self) -> None:
         lang = self._lang()
+        self.load_url_button.setText(tr("Загрузить", lang))
         self.source_lang_label.setText(tr("Исходный язык", lang) + ":")
         self.target_lang_label.setText(tr("Языки перевода", lang) + ":")
         self.selected_label.setText(tr("Выбранные языки", lang) + ":")
