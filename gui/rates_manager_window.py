@@ -320,6 +320,27 @@ class RatesMappingWidget(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def reset_state(self) -> None:
+        """Return the widget to its initial empty state."""
+        self.set_pairs([])
+        self._rates = {}
+        self._name_to_code = {}
+        self._lang_names = []
+        self._source_label = ""
+        self._currency = ""
+        self._rate_type = ""
+        self._last_matches = []
+        self._manual_excel_cells.clear()
+        self._rate_values.clear()
+        self._updating_excel_from_matches = False
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.apply_combo.setCurrentIndex(0)
+        self._refresh_language_combos()
+        self._update_table_headers()
+        self._update_status()
+        self._update_import_button_state()
+
     def set_pairs(self, pairs: Iterable[Tuple[str, str]]) -> None:
         self._pairs = list(pairs)
         self._last_matches = []
@@ -675,6 +696,12 @@ class RatesManagerWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
+    def reset_state(self) -> None:
+        """Clear loaded rates and mapping information."""
+        self._current_pairs = []
+        self.mapping_widget.reset_state()
+        self.rate_tab.reset_state()
+
     def update_pairs(self, pairs: Iterable[Tuple[str, str]]) -> None:
         self._current_pairs = list(pairs)
         self.mapping_widget.set_pairs(self._current_pairs)
