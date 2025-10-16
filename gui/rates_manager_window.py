@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from functools import partial
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -121,6 +121,9 @@ class SourceTargetCell(QWidget):
     def excel_text(self) -> str:
         return self.excel_combo.currentText()
 
+    def main_value(self) -> str:
+        return self._main_value
+
     def update_highlight(self) -> None:
         text = self.excel_combo.currentText().strip()
         highlight = bool(text) and text != self._main_value
@@ -178,6 +181,8 @@ class RatesMappingWidget(QWidget):
         self._currency: str = ""
         self._rate_type: str = ""
         self._last_matches: List[rates_importer.PairMatch] = []
+        self._manual_excel_cells: Set[Tuple[int, int]] = set()
+        self._updating_excel_from_matches: bool = False
 
         self._setup_ui()
         self.setStyleSheet(RATES_IMPORT_DIALOG_STYLE)
@@ -410,12 +415,22 @@ class RatesMappingWidget(QWidget):
         elif len(self._rate_values) > target_rows:
             self._rate_values = self._rate_values[:target_rows]
 
+        self._manual_excel_cells = {
+            key
+            for key in self._manual_excel_cells
+            if key[0] < target_rows and key[1] in (0, 1)
+        }
+
         for row, (src, tgt) in enumerate(self._pairs):
             self.table.setRowHeight(row, RATES_MAPPING_TABLE_ROW_HEIGHT)
-            src_cell = self._ensure_lang_cell(row, 0, src)
+            src_cell = self._ensure_lang_cell(row, 0)
+            if src_cell.main_value() != src:
+                self._manual_excel_cells.discard((row, 0))
             src_cell.set_main_value(src)
 
-            tgt_cell = self._ensure_lang_cell(row, 1, tgt)
+            tgt_cell = self._ensure_lang_cell(row, 1)
+            if tgt_cell.main_value() != tgt:
+                self._manual_excel_cells.discard((row, 1))
             tgt_cell.set_main_value(tgt)
 
             rate_item = self.table.item(row, 2)
@@ -443,8 +458,10 @@ class RatesMappingWidget(QWidget):
         for row, match in enumerate(matches):
             src_cell = self._ensure_lang_cell(row, 0)
             tgt_cell = self._ensure_lang_cell(row, 1)
-            src_cell.set_excel_text(match.excel_source or "")
-            tgt_cell.set_excel_text(match.excel_target or "")
+            if not self._is_manual_excel_cell(row, 0):
+                self._set_excel_text_from_match(src_cell, row, 0, match.excel_source)
+            if not self._is_manual_excel_cell(row, 1):
+                self._set_excel_text_from_match(tgt_cell, row, 1, match.excel_target)
 
             if auto_fill and match.rates:
                 self._apply_rate_values(row, match.rates)
@@ -458,14 +475,34 @@ class RatesMappingWidget(QWidget):
                 widget.set_main_value(main_value)
             return widget
         cell = SourceTargetCell(main_value or "", self._lang_getter)
-        cell.excel_changed.connect(partial(self._handle_excel_value_change, row))
+        cell.excel_changed.connect(partial(self._handle_excel_value_change, row, column))
         self.table.setCellWidget(row, column, cell)
         cell.set_language_names(self._lang_names)
         return cell
 
-    def _handle_excel_value_change(self, row: int, _text: str) -> None:
+    def _handle_excel_value_change(self, row: int, column: int, text: str) -> None:
+        if not self._updating_excel_from_matches:
+            key = (row, column)
+            if text.strip():
+                self._manual_excel_cells.add(key)
+            else:
+                self._manual_excel_cells.discard(key)
         self._update_rate_from_row(row)
         self._update_import_button_state()
+
+    def _set_excel_text_from_match(
+        self, cell: SourceTargetCell, row: int, column: int, value: Optional[str]
+    ) -> None:
+        self._updating_excel_from_matches = True
+        try:
+            cell.set_excel_text(value or "")
+        finally:
+            self._updating_excel_from_matches = False
+        if not (value or "").strip():
+            self._manual_excel_cells.discard((row, column))
+
+    def _is_manual_excel_cell(self, row: int, column: int) -> bool:
+        return (row, column) in self._manual_excel_cells
 
     def _handle_rate_mode_change(self, _text: str) -> None:
         self._update_table_headers()
