@@ -821,6 +821,19 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.currency_combo.setCurrentIndex(0)
         self.vat_spin.setValue(20.0)
 
+        if getattr(self, "lang_mode_slider", None) is not None:
+            self.lang_mode_slider.setValue(1)
+        if getattr(self, "source_lang_combo", None) is not None:
+            self.source_lang_combo.setCurrentIndex(0)
+            self.source_lang_combo.setEditText("")
+        if getattr(self, "target_lang_combo", None) is not None:
+            self.target_lang_combo.setCurrentIndex(0)
+            self.target_lang_combo.setEditText("")
+        if getattr(self, "new_lang_ru", None) is not None:
+            self.new_lang_ru.clear()
+        if getattr(self, "new_lang_en", None) is not None:
+            self.new_lang_en.clear()
+
         est_lang = "ru" if self.lang_display_ru else "en"
         self.project_setup_fee_spin.setValue(0.5)
         if getattr(self, "project_setup_widget", None):
@@ -835,10 +848,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 ],
                 enabled=True,
             )
+            self.project_setup_widget.set_discount_percent(0.0)
+            self.project_setup_widget.set_markup_percent(0.0)
 
         self.clear_language_pairs()
         if getattr(self, "additional_services_widget", None):
             self.additional_services_widget.load_data([])
+
+        self._import_pair_map = {}
+        if getattr(self, "rates_window", None):
+            self.rates_window.reset_state()
 
         self.only_new_repeats_mode = False
         if getattr(self, "only_new_repeats_btn", None):

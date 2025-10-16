@@ -614,6 +614,43 @@ class RateTab(QWidget):
         self._auto_selection_done = False
         self._apply_auto_selection()
 
+    def reset_state(self) -> None:
+        """Clear loaded datasets and selection state."""
+        self.df = None
+        self.is_second_file = False
+        self._gui_pairs = []
+        self._excel_matches = []
+        self._auto_selection_done = False
+        self.last_saved_selection = None
+
+        self.available_search.clear()
+        self.source_lang_combo.blockSignals(True)
+        self.source_lang_combo.clear()
+        self.source_lang_combo.blockSignals(False)
+        self.available_lang_list.clear()
+        self.selected_lang_list.clear()
+
+        self.table.clear()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+
+        self.load_history_combo()
+        self._update_language_texts()
+        if self.history_combo.count() > 0:
+            self.history_combo.setCurrentIndex(0)
+
+        self.rates_updated.emit(
+            {
+                "rows": [],
+                "currency": "",
+                "rate_number": 1,
+                "rate_type": "",
+                "source_label": "",
+                "is_second_file": False,
+                "source_language": "",
+            }
+        )
+
     def set_excel_matches(self, matches: Iterable[rates_importer.PairMatch]) -> None:
         self._excel_matches = [
             match
