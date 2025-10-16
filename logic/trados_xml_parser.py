@@ -140,8 +140,7 @@ def _parse_analyse_element(analyse: ET.Element, unit: str = "words") -> Dict[str
     locked_elem = analyse.find("locked")
     if locked_elem is not None:
         locked_words = float(locked_elem.get(unit_attr, 0))
-        values[ROW_NAMES[3]] += locked_words
-        logger.debug("    Locked: %s", locked_words)
+        logger.debug("    Locked (ignored): %s", locked_words)
 
     total_words = sum(values.values())
     logger.debug("    Total words processed: %s", total_words)
