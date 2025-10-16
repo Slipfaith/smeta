@@ -551,7 +551,6 @@ def _parse_smartcat_analyse_element(
         "crossFileRepeated",
         "inContextExact",
         "perfect",
-        "locked",
     ):
         for elem in _iter_children_by_name(analyse, tag):
             amount = _parse_number(_stat_value_from_attributes(elem, unit_attr))
