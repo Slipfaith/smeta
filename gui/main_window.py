@@ -2,17 +2,14 @@ import logging
 import os
 import re
 import threading
-import traceback
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QTabWidget,
     QSplitter,
     QComboBox,
 )
@@ -28,7 +25,6 @@ from updater import (
     check_for_updates_background,
 )
 from gui.language_pair import LanguagePairWidget
-from gui.additional_services import AdditionalServicesWidget
 from gui.drop_areas import DropArea
 from gui.panels.left_panel import create_left_panel
 from gui.panels.right_panel import create_right_panel
@@ -97,65 +93,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.resize(1000, 650)
         self.update_title()
 
-        lang = self.gui_lang
-
-        self.project_menu = self.menuBar().addMenu(tr("Проект", lang))
-        self.save_action = QAction(tr("Сохранить проект", lang), self)
-        self.save_action.triggered.connect(self.project_manager.save_project)
-        self.project_menu.addAction(self.save_action)
-        self.load_action = QAction(tr("Загрузить проект", lang), self)
-        self.load_action.triggered.connect(self.project_manager.load_project)
-        self.project_menu.addAction(self.load_action)
-        self.clear_action = QAction(tr("Очистить", lang), self)
-        self.clear_action.triggered.connect(self.clear_all_data)
-        self.project_menu.addAction(self.clear_action)
-        self.open_log_action = QAction(tr("Открыть лог", lang), self)
-        self.open_log_action.triggered.connect(self.open_last_run_log)
-        self.project_menu.addAction(self.open_log_action)
-
-        self.export_menu = self.menuBar().addMenu(tr("Экспорт", lang))
-        self.save_excel_action = QAction(tr("Сохранить Excel", lang), self)
-        self.save_excel_action.triggered.connect(self.project_manager.save_excel)
-        self.export_menu.addAction(self.save_excel_action)
-        self.save_pdf_action = QAction(tr("Сохранить PDF", lang), self)
-        self.save_pdf_action.triggered.connect(self.project_manager.save_pdf)
-        self.export_menu.addAction(self.save_pdf_action)
-
-        self.rates_menu = self.menuBar().addMenu(tr("Ставки", lang))
-        self.import_rates_action = QAction(tr("Открыть панель ставок", lang), self)
-        self.import_rates_action.triggered.connect(self.open_rates_panel)
-        self.rates_menu.addAction(self.import_rates_action)
-
-        self.pm_action = QAction(tr("Проджект менеджер", lang), self)
-        self.pm_action.triggered.connect(self.show_pm_dialog)
-        self.menuBar().addAction(self.pm_action)
-
-        self.update_menu = self.menuBar().addMenu(tr("Обновление", lang))
-        self.check_updates_action = QAction(tr("Проверить обновления", lang), self)
-        self.check_updates_action.triggered.connect(self.manual_update_check)
-        self.update_menu.addAction(self.check_updates_action)
-
-        self.about_action = QAction(tr("О программе", lang), self)
-        self.about_action.triggered.connect(self.show_about_dialog)
-        self.menuBar().addAction(self.about_action)
-
-        self.language_menu = self.menuBar().addMenu("Lang")
-        self.language_menu.setToolTip(tr("Язык", lang))
-        self.language_menu.menuAction().setToolTip(tr("Язык", lang))
-        self.lang_action_group = QActionGroup(self)
-        self.lang_ru_action = QAction("русский", self)
-        self.lang_en_action = QAction("english", self)
-        self.lang_ru_action.setCheckable(True)
-        self.lang_en_action.setCheckable(True)
-        self.lang_action_group.addAction(self.lang_ru_action)
-        self.lang_action_group.addAction(self.lang_en_action)
-        self.language_menu.addAction(self.lang_ru_action)
-        self.language_menu.addAction(self.lang_en_action)
-        self.lang_ru_action.setChecked(self.gui_lang == "ru")
-        self.lang_en_action.setChecked(self.gui_lang != "ru")
-        self.lang_ru_action.triggered.connect(lambda: self.set_app_language("ru"))
-        self.lang_en_action.triggered.connect(lambda: self.set_app_language("en"))
-        self.update_menu_texts()
+        self._build_menus()
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -173,6 +111,70 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
         main_layout.addWidget(splitter)
         central_widget.setLayout(main_layout)
+
+    # Menu construction -------------------------------------------------
+    def _build_menus(self) -> None:
+        lang = self.gui_lang
+        self.project_menu = self._create_project_menu(lang)
+        self.export_menu = self._create_export_menu(lang)
+        self.rates_menu = self._create_rates_menu(lang)
+        self.pm_action = self._make_action(tr("Проджект менеджер", lang), self.show_pm_dialog)
+        self.menuBar().addAction(self.pm_action)
+        self.update_menu = self._create_update_menu(lang)
+        self.about_action = self._make_action(tr("О программе", lang), self.show_about_dialog)
+        self.menuBar().addAction(self.about_action)
+        self._configure_language_menu(lang)
+        self.update_menu_texts()
+
+    def _create_project_menu(self, lang: str):
+        menu = self.menuBar().addMenu(tr("Проект", lang))
+        self.save_action = self._make_action(tr("Сохранить проект", lang), self.project_manager.save_project)
+        self.load_action = self._make_action(tr("Загрузить проект", lang), self.project_manager.load_project)
+        self.clear_action = self._make_action(tr("Очистить", lang), self.clear_all_data)
+        self.open_log_action = self._make_action(tr("Открыть лог", lang), self.open_last_run_log)
+        for action in (self.save_action, self.load_action, self.clear_action, self.open_log_action):
+            menu.addAction(action)
+        return menu
+
+    def _create_export_menu(self, lang: str):
+        menu = self.menuBar().addMenu(tr("Экспорт", lang))
+        self.save_excel_action = self._make_action(tr("Сохранить Excel", lang), self.project_manager.save_excel)
+        self.save_pdf_action = self._make_action(tr("Сохранить PDF", lang), self.project_manager.save_pdf)
+        for action in (self.save_excel_action, self.save_pdf_action):
+            menu.addAction(action)
+        return menu
+
+    def _create_rates_menu(self, lang: str):
+        menu = self.menuBar().addMenu(tr("Ставки", lang))
+        self.import_rates_action = self._make_action(tr("Открыть панель ставок", lang), self.open_rates_panel)
+        menu.addAction(self.import_rates_action)
+        return menu
+
+    def _create_update_menu(self, lang: str):
+        menu = self.menuBar().addMenu(tr("Обновление", lang))
+        self.check_updates_action = self._make_action(tr("Проверить обновления", lang), self.manual_update_check)
+        menu.addAction(self.check_updates_action)
+        return menu
+
+    def _configure_language_menu(self, lang: str) -> None:
+        self.language_menu = self.menuBar().addMenu("Lang")
+        self.language_menu.setToolTip(tr("Язык", lang))
+        self.language_menu.menuAction().setToolTip(tr("Язык", lang))
+        self.lang_action_group = QActionGroup(self)
+        self.lang_ru_action = QAction("русский", self)
+        self.lang_en_action = QAction("english", self)
+        for action, code in ((self.lang_ru_action, "ru"), (self.lang_en_action, "en")):
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked, value=code: self.set_app_language(value))
+            self.lang_action_group.addAction(action)
+            self.language_menu.addAction(action)
+        self.lang_ru_action.setChecked(self.gui_lang == "ru")
+        self.lang_en_action.setChecked(self.gui_lang != "ru")
+
+    def _make_action(self, text: str, slot) -> QAction:
+        action = QAction(text, self)
+        action.triggered.connect(slot)
+        return action
 
     def open_last_run_log(self):
         """Open the last run log file in the system text editor."""

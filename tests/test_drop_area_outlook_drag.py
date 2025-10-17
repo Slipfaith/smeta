@@ -200,7 +200,7 @@ def test_extract_outlook_messages_com_fallback(monkeypatch, tmp_path):
     mime.setData(descriptor_format, QByteArray(descriptor_bytes))
     mime.setData(contents_format, QByteArray())
 
-    monkeypatch.setattr(drop_areas, "_try_qt_filecontents_bytes", lambda *a, **k: b"")
+    monkeypatch.setattr(drop_areas, "_try_qt_filecontents_bytes", lambda *_args, **_kwargs: b"")
     monkeypatch.setattr(drop_areas, "_parse_ren_private_messages", lambda mime: [(b"entry-id", None)])
 
     def fake_save_msg(eid, store):

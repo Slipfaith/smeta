@@ -597,9 +597,6 @@ class RatesMappingWidget(QWidget):
         for row in range(self.table.rowCount()):
             self._refresh_rate_display(row)
 
-    def _update_rate_header(self, selected_key: str) -> None:
-        self._update_table_headers()
-
     def _parse_rate(self, basic: str, complex_: str, hour: str) -> Optional[RateRow]:
         def _to_float(value: str) -> Optional[float]:
             try:
@@ -757,7 +754,7 @@ class RatesManagerWindow(QMainWindow):
         if not success and details:
             message += f"\n{details}"
         box.setText(message)
-        ok_button = box.addButton(tr("Ок", lang), QMessageBox.AcceptRole)
+        box.addButton(tr("Ок", lang), QMessageBox.AcceptRole)
         close_button = box.addButton(tr("Закрыть панель", lang), QMessageBox.RejectRole)
         box.exec()
         if box.clickedButton() == close_button:

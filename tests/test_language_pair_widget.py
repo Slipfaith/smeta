@@ -21,6 +21,7 @@ def qt_app():
 
 
 def test_language_pair_widget_has_modifiers_button(qt_app):
+    assert qt_app is not None
     widget = LanguagePairWidget("Test")
     try:
         group = widget.translation_group

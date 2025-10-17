@@ -23,16 +23,35 @@ def close_excel_processes() -> None:
         return
 
     for proc in psutil.process_iter(["name"]):
-        name: Optional[str] = proc.info.get("name")
-        if name and name.lower() == "excel.exe":
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        if _is_excel_process(proc):
+            _terminate_process(proc)
+
+
+def _is_excel_process(proc) -> bool:
+    name: Optional[str] = getattr(proc, "info", {}).get("name")
+    return bool(name and name.lower() == "excel.exe")
+
+
+def _terminate_process(proc) -> None:
+    try:
+        proc.terminate()
+    except Exception:
+        _force_kill(proc)
+        return
+
+    waiter = getattr(proc, "wait", None)
+    if callable(waiter):
+        try:
+            waiter(timeout=5)
+        except Exception:
+            _force_kill(proc)
+
+
+def _force_kill(proc) -> None:
+    try:
+        proc.kill()
+    except Exception:
+        pass
 
 
 @contextmanager

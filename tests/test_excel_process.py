@@ -17,6 +17,7 @@ class _FakeProc:
         self.terminated = True
 
     def wait(self, timeout=None):
+        del timeout
         return True
 
     def kill(self):
@@ -88,6 +89,7 @@ class _FakeWorkbook:
             raise RuntimeError("cannot save")
 
     def Close(self, save_changes):
+        del save_changes
         self.closed = True
 
 
