@@ -47,6 +47,13 @@ def create_right_panel(window: "TranslationCostCalculator") -> QWidget:
     window.only_new_repeats_btn.clicked.connect(window.toggle_only_new_repeats_mode)
     window.pairs_layout.addWidget(window.only_new_repeats_btn)
 
+    window.delete_all_pairs_btn = QPushButton(
+        tr("Удалить все языки", gui_lang)
+    )
+    window.delete_all_pairs_btn.setEnabled(False)
+    window.delete_all_pairs_btn.clicked.connect(window.delete_all_language_pairs)
+    window.pairs_layout.addWidget(window.delete_all_pairs_btn)
+
     window.project_setup_widget = ProjectSetupWidget(
         window.project_setup_fee_spin.value(),
         window.currency_symbol,
