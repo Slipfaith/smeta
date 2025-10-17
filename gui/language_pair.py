@@ -101,6 +101,36 @@ class LanguagePairWidget(QWidget):
         self.setLayout(layout)
         self.set_language(self.lang)
 
+    def rebuild_translation_group(self, rows: List[Dict[str, Any]]) -> None:
+        """Recreate translation table preserving existing user data."""
+
+        group = getattr(self, "translation_group", None)
+        if not group:
+            return
+        table = getattr(group, "table", None)
+        existing_data: List[Dict[str, Any]] = []
+        if table:
+            existing_data = self._get_table_data(table)
+        was_checked = group.isChecked()
+        discount = self._discount_percent
+        markup = self._markup_percent
+        only_new = self.only_new_repeats_mode
+
+        self.services_layout.removeWidget(group)
+        group.setParent(None)
+
+        self.translation_group = self.create_service_group("Перевод", rows)
+        self.translation_group.toggled.connect(self._on_group_toggled)
+        self.services_layout.insertWidget(0, self.translation_group)
+
+        if existing_data:
+            self.load_table_data(existing_data)
+
+        self.translation_group.setChecked(was_checked)
+        self.set_discount_percent(discount)
+        self.set_markup_percent(markup)
+        self.set_only_new_and_repeats_mode(only_new)
+
     def _on_delete_clicked(self) -> None:
         self.remove_requested.emit()
 

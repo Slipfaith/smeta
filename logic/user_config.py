@@ -195,3 +195,15 @@ def add_language(en: str, ru: str) -> bool:
         langs[idx] = new_entry
 
     return save_languages(langs)
+
+
+def reset_languages() -> bool:
+    """Restore the language dictionary to the bundled defaults."""
+
+    path = _languages_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(_default_languages(), f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
