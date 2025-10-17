@@ -20,7 +20,7 @@ class _SimpleTableParser(HTMLParser):
         self._table_depth = 0
 
     # HTMLParser overrides -------------------------------------------------
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag, _attrs):
         tag = tag.lower()
         if tag == "table":
             self._table_depth += 1

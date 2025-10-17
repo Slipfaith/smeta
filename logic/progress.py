@@ -20,11 +20,11 @@ class Progress:
 
     def set_label(self, message: str) -> None:
         self.dialog.setLabelText(message)
-        QApplication.processEvents()
+        self._process_events()
 
     def set_value(self, percent: int) -> None:
         self.dialog.setValue(percent)
-        QApplication.processEvents()
+        self._process_events()
 
     def on_progress(self, percent: int, message: str) -> None:
         self.set_label(message)
@@ -33,8 +33,11 @@ class Progress:
     def close(self) -> None:
         self.dialog.close()
 
+    def _process_events(self) -> None:
+        QApplication.processEvents()
+
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
         self.close()

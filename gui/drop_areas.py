@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 import tempfile
-import traceback
 from typing import Callable, Iterable, List, Sequence, Tuple, Optional
 
 from PySide6.QtCore import QByteArray
@@ -39,20 +38,11 @@ class DropArea(QScrollArea):
         self.setStyleSheet(DROP_AREA_DRAG_ONLY_STYLE)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
-            xml_paths = []
-            for url in urls:
-                path = url.toLocalFile()
-                if path and path.lower().endswith(".xml"):
-                    xml_paths.append(path)
-            if xml_paths:
-                event.acceptProposedAction()
-                self.setProperty("dragOver", True)
-                self.style().unpolish(self)
-                self.style().polish(self)
-                return
-        event.ignore()
+        if event.mimeData().hasUrls() and self._collect_xml_urls(event.mimeData().urls()):
+            event.acceptProposedAction()
+            self._toggle_drag_style(True)
+        else:
+            event.ignore()
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
@@ -61,49 +51,60 @@ class DropArea(QScrollArea):
             event.ignore()
 
     def dragLeaveEvent(self, event):
-        self.setProperty("dragOver", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        self._toggle_drag_style(False)
 
     def dropEvent(self, event):
-        self.setProperty("dragOver", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
+        self._toggle_drag_style(False)
         if not event.mimeData().hasUrls():
             event.ignore()
             return
 
-        urls = event.mimeData().urls()
+        xml_paths = self._collect_xml_urls(event.mimeData().urls())
+        if not xml_paths:
+            event.ignore()
+            return
+
+        try:
+            self._callback(xml_paths)
+            event.acceptProposedAction()
+        except Exception as error:  # pragma: no cover - GUI safeguard
+            self._show_drop_error(error)
+
+    # Internal helpers -------------------------------------------------
+    def _toggle_drag_style(self, active: bool) -> None:
+        self.setProperty("dragOver", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _collect_xml_urls(self, urls: Iterable) -> List[str]:
         xml_paths: List[str] = []
         for url in urls:
             path = url.toLocalFile()
-            if not path:
-                continue
-            if path.lower().endswith(".xml"):
+            if path and self._is_xml_path(path):
                 xml_paths.append(path)
-            else:
-                try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                        first_line = f.readline()
-                        if "<?xml" in first_line or "<" in first_line:
-                            xml_paths.append(path)
-                except Exception:
-                    pass
+        return xml_paths
 
-        if xml_paths:
-            try:
-                self._callback(xml_paths)
-                event.acceptProposedAction()
-            except Exception as e:
-                lang = self._get_lang()
-                QMessageBox.critical(
-                    self.window(),
-                    tr("Ошибка", lang),
-                    tr("Ошибка при обработке файлов: {0}", lang).format(e),
-                )
-        else:
-            event.ignore()
+    def _is_xml_path(self, path: str) -> bool:
+        lowered = path.lower()
+        if lowered.endswith(".xml"):
+            return True
+        return self._looks_like_xml(path)
+
+    def _looks_like_xml(self, path: str) -> bool:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                first_line = file.readline()
+        except OSError:
+            return False
+        return "<?xml" in first_line or "<" in first_line
+
+    def _show_drop_error(self, error: Exception) -> None:
+        lang = self._get_lang()
+        QMessageBox.critical(
+            self.window(),
+            tr("Ошибка", lang),
+            tr("Ошибка при обработке файлов: {0}", lang).format(error),
+        )
 
 # ------------------------- Outlook D&D (MSG) helpers ------------------------
 

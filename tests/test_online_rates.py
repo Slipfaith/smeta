@@ -100,7 +100,7 @@ def test_load_remote_tep_rates(monkeypatch):
         )
     payload = buffer.getvalue()
 
-    monkeypatch.setattr(online_rates, "authenticate_with_msal", lambda *args, **kwargs: "token")
+    monkeypatch.setattr(online_rates, "authenticate_with_msal", lambda *_args, **_kwargs: "token")
     monkeypatch.setattr(online_rates, "download_excel_from_file_id", lambda *_: payload)
 
     rates = online_rates.load_remote_rates("sharepoint_tep", "USD", "R1")
