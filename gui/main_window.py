@@ -312,6 +312,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.pairs_group.setTitle(tr("Языковые пары", lang))
         self.tabs.setTabText(0, tr("Языковые пары", lang))
         self.tabs.setTabText(1, tr("Дополнительные услуги", lang))
+        if getattr(self, "delete_all_pairs_btn", None):
+            self.delete_all_pairs_btn.setText(tr("Удалить все языки", lang))
         if getattr(self, "drop_hint_label", None):
             self.drop_hint_label.setText(
                 tr(
@@ -778,6 +780,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         )
         pair_count = len(self.language_pairs)
         lang = self.gui_lang
+        if getattr(self, "delete_all_pairs_btn", None):
+            self.delete_all_pairs_btn.setEnabled(pair_count > 0)
         self.language_pairs_count_label.setText(
             f"{tr('Загружено языковых пар', lang)}: {pair_count}"
         )
@@ -792,6 +796,21 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             if w is widget:
                 self.remove_language_pair(key)
                 break
+
+    def delete_all_language_pairs(self) -> None:
+        if not self.language_pairs:
+            return
+        lang = self.gui_lang
+        reply = QMessageBox.question(
+            self,
+            tr("Подтверждение", lang),
+            tr("Вы уверены, что хотите удалить все языки?", lang),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.clear_language_pairs()
 
     def on_pair_name_changed(self, widget: LanguagePairWidget, new_name: str):
         for key, w in list(self.language_pairs.items()):

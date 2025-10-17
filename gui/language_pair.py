@@ -18,8 +18,10 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
     QWidgetAction,
+    QToolButton,
+    QStyle,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QFont
 
 import copy
@@ -65,6 +67,15 @@ class LanguagePairWidget(QWidget):
         self.title_edit.editingFinished.connect(self._on_title_edit)
         header.addWidget(self.title_label)
         header.addWidget(self.title_edit, 1)
+
+        self.delete_button = QToolButton()
+        self.delete_button.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        self.delete_button.setIconSize(QSize(16, 16))
+        self.delete_button.setAutoRaise(True)
+        self.delete_button.setCursor(Qt.PointingHandCursor)
+        self.delete_button.clicked.connect(self._on_delete_clicked)
+        self.delete_button.setStyleSheet("QToolButton { padding: 2px; }")
+        header.addWidget(self.delete_button)
         layout.addLayout(header)
 
         self.reports_label = QLabel()
@@ -83,6 +94,9 @@ class LanguagePairWidget(QWidget):
         layout.addLayout(self.services_layout)
         self.setLayout(layout)
         self.set_language(self.lang)
+
+    def _on_delete_clicked(self) -> None:
+        self.remove_requested.emit()
 
     @staticmethod
     def _format_rate(value: Union[str, float], sep: str | None = None) -> str:
@@ -620,6 +634,10 @@ class LanguagePairWidget(QWidget):
         self.lang = lang
         self.title_label.setText(f"{tr('Языковая пара', lang)}:")
         self.title_edit.setText(self.pair_name)
+        if getattr(self, "delete_button", None):
+            tooltip = tr("Удалить языковую пару", lang)
+            self.delete_button.setToolTip(tooltip)
+            self.delete_button.setAccessibleName(tooltip)
         group = self.translation_group
         group.setTitle(tr("Перевод", lang))
         table: QTableWidget = group.table
