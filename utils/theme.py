@@ -1,10 +1,24 @@
 """Application-wide palette configuration helpers."""
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QPalette
 
-# Unified style for the custom title bar used by the legacy rates UI.
-TITLE_BAR_STYLE = "background-color: #ffffff; color: black;"
+from gui.styles import (
+    PALETTE_ALTERNATE_BASE_COLOR,
+    PALETTE_BASE_COLOR,
+    PALETTE_BRIGHT_TEXT_COLOR,
+    PALETTE_BUTTON_COLOR,
+    PALETTE_BUTTON_TEXT_COLOR,
+    PALETTE_HIGHLIGHT_COLOR,
+    PALETTE_HIGHLIGHTED_TEXT_COLOR,
+    PALETTE_LINK_COLOR,
+    PALETTE_PLACEHOLDER_TEXT_COLOR,
+    PALETTE_TEXT_COLOR,
+    PALETTE_TOOLTIP_BASE_COLOR,
+    PALETTE_TOOLTIP_TEXT_COLOR,
+    PALETTE_WINDOW_COLOR,
+    PALETTE_WINDOW_TEXT_COLOR,
+    TITLE_BAR_STYLE,
+)
 
 
 def apply_theme(app):
@@ -12,23 +26,23 @@ def apply_theme(app):
     palette = QPalette()
 
     # -------- Window colors --------
-    palette.setColor(QPalette.Window, Qt.white)
-    palette.setColor(QPalette.Base, Qt.white)
-    palette.setColor(QPalette.AlternateBase, QColor(240, 240, 240))
-    palette.setColor(QPalette.WindowText, Qt.black)
+    palette.setColor(QPalette.Window, PALETTE_WINDOW_COLOR)
+    palette.setColor(QPalette.Base, PALETTE_BASE_COLOR)
+    palette.setColor(QPalette.AlternateBase, PALETTE_ALTERNATE_BASE_COLOR)
+    palette.setColor(QPalette.WindowText, PALETTE_WINDOW_TEXT_COLOR)
 
     # -------- Button colors --------
-    palette.setColor(QPalette.Button, QColor(240, 240, 240))
-    palette.setColor(QPalette.ButtonText, Qt.black)
+    palette.setColor(QPalette.Button, PALETTE_BUTTON_COLOR)
+    palette.setColor(QPalette.ButtonText, PALETTE_BUTTON_TEXT_COLOR)
 
     # -------- Text colors --------
-    palette.setColor(QPalette.Text, Qt.black)
-    palette.setColor(QPalette.ToolTipBase, Qt.black)
-    palette.setColor(QPalette.ToolTipText, Qt.black)
-    palette.setColor(QPalette.BrightText, Qt.red)
-    palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-    palette.setColor(QPalette.HighlightedText, Qt.white)
-    palette.setColor(QPalette.PlaceholderText, QColor("#A0AEC0"))
+    palette.setColor(QPalette.Text, PALETTE_TEXT_COLOR)
+    palette.setColor(QPalette.ToolTipBase, PALETTE_TOOLTIP_BASE_COLOR)
+    palette.setColor(QPalette.ToolTipText, PALETTE_TOOLTIP_TEXT_COLOR)
+    palette.setColor(QPalette.BrightText, PALETTE_BRIGHT_TEXT_COLOR)
+    palette.setColor(QPalette.Link, PALETTE_LINK_COLOR)
+    palette.setColor(QPalette.Highlight, PALETTE_HIGHLIGHT_COLOR)
+    palette.setColor(QPalette.HighlightedText, PALETTE_HIGHLIGHTED_TEXT_COLOR)
+    palette.setColor(QPalette.PlaceholderText, PALETTE_PLACEHOLDER_TEXT_COLOR)
 
     app.setPalette(palette)

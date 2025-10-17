@@ -22,7 +22,17 @@ from PySide6.QtWidgets import (
 
 from logic import online_rates, rates_importer
 from gui.styles import (
+    RATES_IMPORT_DIALOG_APPLY_COMBO_WIDTH,
+    RATES_IMPORT_DIALOG_BROWSE_BUTTON_WIDTH,
+    RATES_IMPORT_DIALOG_BUTTON_LAYOUT_MARGINS,
+    RATES_IMPORT_DIALOG_CURRENCY_COMBO_WIDTH,
+    RATES_IMPORT_DIALOG_MAIN_MARGINS,
+    RATES_IMPORT_DIALOG_MAIN_SPACING,
+    RATES_IMPORT_DIALOG_RATE_COMBO_WIDTH,
+    RATES_IMPORT_DIALOG_SECTION_SPACING,
+    RATES_IMPORT_DIALOG_SIZE,
     RATES_IMPORT_DIALOG_STYLE,
+    RATES_IMPORT_DIALOG_TABLE_COLUMN_WIDTHS,
     STATUS_LABEL_DEFAULT_STYLE,
     STATUS_LABEL_SUCCESS_STYLE,
     STATUS_LABEL_ERROR_STYLE,
@@ -38,7 +48,7 @@ class ExcelRatesDialog(QDialog):
         super().__init__(parent)
         self._pairs = list(gui_pairs)
         self.setWindowTitle("Import Rates")
-        self.setFixedSize(900, 500)
+        self.setFixedSize(*RATES_IMPORT_DIALOG_SIZE)
 
         self._setup_ui()
         self._setup_styles()
@@ -51,11 +61,11 @@ class ExcelRatesDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(RATES_IMPORT_DIALOG_MAIN_SPACING)
+        layout.setContentsMargins(*RATES_IMPORT_DIALOG_MAIN_MARGINS)
 
         source_layout = QHBoxLayout()
-        source_layout.setSpacing(8)
+        source_layout.setSpacing(RATES_IMPORT_DIALOG_SECTION_SPACING)
         source_layout.addWidget(QLabel("Source:"))
         self.source_combo = QComboBox()
         self.source_combo.addItem("Local File", userData=None)
@@ -67,7 +77,7 @@ class ExcelRatesDialog(QDialog):
         layout.addLayout(source_layout)
 
         file_layout = QHBoxLayout()
-        file_layout.setSpacing(8)
+        file_layout.setSpacing(RATES_IMPORT_DIALOG_SECTION_SPACING)
 
         file_layout.addWidget(QLabel("File:"))
         self.file_edit = QLineEdit()
@@ -76,7 +86,7 @@ class ExcelRatesDialog(QDialog):
         file_layout.addWidget(self.file_edit, 1)
 
         self.browse_btn = QPushButton("Browse")
-        self.browse_btn.setFixedWidth(70)
+        self.browse_btn.setFixedWidth(RATES_IMPORT_DIALOG_BROWSE_BUTTON_WIDTH)
         self.browse_btn.clicked.connect(self._browse)
         file_layout.addWidget(self.browse_btn)
 
@@ -84,26 +94,26 @@ class ExcelRatesDialog(QDialog):
         self._on_source_changed(self.source_combo.currentIndex())
 
         config_layout = QGridLayout()
-        config_layout.setSpacing(8)
+        config_layout.setSpacing(RATES_IMPORT_DIALOG_SECTION_SPACING)
 
         config_layout.addWidget(QLabel("Currency:"), 0, 0)
         self.currency_combo = QComboBox()
         self.currency_combo.addItems(["USD", "EUR", "RUB", "CNY"])
-        self.currency_combo.setFixedWidth(80)
+        self.currency_combo.setFixedWidth(RATES_IMPORT_DIALOG_CURRENCY_COMBO_WIDTH)
         self.currency_combo.currentTextChanged.connect(self._load)
         config_layout.addWidget(self.currency_combo, 0, 1)
 
         config_layout.addWidget(QLabel("Type:"), 0, 2)
         self.rate_combo = QComboBox()
         self.rate_combo.addItems(["R1", "R2"])
-        self.rate_combo.setFixedWidth(60)
+        self.rate_combo.setFixedWidth(RATES_IMPORT_DIALOG_RATE_COMBO_WIDTH)
         self.rate_combo.currentTextChanged.connect(self._load)
         config_layout.addWidget(self.rate_combo, 0, 3)
 
         config_layout.addWidget(QLabel("Apply:"), 0, 4)
         self.apply_combo = QComboBox()
         self.apply_combo.addItems(["Basic", "Complex"])
-        self.apply_combo.setFixedWidth(80)
+        self.apply_combo.setFixedWidth(RATES_IMPORT_DIALOG_APPLY_COMBO_WIDTH)
         config_layout.addWidget(self.apply_combo, 0, 5)
 
         config_layout.setColumnStretch(6, 1)
@@ -127,11 +137,8 @@ class ExcelRatesDialog(QDialog):
         header.setSectionResizeMode(5, QHeaderView.Fixed)
         header.setSectionResizeMode(6, QHeaderView.Fixed)
 
-        self.table.setColumnWidth(0, 120)
-        self.table.setColumnWidth(1, 120)
-        self.table.setColumnWidth(4, 70)
-        self.table.setColumnWidth(5, 70)
-        self.table.setColumnWidth(6, 70)
+        for column, width in RATES_IMPORT_DIALOG_TABLE_COLUMN_WIDTHS.items():
+            self.table.setColumnWidth(column, width)
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -139,7 +146,7 @@ class ExcelRatesDialog(QDialog):
         layout.addWidget(self.table, 1)
 
         btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setContentsMargins(*RATES_IMPORT_DIALOG_BUTTON_LAYOUT_MARGINS)
         btn_layout.addStretch()
         apply_btn = QPushButton("Apply")
         apply_btn.clicked.connect(self.apply_requested.emit)

@@ -12,7 +12,29 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 
-from gui.styles import MLV_RATES_BUTTON_STYLE, RATE_SELECTION_ACTION_BUTTON_STYLE
+from gui.styles import (
+    MLV_RATES_BUTTON_STYLE,
+    RATE_SELECTION_ACTION_BUTTON_STYLE,
+    RATE_TAB_AVAILABLE_LAYOUT_MARGINS,
+    RATE_TAB_AVAILABLE_LAYOUT_SPACING,
+    RATE_TAB_DELEGATE_PADDING,
+    RATE_TAB_LANG_LIST_HEIGHT,
+    RATE_TAB_LANG_LIST_WIDTH,
+    RATE_TAB_LANG_SECTION_MARGINS,
+    RATE_TAB_LANG_SECTION_SPACING,
+    RATE_TAB_LOADING_OVERLAY_LABEL_STYLE,
+    RATE_TAB_LOADING_OVERLAY_SIZE,
+    RATE_TAB_LOADING_OVERLAY_STYLE,
+    RATE_TAB_MISSING_RATE_COLOR,
+    RATE_TAB_MINIMUM_SIZE,
+    RATE_TAB_SELECTED_LANGUAGES_DISPLAY_STYLE,
+    RATE_TAB_SELECT_BUTTONS_LAYOUT_MARGINS,
+    RATE_TAB_SELECT_BUTTONS_LAYOUT_SPACING,
+    RATE_TAB_SELECTED_LAYOUT_MARGINS,
+    RATE_TAB_SELECTED_LAYOUT_SPACING,
+    RATE_TAB_TARGET_LAYOUT_MARGINS,
+    RATE_TAB_TARGET_LAYOUT_SPACING,
+)
 
 # =================== pandas ===================
 import pandas as pd
@@ -78,18 +100,18 @@ class LoadingOverlay(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setWindowModality(Qt.ApplicationModal)
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 204);")
+        self.setStyleSheet(RATE_TAB_LOADING_OVERLAY_STYLE)
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
         self.setLayout(layout)
 
         self.label = QLabel(text)
-        self.label.setStyleSheet("color: white; font-size: 16px;")
+        self.label.setStyleSheet(RATE_TAB_LOADING_OVERLAY_LABEL_STYLE)
         self.label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.label)
 
-        self.resize(200, 100)
+        self.resize(*RATE_TAB_LOADING_OVERLAY_SIZE)
         self.center_on_screen()
 
     def showEvent(self, event):
@@ -108,7 +130,12 @@ class LoadingOverlay(QDialog):
 # Делегат для отступов
 # --------------------------------------------------------------
 class CustomDelegate(QStyledItemDelegate):
-    def __init__(self, padding_left=5, padding_right=5, parent=None):
+    def __init__(
+        self,
+        padding_left=RATE_TAB_DELEGATE_PADDING[0],
+        padding_right=RATE_TAB_DELEGATE_PADDING[1],
+        parent=None,
+    ):
         super().__init__(parent)
         self.padding_left = padding_left
         self.padding_right = padding_right
@@ -132,7 +159,7 @@ class RateTab(QWidget):
         super().__init__(parent)
         self._lang_getter = lang_getter
         self._current_lang = self._lang()
-        self.setMinimumSize(420, 600)
+        self.setMinimumSize(*RATE_TAB_MINIMUM_SIZE)
         self.layout_main = QVBoxLayout()
         self.setLayout(self.layout_main)
 
@@ -161,12 +188,12 @@ class RateTab(QWidget):
         self.layout_main.addLayout(self.lang_layout)
 
         # --- Списки доступных/выбранных языков ---
-        lang_list_width = 260
-        lang_list_height = 280
+        lang_list_width = RATE_TAB_LANG_LIST_WIDTH
+        lang_list_height = RATE_TAB_LANG_LIST_HEIGHT
 
         self.languages_section_layout = QVBoxLayout()
-        self.languages_section_layout.setContentsMargins(0, 0, 0, 0)
-        self.languages_section_layout.setSpacing(6)
+        self.languages_section_layout.setContentsMargins(*RATE_TAB_LANG_SECTION_MARGINS)
+        self.languages_section_layout.setSpacing(RATE_TAB_LANG_SECTION_SPACING)
 
         self.available_search = QLineEdit()
         self.available_search.setClearButtonEnabled(True)
@@ -178,12 +205,12 @@ class RateTab(QWidget):
         )
 
         self.target_layout = QHBoxLayout()
-        self.target_layout.setContentsMargins(0, 0, 0, 0)
-        self.target_layout.setSpacing(12)
+        self.target_layout.setContentsMargins(*RATE_TAB_TARGET_LAYOUT_MARGINS)
+        self.target_layout.setSpacing(RATE_TAB_TARGET_LAYOUT_SPACING)
 
         self.available_layout = QVBoxLayout()
-        self.available_layout.setContentsMargins(0, 0, 0, 0)
-        self.available_layout.setSpacing(6)
+        self.available_layout.setContentsMargins(*RATE_TAB_AVAILABLE_LAYOUT_MARGINS)
+        self.available_layout.setSpacing(RATE_TAB_AVAILABLE_LAYOUT_SPACING)
         self.available_container = QWidget()
         self.available_container.setLayout(self.available_layout)
         self.available_container.setFixedWidth(lang_list_width)
@@ -204,8 +231,8 @@ class RateTab(QWidget):
         self.target_layout.addWidget(self.available_container)
 
         self.selected_layout = QVBoxLayout()
-        self.selected_layout.setContentsMargins(0, 0, 0, 0)
-        self.selected_layout.setSpacing(6)
+        self.selected_layout.setContentsMargins(*RATE_TAB_SELECTED_LAYOUT_MARGINS)
+        self.selected_layout.setSpacing(RATE_TAB_SELECTED_LAYOUT_SPACING)
         self.selected_label = QLabel()
         self.selected_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.selected_lang_list = QListWidget()
@@ -228,8 +255,8 @@ class RateTab(QWidget):
         self.layout_main.addLayout(self.languages_section_layout)
 
         self.select_buttons_layout = QHBoxLayout()
-        self.select_buttons_layout.setContentsMargins(0, 0, 0, 0)
-        self.select_buttons_layout.setSpacing(6)
+        self.select_buttons_layout.setContentsMargins(*RATE_TAB_SELECT_BUTTONS_LAYOUT_MARGINS)
+        self.select_buttons_layout.setSpacing(RATE_TAB_SELECT_BUTTONS_LAYOUT_SPACING)
         self.select_all_button = QPushButton()
         self.deselect_all_button = QPushButton()
         self.select_all_button.clicked.connect(self.select_all_available)
@@ -246,7 +273,7 @@ class RateTab(QWidget):
         # --- Отображение списка выбранных языков ---
         self.selected_languages_display = QLabel()
         self.selected_languages_display.setWordWrap(True)
-        self.selected_languages_display.setStyleSheet("border: 1px solid #ccc; padding: 5px;")
+        self.selected_languages_display.setStyleSheet(RATE_TAB_SELECTED_LANGUAGES_DISPLAY_STYLE)
         self.layout_main.addWidget(self.selected_languages_display)
 
         # --- Выбор ставки (Client rates 1/2) ---
@@ -290,7 +317,11 @@ class RateTab(QWidget):
         self.export_button.clicked.connect(self.export_rates_to_excel)
         self.layout_main.addWidget(self.export_button)
 
-        self.delegate = CustomDelegate(padding_left=5, padding_right=5, parent=self.table)
+        self.delegate = CustomDelegate(
+            padding_left=RATE_TAB_DELEGATE_PADDING[0],
+            padding_right=RATE_TAB_DELEGATE_PADDING[1],
+            parent=self.table,
+        )
         for col in [2, 3, 4]:
             self.table.setItemDelegateForColumn(col, self.delegate)
 
@@ -302,7 +333,7 @@ class RateTab(QWidget):
         self._gui_pairs: List[Tuple[str, str]] = []
         self._auto_selection_done = False
         self._excel_matches: List[rates_importer.PairMatch] = []
-        self._missing_rate_color = QColor("#FFF3CD")
+        self._missing_rate_color = QColor(RATE_TAB_MISSING_RATE_COLOR)
 
         self.history_data = []
         self.last_saved_selection = None

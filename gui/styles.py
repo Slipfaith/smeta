@@ -1,3 +1,8 @@
+# flake8: noqa
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+
 # Основной стиль приложения: фон окна и базовые параметры общих виджетов
 # - QMainWindow: светло-серый фон (#f5f5f5)
 # - QGroupBox: серые рамки и скругления, отдельное оформление для drag&drop
@@ -160,6 +165,41 @@ TOTAL_LABEL_STYLE = "font-weight: bold; font-size: 14px; padding: 6px; color: #3
 
 # Стиль вспомогательных подписей к отчётам: маленький текст 11px серого цвета
 REPORTS_LABEL_STYLE = "color: #555; font-size: 11px;"
+
+
+# Унифицированные размеры и отступы, используемые в нескольких модулях
+ZERO_MARGINS = (0, 0, 0, 0)
+GROUP_SECTION_MARGINS = (8, 4, 8, 4)
+GROUP_SECTION_SPACING = 8
+
+
+# Настройки кнопки удаления языковой пары
+LANGUAGE_PAIR_DELETE_BUTTON_STYLE = "QToolButton { padding: 2px; }"
+LANGUAGE_PAIR_DELETE_ICON_SIZE = (16, 16)
+
+
+# Настройки всплывающего оверлея загрузки в модуле ставок
+RATE_TAB_LOADING_OVERLAY_STYLE = "background-color: rgba(0, 0, 0, 204);"
+RATE_TAB_LOADING_OVERLAY_LABEL_STYLE = "color: white; font-size: 16px;"
+RATE_TAB_LOADING_OVERLAY_SIZE = (200, 100)
+
+# Отступы и размеры списков языков
+RATE_TAB_LANG_SECTION_MARGINS = ZERO_MARGINS
+RATE_TAB_LANG_SECTION_SPACING = 6
+RATE_TAB_TARGET_LAYOUT_MARGINS = ZERO_MARGINS
+RATE_TAB_TARGET_LAYOUT_SPACING = 12
+RATE_TAB_AVAILABLE_LAYOUT_MARGINS = ZERO_MARGINS
+RATE_TAB_AVAILABLE_LAYOUT_SPACING = 6
+RATE_TAB_SELECTED_LAYOUT_MARGINS = ZERO_MARGINS
+RATE_TAB_SELECTED_LAYOUT_SPACING = 6
+RATE_TAB_SELECT_BUTTONS_LAYOUT_MARGINS = ZERO_MARGINS
+RATE_TAB_SELECT_BUTTONS_LAYOUT_SPACING = 6
+RATE_TAB_LANG_LIST_WIDTH = 260
+RATE_TAB_LANG_LIST_HEIGHT = 280
+RATE_TAB_SELECTED_LANGUAGES_DISPLAY_STYLE = "border: 1px solid #ccc; padding: 5px;"
+RATE_TAB_DELEGATE_PADDING = (5, 5)
+RATE_TAB_MISSING_RATE_COLOR = "#FFF3CD"
+RATE_TAB_MINIMUM_SIZE = (420, 600)
 
 
 # Интервал между блоками на правой панели вкладок (основной QVBoxLayout)
@@ -378,3 +418,41 @@ QPushButton {
     font-weight: 600;
 }
 """
+
+
+# Размеры и отступы диалога импорта расценок
+RATES_IMPORT_DIALOG_SIZE = (900, 500)
+RATES_IMPORT_DIALOG_MAIN_MARGINS = (15, 15, 15, 15)
+RATES_IMPORT_DIALOG_MAIN_SPACING = 12
+RATES_IMPORT_DIALOG_SECTION_SPACING = 8
+RATES_IMPORT_DIALOG_BROWSE_BUTTON_WIDTH = 70
+RATES_IMPORT_DIALOG_CURRENCY_COMBO_WIDTH = 80
+RATES_IMPORT_DIALOG_RATE_COMBO_WIDTH = 60
+RATES_IMPORT_DIALOG_APPLY_COMBO_WIDTH = 80
+RATES_IMPORT_DIALOG_BUTTON_LAYOUT_MARGINS = ZERO_MARGINS
+RATES_IMPORT_DIALOG_TABLE_COLUMN_WIDTHS = {
+    0: 120,
+    1: 120,
+    4: 70,
+    5: 70,
+    6: 70,
+}
+
+
+# Настройки заголовка и палитры приложения
+TITLE_BAR_STYLE = "background-color: #ffffff; color: black;"
+
+PALETTE_WINDOW_COLOR = Qt.white
+PALETTE_BASE_COLOR = Qt.white
+PALETTE_ALTERNATE_BASE_COLOR = QColor(240, 240, 240)
+PALETTE_WINDOW_TEXT_COLOR = Qt.black
+PALETTE_BUTTON_COLOR = QColor(240, 240, 240)
+PALETTE_BUTTON_TEXT_COLOR = Qt.black
+PALETTE_TEXT_COLOR = Qt.black
+PALETTE_TOOLTIP_BASE_COLOR = Qt.black
+PALETTE_TOOLTIP_TEXT_COLOR = Qt.black
+PALETTE_BRIGHT_TEXT_COLOR = Qt.red
+PALETTE_LINK_COLOR = QColor(42, 130, 218)
+PALETTE_HIGHLIGHT_COLOR = QColor(42, 130, 218)
+PALETTE_HIGHLIGHTED_TEXT_COLOR = Qt.white
+PALETTE_PLACEHOLDER_TEXT_COLOR = QColor("#A0AEC0")
