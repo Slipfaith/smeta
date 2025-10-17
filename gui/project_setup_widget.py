@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
 )
 from PySide6.QtCore import Qt, Signal
+from gui.styles import GROUP_SECTION_MARGINS, GROUP_SECTION_SPACING
 from .utils import format_rate, _to_float, format_amount
 from logic.translation_config import tr
 
@@ -374,8 +375,8 @@ class ProjectSetupWidget(QWidget):
         def create_radio_action(text: str, with_spin: bool = False) -> tuple[QWidgetAction, QRadioButton, QSpinBox | None]:
             container = QWidget(menu)
             layout = QHBoxLayout(container)
-            layout.setContentsMargins(8, 4, 8, 4)
-            layout.setSpacing(8)
+            layout.setContentsMargins(*GROUP_SECTION_MARGINS)
+            layout.setSpacing(GROUP_SECTION_SPACING)
             radio = QRadioButton(text)
             layout.addWidget(radio)
             button_group.addButton(radio)
@@ -401,8 +402,8 @@ class ProjectSetupWidget(QWidget):
 
         totals_widget = QWidget(menu)
         totals_layout = QHBoxLayout(totals_widget)
-        totals_layout.setContentsMargins(8, 4, 8, 4)
-        totals_layout.setSpacing(8)
+        totals_layout.setContentsMargins(*GROUP_SECTION_MARGINS)
+        totals_layout.setSpacing(GROUP_SECTION_SPACING)
         totals_label = QLabel()
         totals_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         totals_layout.addWidget(totals_label)
@@ -412,8 +413,8 @@ class ProjectSetupWidget(QWidget):
 
         buttons_widget = QWidget(menu)
         buttons_layout = QHBoxLayout(buttons_widget)
-        buttons_layout.setContentsMargins(8, 4, 8, 4)
-        buttons_layout.setSpacing(8)
+        buttons_layout.setContentsMargins(*GROUP_SECTION_MARGINS)
+        buttons_layout.setSpacing(GROUP_SECTION_SPACING)
         apply_button = QPushButton(tr("Применить", self.lang))
         cancel_button = QPushButton(tr("Отмена", self.lang))
         buttons_layout.addStretch()
