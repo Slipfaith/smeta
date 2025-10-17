@@ -27,7 +27,6 @@ from gui.styles import (
     RATE_TAB_LOADING_OVERLAY_STYLE,
     RATE_TAB_MISSING_RATE_COLOR,
     RATE_TAB_MINIMUM_SIZE,
-    RATE_TAB_SELECTED_LANGUAGES_DISPLAY_STYLE,
     RATE_TAB_SELECT_BUTTONS_LAYOUT_MARGINS,
     RATE_TAB_SELECT_BUTTONS_LAYOUT_SPACING,
     RATE_TAB_SELECTED_LAYOUT_MARGINS,
@@ -219,7 +218,7 @@ class RateTab(QWidget):
         self.available_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.available_lang_list = QListWidget()
         self.available_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.available_lang_list.itemClicked.connect(self.move_to_selected)
+        self.available_lang_list.itemDoubleClicked.connect(self.move_to_selected)
         self.available_lang_list.setMinimumWidth(lang_list_width)
         self.available_lang_list.setMaximumWidth(lang_list_width)
         self.available_lang_list.setMinimumHeight(lang_list_height)
@@ -237,7 +236,9 @@ class RateTab(QWidget):
         self.selected_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.selected_lang_list = QListWidget()
         self.selected_lang_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.selected_lang_list.itemClicked.connect(self.move_to_available)
+        self.selected_lang_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.selected_lang_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.selected_lang_list.itemDoubleClicked.connect(self.move_to_available)
         self.selected_layout.addWidget(self.selected_label)
         self.selected_lang_list.setSortingEnabled(True)
         self.selected_lang_list.setMinimumWidth(lang_list_width)
@@ -269,12 +270,6 @@ class RateTab(QWidget):
         self.layout_main.addLayout(self.select_buttons_layout)
 
         # -- Removed text size slider --
-
-        # --- Отображение списка выбранных языков ---
-        self.selected_languages_display = QLabel()
-        self.selected_languages_display.setWordWrap(True)
-        self.selected_languages_display.setStyleSheet(RATE_TAB_SELECTED_LANGUAGES_DISPLAY_STYLE)
-        self.layout_main.addWidget(self.selected_languages_display)
 
         # --- Выбор ставки (Client rates 1/2) ---
         self.rate_layout = QHBoxLayout()
@@ -440,17 +435,6 @@ class RateTab(QWidget):
         self.selected_target_lang_label.setText(
             tr("Выбрано языков: {0}", lang).format(count)
         )
-        if count == 0:
-            self.selected_languages_display.setText(
-                tr("Список выбранных языков: (не выбрано)", lang)
-            )
-        else:
-            names = [
-                self.selected_lang_list.item(i).text()
-                for i in range(self.selected_lang_list.count())
-            ]
-            header = tr("Список выбранных языков:", lang)
-            self.selected_languages_display.setText(f"{header}\n{', '.join(names)}")
 
     # ----------------------------------------------------------------
     # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY
@@ -963,6 +947,7 @@ class RateTab(QWidget):
         print("=> process_data() called.")
         if self.df is None:
             print("process_data: df is None => return")
+            self._update_selection_summary()
             self._emit_current_selection()
             return
 
