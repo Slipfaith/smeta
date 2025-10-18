@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QComboBox,
+    QDialog,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
@@ -30,6 +31,7 @@ from gui.panels.left_panel import create_left_panel
 from gui.panels.right_panel import create_right_panel
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
+from gui.settings_dialog import SettingsDialog
 from gui.styles import APP_STYLE
 from gui.utils import format_language_display
 from gui.rates_manager_window import RatesManagerWindow
@@ -118,6 +120,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.project_menu = self._create_project_menu(lang)
         self.export_menu = self._create_export_menu(lang)
         self.rates_menu = self._create_rates_menu(lang)
+        self.settings_menu = self._create_settings_menu(lang)
         self.pm_action = self._make_action(tr("Проджект менеджер", lang), self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
         self.update_menu = self._create_update_menu(lang)
@@ -149,6 +152,48 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.import_rates_action = self._make_action(tr("Открыть панель ставок", lang), self.open_rates_panel)
         menu.addAction(self.import_rates_action)
         return menu
+
+    def _create_settings_menu(self, lang: str):
+        menu = self.menuBar().addMenu(tr("Настройки", lang))
+        self.open_settings_action = self._make_action(tr("Открыть настройки", lang), self.open_settings_dialog)
+        menu.addAction(self.open_settings_action)
+        return menu
+
+    def open_settings_dialog(self) -> None:
+        dialog = SettingsDialog(self, lang=self.gui_lang)
+        if dialog.exec() == QDialog.Accepted:
+            ServiceConfig.refresh()
+            self._apply_service_settings()
+            self._reload_legal_entities()
+            self.statusBar().showMessage(tr("Настройки сохранены и применены.", self.gui_lang), 5000)
+            QMessageBox.information(self, tr("Настройки", self.gui_lang), tr("Настройки успешно сохранены.", self.gui_lang))
+
+    def _apply_service_settings(self) -> None:
+        new_rows = ServiceConfig.copy_translation_rows()
+        for widget in self.language_pairs.values():
+            widget.apply_translation_config(new_rows)
+
+    def _reload_legal_entities(self) -> None:
+        previous = self.get_selected_legal_entity()
+        self.legal_entities = load_legal_entities()
+        self.legal_entity_meta = get_legal_entity_metadata()
+        combo = getattr(self, "legal_entity_combo", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        placeholder = getattr(self, "legal_entity_placeholder", tr("Выберите юрлицо", self.gui_lang))
+        combo.clear()
+        combo.addItem(placeholder)
+        for name in sorted(self.legal_entities.keys()):
+            combo.addItem(name)
+        combo.blockSignals(False)
+        if previous and previous in self.legal_entities:
+            idx = combo.findText(previous, Qt.MatchFixedString)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        else:
+            combo.setCurrentIndex(0)
+        self.on_legal_entity_changed(self.get_selected_legal_entity())
 
     def _create_update_menu(self, lang: str):
         menu = self.menuBar().addMenu(tr("Обновление", lang))
