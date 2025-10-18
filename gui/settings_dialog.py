@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -18,6 +19,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QHeaderView,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -28,8 +31,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextEdit,
-    QTreeWidget,
-    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -53,11 +54,18 @@ class _StagedEntity:
     original_template: str
     metadata: Dict[str, Optional[float | bool | str]] = field(default_factory=dict)
     pending_template: Optional[str] = None
+    pending_logo: Optional[str] = None
     is_new: bool = False
     to_delete: bool = False
 
     def effective_template(self) -> str:
         return self.pending_template or self.original_template
+
+    def effective_logo(self) -> Optional[str]:
+        if self.pending_logo is not None:
+            return self.pending_logo or None
+        logo = self.metadata.get("logo") if isinstance(self.metadata, dict) else None
+        return str(logo) if logo else None
 
 
 class SettingsDialog(QDialog):
@@ -78,6 +86,7 @@ class SettingsDialog(QDialog):
             )
             for name, record in self._initial_records.items()
         }
+        self._translation_keys: List[str] = []
 
         self.setWindowTitle(tr("Настройки", self.lang))
         self.resize(960, 640)
@@ -131,142 +140,133 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(thresholds_group)
 
-        self.translation_table = QTableWidget(0, 4)
+        self.translation_table = QTableWidget(0, 2)
         self.translation_table.setHorizontalHeaderLabels(
             [
-                tr("Ключ", self.lang),
                 tr("Название", self.lang),
-                tr("Коэффициент", self.lang),
-                tr("Базовая строка", self.lang),
+                tr("Процент", self.lang),
             ]
         )
-        self.translation_table.horizontalHeader().setStretchLastSection(True)
+        header = self.translation_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.translation_table.verticalHeader().setVisible(False)
         self.translation_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.translation_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.translation_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.translation_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
 
         layout.addWidget(self.translation_table)
 
-        buttons_layout = QHBoxLayout()
-        self.add_translation_row_btn = QPushButton(tr("Добавить", self.lang))
-        self.remove_translation_row_btn = QPushButton(tr("Удалить", self.lang))
         self.translation_status = QLabel()
         self.translation_status.setWordWrap(True)
-
-        self.add_translation_row_btn.clicked.connect(self._add_translation_row)
-        self.remove_translation_row_btn.clicked.connect(self._remove_translation_rows)
-
-        buttons_layout.addWidget(self.add_translation_row_btn)
-        buttons_layout.addWidget(self.remove_translation_row_btn)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(self.translation_status, 1)
-
-        layout.addLayout(buttons_layout)
+        layout.addWidget(self.translation_status)
         self.translation_tab.setLayout(layout)
 
     def _populate_translation_rows(self) -> None:
         rows = self._settings.get("translation_rows", ServiceConfig.copy_translation_rows())
-        self.translation_table.setRowCount(0)
+        defaults = ServiceConfig.copy_translation_rows()
+        prepared: List[Dict[str, object]] = []
+        seen_keys: set[str] = set()
+        target_rows = 4
         for row in rows:
-            self._append_translation_row(row)
+            if len(prepared) >= target_rows or not isinstance(row, dict):
+                continue
+            key = str(row.get("key", ""))
+            if key and key in seen_keys:
+                continue
+            prepared.append(dict(row))
+            if key:
+                seen_keys.add(key)
+        for row in defaults:
+            if len(prepared) >= target_rows:
+                break
+            key = str(row.get("key", ""))
+            if key and key in seen_keys:
+                continue
+            prepared.append(dict(row))
+            if key:
+                seen_keys.add(key)
+        while len(prepared) < target_rows:
+            key = f"custom_{len(prepared)}"
+            prepared.append(
+                {
+                    "key": key,
+                    "name": tr("Новая строка", self.lang),
+                    "multiplier": 1.0,
+                    "is_base": False,
+                }
+            )
 
-    def _append_translation_row(self, row: Dict[str, object]) -> None:
-        row_idx = self.translation_table.rowCount()
-        self.translation_table.insertRow(row_idx)
+        self.translation_table.blockSignals(True)
+        self.translation_table.setRowCount(len(prepared))
+        self._translation_keys = []
+        for row_idx, row in enumerate(prepared):
+            key = str(row.get("key") or f"row_{row_idx}")
+            if key in self._translation_keys:
+                key = f"{key}_{row_idx}"
+            self._translation_keys.append(key)
 
-        key_item = QTableWidgetItem(str(row.get("key", "")))
-        name_item = QTableWidgetItem(str(row.get("name", "")))
-        key_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
-        name_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+            name_item = QTableWidgetItem(str(row.get("name", "")))
+            name_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+            self.translation_table.setItem(row_idx, 0, name_item)
 
-        multiplier_spin = QDoubleSpinBox()
-        multiplier_spin.setDecimals(2)
-        multiplier_spin.setRange(0.0, 100.0)
-        multiplier_spin.setValue(float(row.get("multiplier", 0.0) or 0.0))
-
-        base_item = QTableWidgetItem()
-        base_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-        base_item.setCheckState(Qt.Checked if row.get("is_base") else Qt.Unchecked)
-
-        self.translation_table.setItem(row_idx, 0, key_item)
-        self.translation_table.setItem(row_idx, 1, name_item)
-        self.translation_table.setCellWidget(row_idx, 2, multiplier_spin)
-        self.translation_table.setItem(row_idx, 3, base_item)
-
-    def _add_translation_row(self) -> None:
-        self._append_translation_row({"key": "", "name": tr("Новая строка", self.lang), "multiplier": 1.0, "is_base": False})
-        self.translation_status.setText(tr("Добавлена строка. Проверьте значения перед сохранением.", self.lang))
-
-    def _remove_translation_rows(self) -> None:
-        rows = sorted({index.row() for index in self.translation_table.selectedIndexes()}, reverse=True)
-        if not rows:
-            self.translation_status.setText(tr("Выберите строки для удаления.", self.lang))
-            return
-        if self.translation_table.rowCount() - len(rows) < 1:
-            self.translation_status.setText(tr("Должна остаться хотя бы одна строка.", self.lang))
-            return
-        for row in rows:
-            self.translation_table.removeRow(row)
-        self.translation_status.setText(tr("Строки удалены. Сохраните изменения.", self.lang))
+            spin = QDoubleSpinBox()
+            spin.setDecimals(2)
+            spin.setRange(0.0, 100.0)
+            spin.setSuffix("%")
+            spin.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            raw_multiplier = float(row.get("multiplier", 0.0) or 0.0)
+            percent = raw_multiplier if raw_multiplier > 1.0 else raw_multiplier * 100.0
+            spin.setValue(percent)
+            self.translation_table.setCellWidget(row_idx, 1, spin)
+        self.translation_table.blockSignals(False)
+        self.translation_status.clear()
 
     def _collect_translation_rows(self) -> List[Dict[str, object]]:
         rows: List[Dict[str, object]] = []
-        base_seen = False
         for row in range(self.translation_table.rowCount()):
-            key_item = self.translation_table.item(row, 0)
-            name_item = self.translation_table.item(row, 1)
-            base_item = self.translation_table.item(row, 3)
-            spin = self.translation_table.cellWidget(row, 2)
-            multiplier = float(spin.value()) if isinstance(spin, QDoubleSpinBox) else 0.0
-            is_base = base_item.checkState() == Qt.Checked if base_item else False
-            if is_base:
-                if base_seen:
-                    is_base = False
-                    if base_item:
-                        base_item.setCheckState(Qt.Unchecked)
-                else:
-                    base_seen = True
+            name_item = self.translation_table.item(row, 0)
+            spin = self.translation_table.cellWidget(row, 1)
+            percent = float(spin.value()) if isinstance(spin, QDoubleSpinBox) else 0.0
+            multiplier = percent / 100.0
+            key = self._translation_keys[row] if row < len(self._translation_keys) else f"row_{row}"
             rows.append(
                 {
-                    "key": key_item.text().strip() if key_item else "",
+                    "key": key,
                     "name": name_item.text().strip() if name_item else "",
                     "multiplier": multiplier,
-                    "is_base": is_base,
+                    "is_base": row == 0,
                 }
             )
-        if not base_seen and rows:
-            rows[0]["is_base"] = True
+        if rows and not rows[0]["name"]:
+            rows[0]["name"] = tr("Перевод, новые слова", self.lang)
         return rows
 
     # Additional services tab -------------------------------------------
     def _setup_additional_tab(self) -> None:
         layout = QVBoxLayout()
-        self.additional_tree = QTreeWidget()
-        self.additional_tree.setColumnCount(3)
-        self.additional_tree.setHeaderLabels(
-            [
-                tr("Категория / Услуга", self.lang),
-                tr("Коэффициент", self.lang),
-                tr("Базовая", self.lang),
-            ]
+        self.additional_list = QListWidget()
+        self.additional_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.additional_list.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
         )
-        self.additional_tree.setIndentation(20)
-        self.additional_tree.setItemsExpandable(True)
-        self.additional_tree.setExpandsOnDoubleClick(True)
-        self.additional_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        layout.addWidget(self.additional_tree)
+        layout.addWidget(self.additional_list)
 
         buttons_layout = QHBoxLayout()
-        self.add_category_btn = QPushButton(tr("Добавить категорию", self.lang))
         self.add_service_btn = QPushButton(tr("Добавить услугу", self.lang))
         self.remove_service_btn = QPushButton(tr("Удалить", self.lang))
         self.additional_status = QLabel()
         self.additional_status.setWordWrap(True)
 
-        self.add_category_btn.clicked.connect(self._add_category)
-        self.add_service_btn.clicked.connect(self._add_service)
-        self.remove_service_btn.clicked.connect(self._remove_services)
+        self.add_service_btn.clicked.connect(self._add_service_name)
+        self.remove_service_btn.clicked.connect(self._remove_service_names)
 
-        buttons_layout.addWidget(self.add_category_btn)
         buttons_layout.addWidget(self.add_service_btn)
         buttons_layout.addWidget(self.remove_service_btn)
         buttons_layout.addStretch()
@@ -276,88 +276,45 @@ class SettingsDialog(QDialog):
         self.additional_tab.setLayout(layout)
 
     def _populate_additional_services(self) -> None:
-        self.additional_tree.clear()
+        self.additional_list.clear()
         data = self._settings.get("additional_services", ServiceConfig.copy_additional_services())
-        for section, services in data.items():
-            parent = QTreeWidgetItem([section])
-            parent.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            self.additional_tree.addTopLevelItem(parent)
-            for row in services:
-                self._append_service(parent, row)
-            self.additional_tree.expandItem(parent)
+        if not isinstance(data, list):
+            data = list(data) if data else []
+        if not data:
+            data = []
+        for name in data:
+            item = QListWidgetItem(str(name))
+            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+            self.additional_list.addItem(item)
+        if self.additional_list.count() == 0:
+            self._add_service_name(edit_immediately=False)
 
-    def _append_service(self, parent: QTreeWidgetItem, row: Dict[str, object]) -> None:
-        child = QTreeWidgetItem(parent, [str(row.get("name", ""))])
-        child.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-        spin = QDoubleSpinBox()
-        spin.setRange(0.0, 100.0)
-        spin.setDecimals(2)
-        spin.setValue(float(row.get("multiplier", 0.0) or 0.0))
-        self.additional_tree.setItemWidget(child, 1, spin)
-        base_item = QCheckBox()
-        base_item.setChecked(bool(row.get("is_base", False)))
-        base_item.setTristate(False)
-        self.additional_tree.setItemWidget(child, 2, base_item)
-
-    def _add_category(self) -> None:
-        new_item = QTreeWidgetItem([tr("Новая категория", self.lang)])
-        new_item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-        self.additional_tree.addTopLevelItem(new_item)
-        self.additional_tree.editItem(new_item)
-        self.additional_status.setText(tr("Категория добавлена.", self.lang))
-
-    def _add_service(self) -> None:
-        selected = self.additional_tree.selectedItems()
-        parent = selected[0] if selected else None
-        if parent and parent.parent() is not None:
-            parent = parent.parent()
-        if parent is None:
-            parent = self.additional_tree.topLevelItem(0)
-            if parent is None:
-                self._add_category()
-                parent = self.additional_tree.topLevelItem(0)
-        self._append_service(parent, {"name": tr("Новая услуга", self.lang), "multiplier": 1.0, "is_base": True})
+    def _add_service_name(self, edit_immediately: bool = True) -> None:
+        item = QListWidgetItem(tr("Новая услуга", self.lang))
+        item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+        self.additional_list.addItem(item)
+        self.additional_list.setCurrentItem(item)
+        if edit_immediately:
+            self.additional_list.editItem(item)
         self.additional_status.setText(tr("Услуга добавлена.", self.lang))
 
-    def _remove_services(self) -> None:
-        selected = self.additional_tree.selectedItems()
+    def _remove_service_names(self) -> None:
+        selected = self.additional_list.selectedItems()
         if not selected:
             self.additional_status.setText(tr("Выберите элементы для удаления.", self.lang))
             return
         for item in selected:
-            parent = item.parent()
-            if parent:
-                parent.removeChild(item)
-            else:
-                index = self.additional_tree.indexOfTopLevelItem(item)
-                if index >= 0:
-                    self.additional_tree.takeTopLevelItem(index)
+            row = self.additional_list.row(item)
+            self.additional_list.takeItem(row)
         self.additional_status.setText(tr("Элементы удалены.", self.lang))
 
-    def _collect_additional_services(self) -> Dict[str, List[Dict[str, object]]]:
-        data: Dict[str, List[Dict[str, object]]] = {}
-        for idx in range(self.additional_tree.topLevelItemCount()):
-            parent = self.additional_tree.topLevelItem(idx)
-            section = parent.text(0).strip()
-            if not section:
-                continue
-            rows: List[Dict[str, object]] = []
-            for child_index in range(parent.childCount()):
-                child = parent.child(child_index)
-                spin_widget = self.additional_tree.itemWidget(child, 1)
-                checkbox_widget = self.additional_tree.itemWidget(child, 2)
-                multiplier = float(spin_widget.value()) if isinstance(spin_widget, QDoubleSpinBox) else 0.0
-                is_base = bool(checkbox_widget.isChecked()) if isinstance(checkbox_widget, QCheckBox) else False
-                rows.append(
-                    {
-                        "name": child.text(0).strip(),
-                        "multiplier": multiplier,
-                        "is_base": is_base,
-                    }
-                )
-            if rows:
-                data[section] = rows
-        return data
+    def _collect_additional_services(self) -> List[str]:
+        services: List[str] = []
+        for idx in range(self.additional_list.count()):
+            text = self.additional_list.item(idx).text().strip()
+            if text:
+                services.append(text)
+        return services
 
     # Legal entities tab -------------------------------------------------
     def _setup_legal_tab(self) -> None:
@@ -378,6 +335,8 @@ class SettingsDialog(QDialog):
         self.legal_vat_spin = QDoubleSpinBox()
         self.legal_vat_spin.setRange(0.0, 100.0)
         self.legal_vat_spin.setDecimals(2)
+        self.legal_logo_edit = QLineEdit()
+        self.legal_logo_edit.setReadOnly(True)
 
         form.addWidget(QLabel(tr("Название", self.lang)), 0, 0)
         form.addWidget(self.legal_name_label, 0, 1)
@@ -386,20 +345,35 @@ class SettingsDialog(QDialog):
         form.addWidget(self.legal_vat_checkbox, 2, 0, 1, 2)
         form.addWidget(QLabel(tr("НДС по умолчанию", self.lang)), 3, 0)
         form.addWidget(self.legal_vat_spin, 3, 1)
+        form.addWidget(QLabel(tr("Логотип", self.lang)), 4, 0)
+
+        logo_row = QHBoxLayout()
+        logo_row.setContentsMargins(0, 0, 0, 0)
+        logo_row.addWidget(self.legal_logo_edit)
+        self.choose_logo_btn = QPushButton(tr("Выбрать логотип", self.lang))
+        self.clear_logo_btn = QPushButton(tr("Удалить логотип", self.lang))
+        logo_row.addWidget(self.choose_logo_btn)
+        logo_row.addWidget(self.clear_logo_btn)
+        form.addLayout(logo_row, 4, 1)
 
         right.addLayout(form)
 
         button_row = QHBoxLayout()
+        self.download_template_btn = QPushButton(tr("Скачать шаблон", self.lang))
         self.add_legal_btn = QPushButton(tr("Добавить шаблон", self.lang))
         self.replace_legal_btn = QPushButton(tr("Заменить файл", self.lang))
         self.remove_legal_btn = QPushButton(tr("Удалить", self.lang))
         self.export_legal_btn = QPushButton(tr("Экспортировать", self.lang))
 
+        self.download_template_btn.clicked.connect(self._on_download_template)
         self.add_legal_btn.clicked.connect(self._on_add_legal_entity)
         self.replace_legal_btn.clicked.connect(self._on_replace_template)
         self.remove_legal_btn.clicked.connect(self._on_remove_legal_entity)
         self.export_legal_btn.clicked.connect(self._on_export_templates)
+        self.choose_logo_btn.clicked.connect(self._on_choose_logo)
+        self.clear_logo_btn.clicked.connect(self._on_clear_logo)
 
+        button_row.addWidget(self.download_template_btn)
         button_row.addWidget(self.add_legal_btn)
         button_row.addWidget(self.replace_legal_btn)
         button_row.addWidget(self.remove_legal_btn)
@@ -449,6 +423,10 @@ class SettingsDialog(QDialog):
             self.legal_template_edit.setPlainText("")
             self.legal_vat_checkbox.setEnabled(False)
             self.legal_vat_spin.setEnabled(False)
+            self.legal_logo_edit.clear()
+            self.choose_logo_btn.setEnabled(False)
+            self.clear_logo_btn.setEnabled(False)
+            self.download_template_btn.setEnabled(False)
             return
         self.legal_name_label.setText(entity.name)
         self.legal_template_edit.setPlainText(entity.effective_template())
@@ -465,6 +443,11 @@ class SettingsDialog(QDialog):
         self.remove_legal_btn.setEnabled(editable)
         self.legal_vat_checkbox.setEnabled(editable)
         self.legal_vat_spin.setEnabled(editable)
+        logo_path = entity.effective_logo() or ""
+        self.legal_logo_edit.setText(logo_path)
+        self.choose_logo_btn.setEnabled(editable)
+        self.clear_logo_btn.setEnabled(editable and bool(logo_path))
+        self.download_template_btn.setEnabled(bool(entity.effective_template()))
 
     def _on_legal_metadata_changed(self) -> None:
         entity = self._current_entity()
@@ -492,6 +475,7 @@ class SettingsDialog(QDialog):
             original_template="",
             pending_template=file_path,
             metadata={"vat_enabled": False, "default_vat": 0.0},
+            pending_logo=None,
             is_new=True,
         )
         self._staged_entities[name] = entity
@@ -508,6 +492,7 @@ class SettingsDialog(QDialog):
             return
         entity.pending_template = file_path
         self.legal_template_edit.setPlainText(entity.effective_template())
+        self.download_template_btn.setEnabled(True)
         self.legal_status.setText(tr("Файл обновлён. Сохраните изменения для применения.", self.lang))
 
     def _on_remove_legal_entity(self) -> None:
@@ -526,6 +511,60 @@ class SettingsDialog(QDialog):
         if row >= 0:
             self.legal_list.takeItem(row)
         self.legal_status.setText(tr("Шаблон помечен на удаление. Сохраните изменения.", self.lang))
+
+    def _on_download_template(self) -> None:
+        entity = self._current_entity()
+        if not entity:
+            return
+        template_path = entity.effective_template()
+        if not template_path:
+            QMessageBox.warning(self, tr("Ошибка", self.lang), tr("Шаблон недоступен для скачивания.", self.lang))
+            return
+        source = Path(template_path)
+        default_name = source.name if source.name else f"{entity.name}.xlsx"
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("Сохранить шаблон", self.lang),
+            str(Path.home() / default_name),
+            "Excel (*.xlsx)",
+        )
+        if not target:
+            return
+        try:
+            shutil.copy2(template_path, target)
+            self.legal_status.setText(tr("Шаблон сохранён: {}", self.lang).format(Path(target).name))
+        except Exception as exc:  # pragma: no cover - filesystem dependent
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", self.lang),
+                tr("Не удалось сохранить шаблон: {}", self.lang).format(exc),
+            )
+
+    def _on_choose_logo(self) -> None:
+        entity = self._current_entity()
+        if not entity or entity.source == "built-in":
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("Выберите логотип", self.lang),
+            str(Path.home()),
+            "Images (*.png *.jpg *.jpeg *.bmp)",
+        )
+        if not file_path:
+            return
+        entity.pending_logo = file_path
+        self.legal_logo_edit.setText(file_path)
+        self.clear_logo_btn.setEnabled(True)
+        self.legal_status.setText(tr("Логотип будет обновлён после сохранения.", self.lang))
+
+    def _on_clear_logo(self) -> None:
+        entity = self._current_entity()
+        if not entity or entity.source == "built-in":
+            return
+        entity.pending_logo = ""
+        self.legal_logo_edit.clear()
+        self.clear_logo_btn.setEnabled(False)
+        self.legal_status.setText(tr("Логотип будет удалён после сохранения.", self.lang))
 
     def _on_export_templates(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -556,6 +595,10 @@ class SettingsDialog(QDialog):
             if staged:
                 template = staged.effective_template() or record.template
                 metadata = dict(staged.metadata)
+                if staged.pending_logo == "":
+                    metadata.pop("logo", None)
+                elif staged.pending_logo:
+                    metadata["logo"] = staged.pending_logo
                 source = staged.source
             else:
                 template = record.template
@@ -567,7 +610,12 @@ class SettingsDialog(QDialog):
             if name in seen or staged.to_delete:
                 continue
             template = staged.effective_template()
-            yield LegalEntityRecord(name=name, template=template, metadata=dict(staged.metadata), source=staged.source)
+            metadata = dict(staged.metadata)
+            if staged.pending_logo == "":
+                metadata.pop("logo", None)
+            elif staged.pending_logo:
+                metadata["logo"] = staged.pending_logo
+            yield LegalEntityRecord(name=name, template=template, metadata=metadata, source=staged.source)
 
     # Collect and save ---------------------------------------------------
     def _populate_fuzzy_thresholds(self) -> None:
@@ -601,8 +649,13 @@ class SettingsDialog(QDialog):
             template_path = entity.pending_template or entity.original_template
             if not template_path:
                 continue
+            metadata = dict(entity.metadata)
+            if entity.pending_logo == "":
+                metadata.pop("logo", None)
+            elif entity.pending_logo:
+                metadata["logo"] = entity.pending_logo
             try:
-                add_or_update_legal_entity(entity.name, Path(template_path), dict(entity.metadata))
+                add_or_update_legal_entity(entity.name, Path(template_path), metadata)
             except Exception as exc:  # pragma: no cover - UI feedback
                 QMessageBox.warning(
                     self,

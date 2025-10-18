@@ -29,32 +29,24 @@ DEFAULT_TRANSLATION_ROWS: List[Dict[str, Any]] = [
 ]
 
 
-DEFAULT_ADDITIONAL_SERVICES: Dict[str, List[Dict[str, Any]]] = {
-    "Верстка": [
-        {"name": "InDesign верстка", "multiplier": 1.0, "is_base": True},
-        {"name": "PowerPoint верстка", "multiplier": 1.0, "is_base": True},
-        {"name": "PDF верстка", "multiplier": 1.0, "is_base": True},
-        {"name": "Графика/Изображения", "multiplier": 1.0, "is_base": True},
-    ],
-    "Локализация мультимедиа": [
-        {"name": "Создание субтитров", "multiplier": 1.0, "is_base": True},
-        {"name": "Озвучка", "multiplier": 1.0, "is_base": True},
-        {"name": "Видеомонтаж", "multiplier": 1.0, "is_base": True},
-        {"name": "Синхронизация", "multiplier": 1.0, "is_base": True},
-    ],
-    "Тестирование/QA": [
-        {"name": "Лингвистическое тестирование", "multiplier": 1.0, "is_base": True},
-        {"name": "Функциональное тестирование", "multiplier": 1.0, "is_base": True},
-        {"name": "Косметическое тестирование", "multiplier": 1.0, "is_base": True},
-        {"name": "Финальная проверка", "multiplier": 1.0, "is_base": True},
-    ],
-    "Прочие услуги": [
-        {"name": "Создание терминологии", "multiplier": 1.0, "is_base": True},
-        {"name": "Подготовка Translation Memory", "multiplier": 1.0, "is_base": True},
-        {"name": "Анализ CAT-инструмента", "multiplier": 1.0, "is_base": True},
-        {"name": "Консультации", "multiplier": 1.0, "is_base": True},
-    ],
-}
+DEFAULT_ADDITIONAL_SERVICES: List[str] = [
+    "InDesign верстка",
+    "PowerPoint верстка",
+    "PDF верстка",
+    "Графика/Изображения",
+    "Создание субтитров",
+    "Озвучка",
+    "Видеомонтаж",
+    "Синхронизация",
+    "Лингвистическое тестирование",
+    "Функциональное тестирование",
+    "Косметическое тестирование",
+    "Финальная проверка",
+    "Создание терминологии",
+    "Подготовка Translation Memory",
+    "Анализ CAT-инструмента",
+    "Консультации",
+]
 
 
 DEFAULT_FUZZY_THRESHOLDS = {"new_words": 100, "others": 75}
@@ -122,29 +114,34 @@ def _normalize_translation_rows(rows: Iterable[Dict[str, Any]]) -> List[Dict[str
     return cleaned
 
 
-def _normalize_additional_services(data: Any) -> Dict[str, List[Dict[str, Any]]]:
-    if not isinstance(data, dict):
-        return deepcopy(DEFAULT_ADDITIONAL_SERVICES)
-    cleaned: Dict[str, List[Dict[str, Any]]] = {}
-    for section, rows in data.items():
-        if not isinstance(section, str):
-            continue
-        section_name = section.strip() or "Категория"
-        cleaned_rows: List[Dict[str, Any]] = []
-        if isinstance(rows, list):
+def _normalize_additional_services(data: Any) -> List[str]:
+    services: List[str] = []
+    if isinstance(data, dict):
+        for rows in data.values():
+            if not isinstance(rows, list):
+                continue
             for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                cleaned_rows.append(
-                    {
-                        "name": str(row.get("name", "")).strip() or "Услуга",
-                        "multiplier": _validate_multiplier(row.get("multiplier", 0.0)),
-                        "is_base": bool(row.get("is_base", False)),
-                    }
-                )
-        if cleaned_rows:
-            cleaned[section_name] = cleaned_rows
-    return cleaned or deepcopy(DEFAULT_ADDITIONAL_SERVICES)
+                if isinstance(row, dict):
+                    name = str(row.get("name", "")).strip()
+                    if name:
+                        services.append(name)
+                elif isinstance(row, str):
+                    name = row.strip()
+                    if name:
+                        services.append(name)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, str):
+                name = item.strip()
+                if name:
+                    services.append(name)
+            elif isinstance(item, dict):
+                name = str(item.get("name", "")).strip()
+                if name:
+                    services.append(name)
+    if not services:
+        return deepcopy(DEFAULT_ADDITIONAL_SERVICES)
+    return services
 
 
 def _normalize_fuzzy_thresholds(data: Any) -> Dict[str, int]:
@@ -196,7 +193,7 @@ def get_translation_rows() -> List[Dict[str, Any]]:
     return deepcopy(load_settings()["translation_rows"])
 
 
-def get_additional_services() -> Dict[str, List[Dict[str, Any]]]:
+def get_additional_services() -> List[str]:
     """Return a deep copy of additional services configuration."""
 
     return deepcopy(load_settings()["additional_services"])
@@ -214,9 +211,9 @@ def update_translation_rows(rows: Iterable[Dict[str, Any]]) -> None:
     save_settings(settings)
 
 
-def update_additional_services(data: Dict[str, List[Dict[str, Any]]]) -> None:
+def update_additional_services(data: Iterable[str]) -> None:
     settings = load_settings()
-    settings["additional_services"] = data
+    settings["additional_services"] = list(data)
     save_settings(settings)
 
 

@@ -12,7 +12,7 @@ class ServiceConfig:
     """Конфигурация услуг и коэффициентов, загружаемая из пользовательских настроек."""
 
     TRANSLATION_ROWS: List[Dict[str, Any]] = []
-    ADDITIONAL_SERVICES: Dict[str, List[Dict[str, Any]]] = {}
+    ADDITIONAL_SERVICES: List[str] = []
     ROW_NAMES: List[str] = []
     FUZZY_THRESHOLDS: Dict[str, int] = {}
 
@@ -28,7 +28,7 @@ class ServiceConfig:
         return deepcopy(cls.TRANSLATION_ROWS)
 
     @classmethod
-    def copy_additional_services(cls) -> Dict[str, List[Dict[str, Any]]]:
+    def copy_additional_services(cls) -> List[str]:
         return deepcopy(cls.ADDITIONAL_SERVICES)
 
 
