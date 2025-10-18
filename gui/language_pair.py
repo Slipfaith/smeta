@@ -934,3 +934,22 @@ class LanguagePairWidget(QWidget):
             sep = '.' if self.lang == 'en' else ','
             item.setText(self._format_rate(rate * multiplier, sep))
         self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
+
+    def apply_translation_config(self, rows_config: List[Dict[str, Any]]) -> None:
+        """Rebuild translation table using *rows_config* while preserving values."""
+
+        if not hasattr(self, "translation_group"):
+            return
+        table = getattr(self.translation_group, "table", None)
+        if table is not None:
+            existing_data = self._get_table_data(table)
+        else:
+            existing_data = []
+        self.services_layout.removeWidget(self.translation_group)
+        self.translation_group.setParent(None)
+        self.translation_group = self.create_service_group("Перевод", rows_config)
+        self.translation_group.toggled.connect(self._on_group_toggled)
+        self.services_layout.insertWidget(0, self.translation_group)
+        if existing_data:
+            self.load_table_data(existing_data)
+        self.translation_group.setChecked(True)

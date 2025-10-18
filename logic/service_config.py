@@ -1,41 +1,35 @@
+from copy import deepcopy
+from typing import Any, Dict, List
+
+from .settings_store import (
+    get_additional_services,
+    get_fuzzy_thresholds,
+    get_translation_rows,
+)
+
+
 class ServiceConfig:
-    """Конфигурация услуг и коэффициентов."""
+    """Конфигурация услуг и коэффициентов, загружаемая из пользовательских настроек."""
 
-    # ---- Услуги перевода (без редактирования) ----
-    TRANSLATION_ROWS = [
-        {"key": "new", "name": "Перевод, новые слова (100%)", "multiplier": 1.0, "is_base": True},
-        {"key": "fuzzy_75_94", "name": "Перевод, совпадения 75-94% (66%)", "multiplier": 0.66, "is_base": False},
-        {"key": "fuzzy_95_99", "name": "Перевод, совпадения 95-99% (33%)", "multiplier": 0.33, "is_base": False},
-        {"key": "reps_100_30", "name": "Перевод, повторы и 100% совпадения (30%)", "multiplier": 0.30, "is_base": False},
-    ]
+    TRANSLATION_ROWS: List[Dict[str, Any]] = []
+    ADDITIONAL_SERVICES: Dict[str, List[Dict[str, Any]]] = {}
+    ROW_NAMES: List[str] = []
+    FUZZY_THRESHOLDS: Dict[str, int] = {}
 
-    # Имена строк статистики, используемые при экспорте и парсинге отчётов
-    ROW_NAMES = [row["name"] for row in TRANSLATION_ROWS]
+    @classmethod
+    def refresh(cls) -> None:
+        cls.TRANSLATION_ROWS = get_translation_rows()
+        cls.ADDITIONAL_SERVICES = get_additional_services()
+        cls.ROW_NAMES = [row.get("name", "") for row in cls.TRANSLATION_ROWS]
+        cls.FUZZY_THRESHOLDS = get_fuzzy_thresholds()
 
-    # ---- Доп. услуги ----
-    ADDITIONAL_SERVICES = {
-        "Верстка": [
-            {"name": "InDesign верстка", "multiplier": 1.0, "is_base": True},
-            {"name": "PowerPoint верстка", "multiplier": 1.0, "is_base": True},
-            {"name": "PDF верстка", "multiplier": 1.0, "is_base": True},
-            {"name": "Графика/Изображения", "multiplier": 1.0, "is_base": True}
-        ],
-        "Локализация мультимедиа": [
-            {"name": "Создание субтитров", "multiplier": 1.0, "is_base": True},
-            {"name": "Озвучка", "multiplier": 1.0, "is_base": True},
-            {"name": "Видеомонтаж", "multiplier": 1.0, "is_base": True},
-            {"name": "Синхронизация", "multiplier": 1.0, "is_base": True}
-        ],
-        "Тестирование/QA": [
-            {"name": "Лингвистическое тестирование", "multiplier": 1.0, "is_base": True},
-            {"name": "Функциональное тестирование", "multiplier": 1.0, "is_base": True},
-            {"name": "Косметическое тестирование", "multiplier": 1.0, "is_base": True},
-            {"name": "Финальная проверка", "multiplier": 1.0, "is_base": True}
-        ],
-        "Прочие услуги": [
-            {"name": "Создание терминологии", "multiplier": 1.0, "is_base": True},
-            {"name": "Подготовка Translation Memory", "multiplier": 1.0, "is_base": True},
-            {"name": "Анализ CAT-инструмента", "multiplier": 1.0, "is_base": True},
-            {"name": "Консультации", "multiplier": 1.0, "is_base": True}
-        ]
-    }
+    @classmethod
+    def copy_translation_rows(cls) -> List[Dict[str, Any]]:
+        return deepcopy(cls.TRANSLATION_ROWS)
+
+    @classmethod
+    def copy_additional_services(cls) -> Dict[str, List[Dict[str, Any]]]:
+        return deepcopy(cls.ADDITIONAL_SERVICES)
+
+
+ServiceConfig.refresh()
