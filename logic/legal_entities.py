@@ -3,7 +3,7 @@ import shutil
 from dataclasses import dataclass
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from resource_utils import resource_path
 
@@ -13,8 +13,10 @@ CONFIG_RELATIVE_PATH = Path("logic") / "legal_entities.json"
 CONFIG_PATH = resource_path(CONFIG_RELATIVE_PATH)
 USER_CONFIG_PATH = Path(get_appdata_dir()) / "legal_entities.json"
 USER_TEMPLATES_DIR = Path(get_appdata_dir()) / "legal_entity_templates"
+USER_LOGOS_DIR = Path(get_appdata_dir()) / "legal_entity_logos"
 
 USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+USER_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -36,6 +38,39 @@ def _resolve_templates(items: Iterable[Tuple[str, Path | str]]) -> Dict[str, str
     return resolved
 
 
+def _store_logo_file(name: str, source_path: Path) -> str:
+    USER_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    resolved_source = source_path.resolve()
+    target_dir = USER_LOGOS_DIR.resolve()
+    try:
+        is_internal = resolved_source.is_relative_to(target_dir)  # type: ignore[attr-defined]
+    except AttributeError:  # pragma: no cover - Python < 3.9 fallback
+        is_internal = target_dir in resolved_source.parents
+    if is_internal:
+        return str(resolved_source)
+    target_path = target_dir / f"{name}{resolved_source.suffix or '.png'}"
+    try:
+        shutil.copy2(resolved_source, target_path)
+    except Exception as exc:  # pragma: no cover - filesystem dependent
+        raise IOError(f"Не удалось сохранить логотип: {exc}") from exc
+    return str(target_path)
+
+
+def _remove_logo_file(path: str) -> None:
+    try:
+        logo_path = Path(path)
+        resolved = logo_path.resolve()
+        target_dir = USER_LOGOS_DIR.resolve()
+        try:
+            is_internal = resolved.is_relative_to(target_dir)  # type: ignore[attr-defined]
+        except AttributeError:  # pragma: no cover - Python < 3.9 fallback
+            is_internal = target_dir in resolved.parents
+        if is_internal:
+            logo_path.unlink(missing_ok=True)
+    except Exception:  # pragma: no cover - best effort cleanup
+        pass
+
+
 def _prepare_from_mapping(data: Dict[str, Any], source: str) -> Dict[str, LegalEntityRecord]:
     records: Dict[str, LegalEntityRecord] = {}
 
@@ -51,6 +86,10 @@ def _prepare_from_mapping(data: Dict[str, Any], source: str) -> Dict[str, LegalE
         resolved = _resolve_templates([(name, template)]).get(name)
         if resolved is None:
             continue
+        if source == "built-in" and isinstance(metadata, dict):
+            logo_value = metadata.get("logo")
+            if isinstance(logo_value, str) and logo_value:
+                metadata["logo"] = str(resource_path(Path(logo_value)))
         record = LegalEntityRecord(
             name=name,
             template=str(resolved),
@@ -151,8 +190,29 @@ def add_or_update_legal_entity(name: str, template_path: Path, metadata: Dict[st
             raise IOError(f"Не удалось сохранить шаблон: {exc}") from exc
 
     user_data = load_user_legal_entities()
-    metadata = metadata or {}
-    user_data[name] = {"template": str(target_path)} | metadata
+    existing_entry = user_data.get(name, {}) if isinstance(user_data, dict) else {}
+    metadata = dict(metadata or {})
+    stored_logo = existing_entry.get("logo") if isinstance(existing_entry, dict) else None
+    if "logo" in metadata:
+        logo_value = metadata.get("logo")
+        if isinstance(logo_value, str) and logo_value:
+            stored_logo = _store_logo_file(name, Path(logo_value))
+            existing_logo = existing_entry.get("logo") if isinstance(existing_entry, dict) else None
+            if existing_logo and stored_logo != existing_logo:
+                _remove_logo_file(existing_logo)
+        else:
+            if stored_logo:
+                _remove_logo_file(stored_logo)
+            stored_logo = None
+    elif stored_logo:
+        metadata["logo"] = stored_logo
+    if stored_logo:
+        metadata["logo"] = stored_logo
+    else:
+        metadata.pop("logo", None)
+
+    payload = {"template": str(target_path)} | metadata
+    user_data[name] = payload
     save_user_legal_entities(user_data)
     _collect_records()
     return LegalEntityRecord(name=name, template=str(target_path), metadata=metadata, source="user")
@@ -162,6 +222,7 @@ def remove_user_legal_entity(name: str) -> None:
     user_data = load_user_legal_entities()
     if name in user_data:
         template = user_data[name].get("template")
+        logo = user_data[name].get("logo")
         user_data.pop(name, None)
         save_user_legal_entities(user_data)
         if template:
@@ -171,6 +232,8 @@ def remove_user_legal_entity(name: str) -> None:
                     path.unlink(missing_ok=True)
             except Exception:  # pragma: no cover - best effort cleanup
                 pass
+        if logo:
+            _remove_logo_file(str(logo))
         _collect_records()
 
 
@@ -202,3 +265,16 @@ def export_legal_entities_to_excel(path: Path, records: Iterable[LegalEntityReco
         ])
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
+
+
+def get_legal_entity_logo(name: str) -> Optional[str]:
+    metadata = get_legal_entity_metadata().get(name, {})
+    logo = metadata.get("logo") if isinstance(metadata, dict) else None
+    if isinstance(logo, str) and logo:
+        logo_path = Path(logo)
+        if logo_path.exists():
+            return str(logo_path)
+    fallback = resource_path(Path("templates") / "logos" / f"{name}.png")
+    if fallback.exists():
+        return str(fallback)
+    return None

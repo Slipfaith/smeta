@@ -2,15 +2,19 @@
   "Артфест": {
     "template": "templates/Артфест.xlsx",
     "vat_enabled": true,
-    "default_vat": 20.0
+    "default_vat": 20.0,
+    "logo": "templates/logos/Артфест.png"
   },
   "Бикрон": {
-    "template": "templates/Бикрон.xlsx"
+    "template": "templates/Бикрон.xlsx",
+    "logo": "templates/logos/Бикрон.png"
   },
   "Логрус Айти": {
-    "template": "templates/Логрус Айти.xlsx"
+    "template": "templates/Логрус Айти.xlsx",
+    "logo": "templates/logos/Логрус Айти.png"
   },
   "Logrus IT": {
-    "template": "templates/Logrus IT.xlsx"
+    "template": "templates/Logrus IT.xlsx",
+    "logo": "templates/logos/Logrus IT.png"
   }
 }

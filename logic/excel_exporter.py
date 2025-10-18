@@ -16,6 +16,7 @@ from openpyxl.drawing.image import Image
 from resource_utils import resource_path
 
 from .service_config import ServiceConfig
+from .legal_entities import get_legal_entity_logo
 from .translation_config import tr
 from .excel_process import apply_separators
 
@@ -849,9 +850,9 @@ class ExcelExporter:
         template: str
             Код шаблона, соответствующий имени файла логотипа.
         """
-        logo_path = resource_path(f"templates/logos/{template}.png")
-        if not os.path.exists(logo_path):
-            self.logger.debug("Logo not found for template %s: %s", template, logo_path)
+        logo_path = get_legal_entity_logo(template)
+        if not logo_path or not os.path.exists(logo_path):
+            self.logger.debug("Logo not found for template %s", template)
             return
         try:
             img = Image(logo_path)

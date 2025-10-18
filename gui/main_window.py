@@ -120,7 +120,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.project_menu = self._create_project_menu(lang)
         self.export_menu = self._create_export_menu(lang)
         self.rates_menu = self._create_rates_menu(lang)
-        self.settings_menu = self._create_settings_menu(lang)
         self.pm_action = self._make_action(tr("Проджект менеджер", lang), self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
         self.update_menu = self._create_update_menu(lang)
@@ -135,7 +134,14 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.load_action = self._make_action(tr("Загрузить проект", lang), self.project_manager.load_project)
         self.clear_action = self._make_action(tr("Очистить", lang), self.clear_all_data)
         self.open_log_action = self._make_action(tr("Открыть лог", lang), self.open_last_run_log)
-        for action in (self.save_action, self.load_action, self.clear_action, self.open_log_action):
+        self.open_settings_action = self._make_action(tr("Настройки", lang), self.open_settings_dialog)
+        for action in (
+            self.save_action,
+            self.load_action,
+            self.clear_action,
+            self.open_log_action,
+            self.open_settings_action,
+        ):
             menu.addAction(action)
         return menu
 
@@ -151,12 +157,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         menu = self.menuBar().addMenu(tr("Ставки", lang))
         self.import_rates_action = self._make_action(tr("Открыть панель ставок", lang), self.open_rates_panel)
         menu.addAction(self.import_rates_action)
-        return menu
-
-    def _create_settings_menu(self, lang: str):
-        menu = self.menuBar().addMenu(tr("Настройки", lang))
-        self.open_settings_action = self._make_action(tr("Открыть настройки", lang), self.open_settings_dialog)
-        menu.addAction(self.open_settings_action)
         return menu
 
     def open_settings_dialog(self) -> None:
@@ -384,6 +384,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.load_action.setText(tr("Загрузить проект", lang))
         self.clear_action.setText(tr("Очистить", lang))
         self.open_log_action.setText(tr("Открыть лог", lang))
+        self.open_settings_action.setText(tr("Настройки", lang))
         self.export_menu.setTitle(tr("Экспорт", lang))
         self.save_excel_action.setText(tr("Сохранить Excel", lang))
         self.save_pdf_action.setText(tr("Сохранить PDF", lang))
