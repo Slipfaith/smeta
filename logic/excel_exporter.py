@@ -6,6 +6,7 @@ import textwrap
 import threading
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
+from pathlib import Path
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Protection
@@ -342,6 +343,7 @@ class ExcelExporter:
         template_path: Optional[str] = None,
         currency: str = "RUB",
         lang: str = "ru",
+        legal_entity_meta: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         self.template_path = template_path or DEFAULT_TEMPLATE_PATH
         self.currency = currency
@@ -357,6 +359,7 @@ class ExcelExporter:
         self.markup_title = tr("Наценка", lang)
         self.logger = logging.getLogger("ExcelExporter")
         self.logger.setLevel(logging.DEBUG)
+        self.legal_entity_meta = legal_entity_meta or {}
         self.logger.debug(
             "Initialized ExcelExporter with template %s", self.template_path
         )
@@ -849,9 +852,30 @@ class ExcelExporter:
         template: str
             Код шаблона, соответствующий имени файла логотипа.
         """
-        logo_path = resource_path(f"templates/logos/{template}.png")
-        if not os.path.exists(logo_path):
-            self.logger.debug("Logo not found for template %s: %s", template, logo_path)
+        logo_path: Optional[str] = None
+        meta = self.legal_entity_meta.get(template, {}) if template else {}
+        candidate = meta.get("logo") if isinstance(meta, dict) else None
+        if candidate and os.path.exists(candidate):
+            logo_path = candidate
+        else:
+            template_path = meta.get("template_path") if isinstance(meta, dict) else None
+            if template_path:
+                stem = Path(str(template_path)).stem
+                alt = Path(str(template_path)).with_suffix(".png")
+                if alt.exists():
+                    logo_path = str(alt)
+                else:
+                    default_alt = resource_path(Path("templates") / "logos" / f"{stem}.png")
+                    if Path(default_alt).exists():
+                        logo_path = str(default_alt)
+
+        if not logo_path and template:
+            default_logo = resource_path(Path("templates") / "logos" / f"{template}.png")
+            if Path(default_logo).exists():
+                logo_path = str(default_logo)
+
+        if not logo_path:
+            self.logger.debug("Logo not found for template %s", template)
             return
         try:
             img = Image(logo_path)

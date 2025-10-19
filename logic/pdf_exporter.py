@@ -2,7 +2,7 @@ import os
 import logging
 import tempfile
 from contextlib import contextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .excel_exporter import ExcelExporter
 from .excel_process import temporary_separators
@@ -16,10 +16,16 @@ def export_to_pdf(
     template_path: str,
     currency: str = "RUB",
     lang: str = "ru",
+    legal_entity_meta: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> bool:
     """Export project data to PDF using ExcelExporter and xlsx_to_pdf conversion."""
     try:
-        exporter = ExcelExporter(template_path, currency=currency, lang=lang)
+        exporter = ExcelExporter(
+            template_path,
+            currency=currency,
+            lang=lang,
+            legal_entity_meta=legal_entity_meta,
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             xlsx_path = os.path.join(tmpdir, "temp.xlsx")
             if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):

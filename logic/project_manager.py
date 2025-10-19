@@ -219,6 +219,7 @@ class ProjectManager:
             template_path,
             currency=currency,
             lang=export_lang,
+            legal_entity_meta=window.legal_entity_meta,
         )
         with Progress(parent=window) as progress:
             success = exporter.export_to_excel(
@@ -284,6 +285,7 @@ class ProjectManager:
             template_path,
             currency=currency,
             lang=export_lang,
+            legal_entity_meta=window.legal_entity_meta,
         )
         with Progress(parent=window) as progress:
             def on_excel_progress(percent: int, message: str) -> None:

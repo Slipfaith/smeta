@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -70,13 +71,18 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     project_layout.addWidget(window.legal_entity_label)
     window.legal_entity_combo = QComboBox()
     window.legal_entity_placeholder = tr("Выберите юрлицо", lang)
-    window.legal_entity_combo.addItem(window.legal_entity_placeholder)
-    window.legal_entity_combo.addItems(window.legal_entities.keys())
-    window.legal_entity_combo.setCurrentIndex(0)
     window.legal_entity_combo.currentTextChanged.connect(
         window.on_legal_entity_changed
     )
     project_layout.addWidget(window.legal_entity_combo)
+
+    window.legal_entity_logo_label = QLabel()
+    window.legal_entity_logo_label.setFrameShape(QFrame.StyledPanel)
+    window.legal_entity_logo_label.setAlignment(Qt.AlignCenter)
+    window.legal_entity_logo_label.setMinimumSize(200, 100)
+    project_layout.addWidget(window.legal_entity_logo_label)
+
+    window._populate_legal_entity_combo()
 
     window.currency_label = QLabel(tr("Валюта", lang) + ":")
     project_layout.addWidget(window.currency_label)
