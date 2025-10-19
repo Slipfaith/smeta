@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QPixmap
 
 from logic.project_manager import ProjectManager
 from updater import (
@@ -30,6 +30,7 @@ from gui.panels.left_panel import create_left_panel
 from gui.panels.right_panel import create_right_panel
 from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
+from gui.settings_dialog import SettingsDialog
 from gui.styles import APP_STYLE
 from gui.utils import format_language_display
 from gui.rates_manager_window import RatesManagerWindow
@@ -134,6 +135,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.open_log_action = self._make_action(tr("Открыть лог", lang), self.open_last_run_log)
         for action in (self.save_action, self.load_action, self.clear_action, self.open_log_action):
             menu.addAction(action)
+        menu.addSeparator()
+        self.settings_action = self._make_action(tr("Настройки", lang), self.open_settings_dialog)
+        menu.addAction(self.settings_action)
         return menu
 
     def _create_export_menu(self, lang: str):
@@ -331,6 +335,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if self.rates_window:
             self.rates_window.set_language(lang)
         self.update_menu_texts()
+        self._update_legal_entity_logo(self.get_selected_legal_entity())
 
     def update_menu_texts(self):
         lang = self.gui_lang
@@ -339,6 +344,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.load_action.setText(tr("Загрузить проект", lang))
         self.clear_action.setText(tr("Очистить", lang))
         self.open_log_action.setText(tr("Открыть лог", lang))
+        self.settings_action.setText(tr("Настройки", lang))
         self.export_menu.setTitle(tr("Экспорт", lang))
         self.save_excel_action.setText(tr("Сохранить Excel", lang))
         self.save_pdf_action.setText(tr("Сохранить PDF", lang))
@@ -357,6 +363,74 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def manual_update_check(self):
         check_for_updates(self, force=True)
+
+    def open_settings_dialog(self) -> None:
+        dialog = SettingsDialog(self.gui_lang, self)
+        dialog.exec()
+        if dialog.was_modified():
+            self.reload_legal_entities()
+
+    def reload_legal_entities(self, selected: Optional[str] = None) -> None:
+        self.legal_entities = load_legal_entities()
+        self.legal_entity_meta = get_legal_entity_metadata()
+        self._populate_legal_entity_combo(selected)
+        self.on_legal_entity_changed(self.get_selected_legal_entity())
+
+    def _populate_legal_entity_combo(self, preferred: Optional[str] = None) -> None:
+        if not hasattr(self, "legal_entity_combo"):
+            return
+        lang = self.gui_lang
+        placeholder = getattr(self, "legal_entity_placeholder", tr("Выберите юрлицо", lang))
+        current = preferred
+        if current is None:
+            current = getattr(self, "legal_entity_combo", QComboBox()).currentText()
+        self.legal_entity_combo.blockSignals(True)
+        self.legal_entity_combo.clear()
+        self.legal_entity_combo.addItem(placeholder)
+        names = sorted(self.legal_entities.keys(), key=lambda x: x.lower())
+        for name in names:
+            icon = self._make_legal_entity_icon(name)
+            if icon is not None:
+                self.legal_entity_combo.addItem(icon, name)
+            else:
+                self.legal_entity_combo.addItem(name)
+        index = self.legal_entity_combo.findText(current or "", Qt.MatchFixedString)
+        if index > 0:
+            self.legal_entity_combo.setCurrentIndex(index)
+        else:
+            self.legal_entity_combo.setCurrentIndex(0)
+        self.legal_entity_combo.blockSignals(False)
+
+    def _make_legal_entity_icon(self, entity: str) -> Optional[QIcon]:
+        meta = self.legal_entity_meta.get(entity, {}) if hasattr(self, "legal_entity_meta") else {}
+        logo_path = meta.get("logo") if isinstance(meta, dict) else None
+        if logo_path and isinstance(logo_path, str) and os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            if not pixmap.isNull():
+                return QIcon(pixmap)
+        return None
+
+    def _update_legal_entity_logo(self, entity: Optional[str]) -> None:
+        if not hasattr(self, "legal_entity_logo_label"):
+            return
+        label = self.legal_entity_logo_label
+        if not entity:
+            label.setPixmap(QPixmap())
+            label.setText(tr("Логотип не задан", self.gui_lang))
+            return
+        meta = self.legal_entity_meta.get(entity, {}) if hasattr(self, "legal_entity_meta") else {}
+        logo_path = meta.get("logo") if isinstance(meta, dict) else None
+        if logo_path and isinstance(logo_path, str) and os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(
+                    label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label.setPixmap(scaled)
+                label.setText("")
+                return
+        label.setPixmap(QPixmap())
+        label.setText(tr("Логотип не задан", self.gui_lang))
 
     def auto_check_for_updates(self):
         def worker():
@@ -439,6 +513,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 self.vat_spin.setValue(default_vat_value)
         else:
             self.vat_spin.setValue(0.0)
+
+        self._update_legal_entity_logo(normalized_entity or None)
 
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
