@@ -33,6 +33,7 @@ from gui.project_manager_dialog import ProjectManagerDialog
 from gui.project_setup_widget import ProjectSetupWidget
 from gui.settings_dialog import SettingsDialog
 from gui.styles import APP_STYLE
+from gui.logo_label import ScaledPixmapLabel
 from gui.utils import format_language_display
 from gui.rates_manager_window import RatesManagerWindow
 from logic import rates_importer
@@ -41,7 +42,11 @@ from logic.importers import import_project_info, import_xml_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
 from logic.language_pairs import LanguagePairsMixin
-from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
+from logic.legal_entities import (
+    get_legal_entity_metadata,
+    get_logo_path,
+    load_legal_entities,
+)
 from logic.translation_config import tr
 from logic.logging_utils import get_last_run_log_path
 from logic.xml_parser_common import language_identity, resolve_language_display
@@ -117,6 +122,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
     # Menu construction -------------------------------------------------
     def _build_menus(self) -> None:
         lang = self.gui_lang
+        self.open_settings_action = self._make_action(
+            tr("Открыть настройки", lang), self.open_settings_dialog
+        )
         self.project_menu = self._create_project_menu(lang)
         self.export_menu = self._create_export_menu(lang)
         self.rates_menu = self._create_rates_menu(lang)
@@ -137,6 +145,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.open_log_action = self._make_action(tr("Открыть лог", lang), self.open_last_run_log)
         for action in (self.save_action, self.load_action, self.clear_action, self.open_log_action):
             menu.addAction(action)
+        menu.addSeparator()
+        menu.addAction(self.open_settings_action)
         return menu
 
     def _create_export_menu(self, lang: str):
@@ -155,7 +165,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def _create_settings_menu(self, lang: str):
         menu = self.menuBar().addMenu(tr("Настройки", lang))
-        self.open_settings_action = self._make_action(tr("Открыть настройки", lang), self.open_settings_dialog)
         menu.addAction(self.open_settings_action)
         return menu
 
@@ -484,6 +493,34 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 self.vat_spin.setValue(default_vat_value)
         else:
             self.vat_spin.setValue(0.0)
+
+        self._update_legal_entity_logo(entity or "")
+
+    def _update_legal_entity_logo(self, entity: str) -> None:
+        label = getattr(self, "legal_entity_logo_label", None)
+        if label is None:
+            return
+
+        if not entity:
+            label.clear()
+            label.setText(tr("Логотип не выбран", self.gui_lang))
+            label.setToolTip("")
+            return
+
+        logo_path = get_logo_path(entity)
+        if not logo_path:
+            label.clear()
+            label.setText(tr("Логотип отсутствует", self.gui_lang))
+            label.setToolTip("")
+            return
+
+        if not label.set_path(logo_path):
+            label.setText(tr("Не удалось загрузить логотип", self.gui_lang))
+            label.setToolTip(logo_path)
+            return
+
+        label.setText("")
+        label.setToolTip(logo_path)
 
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
