@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
 
 from logic.project_manager import ProjectManager
 from updater import (
@@ -335,7 +335,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if self.rates_window:
             self.rates_window.set_language(lang)
         self.update_menu_texts()
-        self._update_legal_entity_logo(self.get_selected_legal_entity())
 
     def update_menu_texts(self):
         lang = self.gui_lang
@@ -389,48 +388,13 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.legal_entity_combo.addItem(placeholder)
         names = sorted(self.legal_entities.keys(), key=lambda x: x.lower())
         for name in names:
-            icon = self._make_legal_entity_icon(name)
-            if icon is not None:
-                self.legal_entity_combo.addItem(icon, name)
-            else:
-                self.legal_entity_combo.addItem(name)
+            self.legal_entity_combo.addItem(name)
         index = self.legal_entity_combo.findText(current or "", Qt.MatchFixedString)
         if index > 0:
             self.legal_entity_combo.setCurrentIndex(index)
         else:
             self.legal_entity_combo.setCurrentIndex(0)
         self.legal_entity_combo.blockSignals(False)
-
-    def _make_legal_entity_icon(self, entity: str) -> Optional[QIcon]:
-        meta = self.legal_entity_meta.get(entity, {}) if hasattr(self, "legal_entity_meta") else {}
-        logo_path = meta.get("logo") if isinstance(meta, dict) else None
-        if logo_path and isinstance(logo_path, str) and os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            if not pixmap.isNull():
-                return QIcon(pixmap)
-        return None
-
-    def _update_legal_entity_logo(self, entity: Optional[str]) -> None:
-        if not hasattr(self, "legal_entity_logo_label"):
-            return
-        label = self.legal_entity_logo_label
-        if not entity:
-            label.setPixmap(QPixmap())
-            label.setText(tr("Логотип не задан", self.gui_lang))
-            return
-        meta = self.legal_entity_meta.get(entity, {}) if hasattr(self, "legal_entity_meta") else {}
-        logo_path = meta.get("logo") if isinstance(meta, dict) else None
-        if logo_path and isinstance(logo_path, str) and os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label.setPixmap(scaled)
-                label.setText("")
-                return
-        label.setPixmap(QPixmap())
-        label.setText(tr("Логотип не задан", self.gui_lang))
 
     def auto_check_for_updates(self):
         def worker():
@@ -514,7 +478,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         else:
             self.vat_spin.setValue(0.0)
 
-        self._update_legal_entity_logo(normalized_entity or None)
 
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
