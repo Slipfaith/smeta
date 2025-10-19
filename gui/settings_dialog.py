@@ -195,7 +195,9 @@ class SettingsDialog(QDialog):
         self.logo_label = QLabel()
         self.logo_label.setFrameShape(QFrame.StyledPanel)
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setMinimumSize(220, 140)
+        self.logo_label.setWordWrap(True)
+        self.logo_label.setMinimumSize(140, 90)
+        self.logo_label.setMaximumSize(180, 120)
         self.details_container.addWidget(self.logo_label)
 
         button_bar = QHBoxLayout()
