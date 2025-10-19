@@ -79,7 +79,9 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     window.legal_entity_logo_label = QLabel()
     window.legal_entity_logo_label.setFrameShape(QFrame.StyledPanel)
     window.legal_entity_logo_label.setAlignment(Qt.AlignCenter)
-    window.legal_entity_logo_label.setMinimumSize(200, 100)
+    window.legal_entity_logo_label.setWordWrap(True)
+    window.legal_entity_logo_label.setMinimumSize(120, 80)
+    window.legal_entity_logo_label.setMaximumSize(160, 100)
     project_layout.addWidget(window.legal_entity_logo_label)
 
     window._populate_legal_entity_combo()
