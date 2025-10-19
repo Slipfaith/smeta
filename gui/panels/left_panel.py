@@ -25,6 +25,7 @@ from gui.styles import (
     LEFT_PANEL_PAIRS_SECTION_SPACING,
     LEFT_PANEL_PROJECT_SECTION_SPACING,
 )
+from gui.logo_label import ScaledPixmapLabel
 from logic.translation_config import tr
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -77,6 +78,12 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
         window.on_legal_entity_changed
     )
     project_layout.addWidget(window.legal_entity_combo)
+
+    window.legal_entity_logo_label = ScaledPixmapLabel()
+    window.legal_entity_logo_label.setMinimumHeight(90)
+    window.legal_entity_logo_label.setStyleSheet("border: 1px dashed #c0c0c0; background: #fafafa;")
+    window.legal_entity_logo_label.setText(tr("Логотип не выбран", lang))
+    project_layout.addWidget(window.legal_entity_logo_label)
 
     window.currency_label = QLabel(tr("Валюта", lang) + ":")
     project_layout.addWidget(window.currency_label)

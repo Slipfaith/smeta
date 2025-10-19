@@ -34,12 +34,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.logo_label import ScaledPixmapLabel
+
 from logic.legal_entities import (
     LegalEntityRecord,
     add_or_update_legal_entity,
+    add_or_update_logo,
+    get_builtin_logo_path,
+    export_builtin_templates,
     export_legal_entities_to_excel,
+    get_logo_path,
+    get_logo_source,
     list_legal_entities_with_sources,
     remove_user_legal_entity,
+    remove_logo_override,
 )
 from logic.service_config import ServiceConfig
 from logic.settings_store import load_settings, save_settings
@@ -55,9 +63,23 @@ class _StagedEntity:
     pending_template: Optional[str] = None
     is_new: bool = False
     to_delete: bool = False
+    logo_path: Optional[str] = None
+    logo_source: str = ""
+    pending_logo: Optional[str] = None
+    remove_logo: bool = False
+    builtin_logo_path: Optional[str] = None
 
     def effective_template(self) -> str:
         return self.pending_template or self.original_template
+
+    def effective_logo(self) -> Optional[str]:
+        if self.pending_logo:
+            return self.pending_logo
+        if self.remove_logo:
+            return self.builtin_logo_path
+        if self.logo_path:
+            return self.logo_path
+        return self.builtin_logo_path
 
 
 class SettingsDialog(QDialog):
@@ -75,6 +97,9 @@ class SettingsDialog(QDialog):
                 source=record.source,
                 original_template=record.template,
                 metadata=dict(record.metadata or {}),
+                logo_path=get_logo_path(name),
+                logo_source=get_logo_source(name),
+                builtin_logo_path=get_builtin_logo_path(name),
             )
             for name, record in self._initial_records.items()
         }
@@ -393,20 +418,43 @@ class SettingsDialog(QDialog):
         self.add_legal_btn = QPushButton(tr("Добавить шаблон", self.lang))
         self.replace_legal_btn = QPushButton(tr("Заменить файл", self.lang))
         self.remove_legal_btn = QPushButton(tr("Удалить", self.lang))
+        self.download_builtin_btn = QPushButton(tr("Скачать встроенные", self.lang))
         self.export_legal_btn = QPushButton(tr("Экспортировать", self.lang))
 
         self.add_legal_btn.clicked.connect(self._on_add_legal_entity)
         self.replace_legal_btn.clicked.connect(self._on_replace_template)
         self.remove_legal_btn.clicked.connect(self._on_remove_legal_entity)
+        self.download_builtin_btn.clicked.connect(self._on_download_builtin_templates)
         self.export_legal_btn.clicked.connect(self._on_export_templates)
 
         button_row.addWidget(self.add_legal_btn)
         button_row.addWidget(self.replace_legal_btn)
         button_row.addWidget(self.remove_legal_btn)
+        button_row.addWidget(self.download_builtin_btn)
         button_row.addStretch()
         button_row.addWidget(self.export_legal_btn)
 
         right.addLayout(button_row)
+
+        self.logo_preview = ScaledPixmapLabel()
+        self.logo_preview.setMinimumHeight(140)
+        self.logo_preview.setStyleSheet("border: 1px dashed #c0c0c0; background: #fafafa;")
+        self.logo_preview.setText(tr("Логотип не выбран", self.lang))
+        right.addWidget(self.logo_preview)
+
+        self.logo_info_label = QLabel()
+        self.logo_info_label.setWordWrap(True)
+        right.addWidget(self.logo_info_label)
+
+        logo_buttons = QHBoxLayout()
+        self.change_logo_btn = QPushButton(tr("Изменить логотип", self.lang))
+        self.remove_logo_btn = QPushButton(tr("Удалить логотип", self.lang))
+        self.change_logo_btn.clicked.connect(self._on_change_logo)
+        self.remove_logo_btn.clicked.connect(self._on_remove_logo)
+        logo_buttons.addWidget(self.change_logo_btn)
+        logo_buttons.addWidget(self.remove_logo_btn)
+        logo_buttons.addStretch()
+        right.addLayout(logo_buttons)
 
         self.legal_status = QLabel()
         self.legal_status.setWordWrap(True)
@@ -449,6 +497,9 @@ class SettingsDialog(QDialog):
             self.legal_template_edit.setPlainText("")
             self.legal_vat_checkbox.setEnabled(False)
             self.legal_vat_spin.setEnabled(False)
+            self.change_logo_btn.setEnabled(False)
+            self.remove_logo_btn.setEnabled(False)
+            self._update_logo_preview(None)
             return
         self.legal_name_label.setText(entity.name)
         self.legal_template_edit.setPlainText(entity.effective_template())
@@ -465,6 +516,8 @@ class SettingsDialog(QDialog):
         self.remove_legal_btn.setEnabled(editable)
         self.legal_vat_checkbox.setEnabled(editable)
         self.legal_vat_spin.setEnabled(editable)
+        self.change_logo_btn.setEnabled(True)
+        self._update_logo_preview(entity)
 
     def _on_legal_metadata_changed(self) -> None:
         entity = self._current_entity()
@@ -473,6 +526,71 @@ class SettingsDialog(QDialog):
         entity.metadata["vat_enabled"] = bool(self.legal_vat_checkbox.isChecked())
         entity.metadata["default_vat"] = float(self.legal_vat_spin.value())
         self.legal_status.setText(tr("Параметры обновлены. Не забудьте сохранить.", self.lang))
+
+    def _on_change_logo(self) -> None:
+        entity = self._current_entity()
+        if not entity:
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("Выберите логотип", self.lang),
+            str(Path.home()),
+            "Images (*.png *.jpg *.jpeg)",
+        )
+        if not file_path:
+            return
+        entity.pending_logo = file_path
+        entity.remove_logo = False
+        self.legal_status.setText(tr("Логотип обновлён. Сохраните изменения для применения.", self.lang))
+        self._update_logo_preview(entity)
+
+    def _on_remove_logo(self) -> None:
+        entity = self._current_entity()
+        if not entity:
+            return
+        entity.pending_logo = None
+        entity.remove_logo = True
+        self.legal_status.setText(tr("Пользовательский логотип будет удалён после сохранения.", self.lang))
+        self._update_logo_preview(entity)
+
+    def _update_logo_preview(self, entity: Optional[_StagedEntity]) -> None:
+        if not entity:
+            self.logo_preview.clear()
+            self.logo_preview.setText(tr("Логотип не выбран", self.lang))
+            self.logo_info_label.setText("")
+            self.logo_preview.setToolTip("")
+            return
+
+        effective_logo = entity.effective_logo()
+        info_parts: List[str] = []
+        if entity.pending_logo:
+            info_parts.append(tr("Новый логотип (не сохранён)", self.lang))
+        elif entity.remove_logo:
+            info_parts.append(tr("Логотип будет удалён", self.lang))
+        else:
+            if entity.logo_source == "user":
+                info_parts.append(tr("Источник: пользовательский", self.lang))
+            elif entity.logo_source == "built-in":
+                info_parts.append(tr("Источник: встроенный", self.lang))
+
+        if effective_logo and self.logo_preview.set_path(effective_logo):
+            self.logo_info_label.setText("\n".join(info_parts + [effective_logo]))
+            self.logo_preview.setToolTip(effective_logo)
+        else:
+            if entity.remove_logo and entity.builtin_logo_path:
+                # Pending removal but built-in logo remains available
+                self.logo_preview.set_path(entity.builtin_logo_path)
+                info_parts.append(entity.builtin_logo_path)
+                self.logo_info_label.setText("\n".join(info_parts))
+                self.logo_preview.setToolTip(entity.builtin_logo_path or "")
+            else:
+                self.logo_preview.clear()
+                self.logo_preview.setText(tr("Логотип отсутствует", self.lang))
+                self.logo_info_label.setText("\n".join(info_parts))
+                self.logo_preview.setToolTip("")
+
+        has_override = bool(entity.pending_logo or (entity.logo_source == "user" and not entity.remove_logo))
+        self.remove_logo_btn.setEnabled(has_override)
 
     def _on_add_legal_entity(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(self, tr("Выберите шаблон", self.lang), str(Path.home()), "Excel (*.xlsx)")
@@ -493,6 +611,9 @@ class SettingsDialog(QDialog):
             pending_template=file_path,
             metadata={"vat_enabled": False, "default_vat": 0.0},
             is_new=True,
+            logo_path=None,
+            logo_source="user",
+            builtin_logo_path=get_builtin_logo_path(name),
         )
         self._staged_entities[name] = entity
         self._add_legal_list_item(name)
@@ -526,6 +647,30 @@ class SettingsDialog(QDialog):
         if row >= 0:
             self.legal_list.takeItem(row)
         self.legal_status.setText(tr("Шаблон помечен на удаление. Сохраните изменения.", self.lang))
+
+    def _on_download_builtin_templates(self) -> None:
+        target_dir = QFileDialog.getExistingDirectory(
+            self,
+            tr("Выберите папку для сохранения", self.lang),
+            str(Path.home()),
+        )
+        if not target_dir:
+            return
+        try:
+            exported = export_builtin_templates(Path(target_dir))
+        except Exception as exc:  # pragma: no cover - UI feedback
+            QMessageBox.warning(
+                self,
+                tr("Ошибка", self.lang),
+                tr("Не удалось сохранить встроенные шаблоны: {}", self.lang).format(exc),
+            )
+            return
+        if not exported:
+            self.legal_status.setText(tr("Встроенные шаблоны не найдены.", self.lang))
+        else:
+            self.legal_status.setText(
+                tr("Сохранено встроенных шаблонов: {}", self.lang).format(len(exported))
+            )
 
     def _on_export_templates(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -591,24 +736,52 @@ class SettingsDialog(QDialog):
         for entity in list(self._staged_entities.values()):
             if entity.to_delete and entity.source != "built-in":
                 remove_user_legal_entity(entity.name)
+                remove_logo_override(entity.name)
 
         # Apply additions and updates
         for entity in self._staged_entities.values():
             if entity.to_delete:
                 continue
-            if entity.source == "built-in" and not entity.is_new:
-                continue
             template_path = entity.pending_template or entity.original_template
-            if not template_path:
-                continue
-            try:
-                add_or_update_legal_entity(entity.name, Path(template_path), dict(entity.metadata))
-            except Exception as exc:  # pragma: no cover - UI feedback
-                QMessageBox.warning(
-                    self,
-                    tr("Ошибка", self.lang),
-                    tr("Не удалось сохранить шаблон {}: {}", self.lang).format(entity.name, exc),
-                )
+            if entity.source != "built-in" or entity.is_new:
+                if not template_path:
+                    continue
+                try:
+                    add_or_update_legal_entity(entity.name, Path(template_path), dict(entity.metadata))
+                except Exception as exc:  # pragma: no cover - UI feedback
+                    QMessageBox.warning(
+                        self,
+                        tr("Ошибка", self.lang),
+                        tr("Не удалось сохранить шаблон {}: {}", self.lang).format(entity.name, exc),
+                    )
+
+            if entity.pending_logo:
+                try:
+                    stored = add_or_update_logo(entity.name, Path(entity.pending_logo))
+                    entity.logo_path = str(stored)
+                    entity.logo_source = "user"
+                    entity.builtin_logo_path = entity.builtin_logo_path or get_builtin_logo_path(entity.name)
+                    entity.pending_logo = None
+                    entity.remove_logo = False
+                except Exception as exc:  # pragma: no cover - UI feedback
+                    QMessageBox.warning(
+                        self,
+                        tr("Ошибка", self.lang),
+                        tr("Не удалось сохранить логотип {}: {}", self.lang).format(entity.name, exc),
+                    )
+            elif entity.remove_logo:
+                try:
+                    remove_logo_override(entity.name)
+                    entity.logo_path = entity.builtin_logo_path
+                    entity.logo_source = "built-in" if entity.builtin_logo_path else ""
+                    entity.pending_logo = None
+                    entity.remove_logo = False
+                except Exception as exc:  # pragma: no cover - UI feedback
+                    QMessageBox.warning(
+                        self,
+                        tr("Ошибка", self.lang),
+                        tr("Не удалось удалить логотип {}: {}", self.lang).format(entity.name, exc),
+                    )
 
     def _on_accept(self) -> None:
         settings = self._gather_settings()

@@ -3,7 +3,7 @@ import shutil
 from dataclasses import dataclass
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from resource_utils import resource_path
 
@@ -13,8 +13,12 @@ CONFIG_RELATIVE_PATH = Path("logic") / "legal_entities.json"
 CONFIG_PATH = resource_path(CONFIG_RELATIVE_PATH)
 USER_CONFIG_PATH = Path(get_appdata_dir()) / "legal_entities.json"
 USER_TEMPLATES_DIR = Path(get_appdata_dir()) / "legal_entity_templates"
+LOGOS_RELATIVE_DIR = Path("templates") / "logos"
+USER_LOGOS_DIR = Path(get_appdata_dir()) / "legal_entity_logos"
+LOGO_EXTENSIONS: Tuple[str, ...] = (".png", ".jpg", ".jpeg")
 
 USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+USER_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -26,6 +30,25 @@ class LegalEntityRecord:
 
 
 _LEGAL_ENTITY_METADATA: Dict[str, Dict[str, Any]] = {}
+
+
+INVALID_FILENAME_CHARS = set("\\/:*?\"<>|")
+
+
+def _sanitize_filename(name: str) -> str:
+    """Return filesystem-safe filename stem derived from *name*."""
+
+    sanitized = "".join("_" if ch in INVALID_FILENAME_CHARS else ch for ch in name.strip())
+    sanitized = sanitized.strip() or "entity"
+    return sanitized
+
+
+def _find_logo(name: str, directory: Path) -> Optional[Path]:
+    for ext in LOGO_EXTENSIONS:
+        candidate = directory / f"{name}{ext}"
+        if candidate.exists():
+            return candidate
+    return None
 
 def _resolve_templates(items: Iterable[Tuple[str, Path | str]]) -> Dict[str, str]:
     """Convert relative template paths into absolute filesystem paths."""
@@ -119,6 +142,116 @@ def list_legal_entities_with_sources() -> Dict[str, LegalEntityRecord]:
 
 def load_user_legal_entities() -> Dict[str, Any]:
     return _load_json(USER_CONFIG_PATH)
+
+
+def export_builtin_templates(destination: Path) -> List[Path]:
+    """Copy bundled templates into *destination* directory."""
+
+    destination.mkdir(parents=True, exist_ok=True)
+    exported: List[Path] = []
+    for record in list_legal_entities_with_sources().values():
+        if record.source != "built-in":
+            continue
+        src = Path(record.template)
+        if not src.exists():
+            continue
+        target = destination / src.name
+        shutil.copy2(src, target)
+        exported.append(target)
+    return exported
+
+
+def _resolve_logo(name: str) -> Tuple[Optional[str], str]:
+    sanitized = name.strip()
+    if not sanitized:
+        return None, ""
+
+    user_logo = get_user_logo_path(sanitized)
+    if user_logo:
+        return user_logo, "user"
+
+    builtin_logo = get_builtin_logo_path(sanitized)
+    if builtin_logo:
+        return builtin_logo, "built-in"
+    return None, ""
+
+
+def get_builtin_logo_path(name: str) -> Optional[str]:
+    sanitized = name.strip()
+    if not sanitized:
+        return None
+    directory = resource_path(LOGOS_RELATIVE_DIR)
+    logo = _find_logo(sanitized, directory)
+    if logo:
+        return str(logo)
+    alt_logo = _find_logo(_sanitize_filename(sanitized), directory)
+    if alt_logo:
+        return str(alt_logo)
+    return None
+
+
+def get_user_logo_path(name: str) -> Optional[str]:
+    sanitized = name.strip()
+    if not sanitized:
+        return None
+    logo = _find_logo(_sanitize_filename(sanitized), USER_LOGOS_DIR)
+    if logo:
+        return str(logo)
+    return None
+
+
+def get_logo_path(name: str) -> Optional[str]:
+    """Return path to logo associated with *name* if available."""
+
+    path, _ = _resolve_logo(name)
+    return path
+
+
+def get_logo_source(name: str) -> str:
+    """Return logo source identifier for *name* (built-in/user)."""
+
+    _, source = _resolve_logo(name)
+    return source
+
+
+def add_or_update_logo(name: str, logo_path: Path) -> Path:
+    """Copy *logo_path* into the user directory for the given legal entity."""
+
+    if not logo_path.exists():
+        raise FileNotFoundError(logo_path)
+
+    suffix = logo_path.suffix.lower()
+    if suffix not in LOGO_EXTENSIONS:
+        raise ValueError("Поддерживаются только файлы PNG и JPEG")
+
+    USER_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    stem = _sanitize_filename(name)
+
+    target = USER_LOGOS_DIR / f"{stem}{suffix}"
+
+    # Remove previous versions with different extensions
+    for ext in LOGO_EXTENSIONS:
+        if ext == suffix:
+            continue
+        try:
+            (USER_LOGOS_DIR / f"{stem}{ext}").unlink(missing_ok=True)
+        except AttributeError:
+            candidate = USER_LOGOS_DIR / f"{stem}{ext}"
+            if candidate.exists():  # pragma: no cover - fallback for Python < 3.8
+                candidate.unlink()
+
+    shutil.copy2(logo_path, target)
+    return target
+
+
+def remove_logo_override(name: str) -> None:
+    """Remove user-provided logo for *name* if it exists."""
+
+    stem = _sanitize_filename(name)
+    for ext in LOGO_EXTENSIONS:
+        path = USER_LOGOS_DIR / f"{stem}{ext}"
+        if path.exists():
+            path.unlink(missing_ok=True)
 
 
 def save_user_legal_entities(data: Dict[str, Any]) -> None:
