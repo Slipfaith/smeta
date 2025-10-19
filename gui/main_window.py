@@ -34,7 +34,6 @@ from gui.settings_dialog import SettingsDialog
 from gui.styles import APP_STYLE
 from gui.utils import format_language_display
 from gui.rates_manager_window import RatesManagerWindow
-from gui.memes_window import MemeWindow
 from logic import rates_importer
 from logic.user_config import add_language, load_languages
 from logic.importers import import_project_info, import_xml_reports
@@ -77,7 +76,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.legal_entity_meta = get_legal_entity_metadata()
         self.currency_symbol = ""
         self.rates_window: Optional[RatesManagerWindow] = None
-        self.meme_window: Optional[MemeWindow] = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
         # Create labels early so slots triggered during initialization
         # (e.g. vat spin value changes) can safely update them.
@@ -121,8 +119,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.project_menu = self._create_project_menu(lang)
         self.export_menu = self._create_export_menu(lang)
         self.rates_menu = self._create_rates_menu(lang)
-        self.memes_action = self._make_action(tr("Мемы", lang), self.open_memes_window)
-        self.menuBar().addAction(self.memes_action)
         self.pm_action = self._make_action(tr("Проджект менеджер", lang), self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
         self.update_menu = self._create_update_menu(lang)
@@ -338,8 +334,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_title()
         if self.rates_window:
             self.rates_window.set_language(lang)
-        if self.meme_window:
-            self.meme_window.set_language(lang)
         self.update_menu_texts()
 
     def update_menu_texts(self):
@@ -355,7 +349,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.save_pdf_action.setText(tr("Сохранить PDF", lang))
         self.rates_menu.setTitle(tr("Импорт ставок", lang))
         self.import_rates_action.setText(tr("Импортировать из Excel", lang))
-        self.memes_action.setText(tr("Мемы", lang))
         self.pm_action.setText(tr("Проджект менеджер", lang))
         self.update_menu.setTitle(tr("Обновление", lang))
         self.check_updates_action.setText(tr("Проверить обновления", lang))
@@ -369,15 +362,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def manual_update_check(self):
         check_for_updates(self, force=True)
-
-    def open_memes_window(self) -> None:
-        if self.meme_window is None:
-            self.meme_window = MemeWindow(self.gui_lang, self)
-        else:
-            self.meme_window.set_language(self.gui_lang)
-        self.meme_window.show()
-        self.meme_window.raise_()
-        self.meme_window.activateWindow()
 
     def open_settings_dialog(self) -> None:
         dialog = SettingsDialog(self.gui_lang, self)
