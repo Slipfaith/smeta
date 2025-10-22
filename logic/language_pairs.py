@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QComboBox
 
 from gui.language_pair import LanguagePairWidget
 from logic.translation_config import tr
@@ -109,8 +109,7 @@ class LanguagePairsMixin:
 
         self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
 
-        self.source_lang_combo.setCurrentIndex(0)
-        self.target_lang_combo.setCurrentIndex(0)
+        self._reset_language_pair_inputs()
 
     def _extract_pair_parts(self, pair_key: str) -> Tuple[str, str]:
         for sep in (" → ", " - "):
@@ -157,3 +156,41 @@ class LanguagePairsMixin:
         self.update_total()
 
         self._update_language_variant_regions_from_pairs([])
+
+    def _reset_language_pair_inputs(self) -> None:
+        """Return language combo boxes to their default selections."""
+
+        self._select_language_in_combo(self.source_lang_combo, "English")
+        self._select_language_in_combo(self.target_lang_combo, "English")
+
+    def _select_language_in_combo(self, combo: QComboBox, en_name: str) -> None:
+        """Select a language in ``combo`` by its English name.
+
+        Falls back to the first available option when the requested language is
+        missing. If the combo box is editable and empty, its edit text is
+        cleared.
+        """
+
+        normalized = en_name.strip().lower()
+        target_index = -1
+        for idx in range(combo.count()):
+            data = combo.itemData(idx)
+            if (
+                isinstance(data, dict)
+                and str(data.get("en", "")).strip().lower() == normalized
+            ):
+                target_index = idx
+                break
+
+        combo.blockSignals(True)
+        try:
+            if target_index >= 0:
+                combo.setCurrentIndex(target_index)
+            elif combo.count() > 0:
+                combo.setCurrentIndex(0)
+            else:
+                combo.setCurrentIndex(-1)
+            if combo.isEditable() and combo.currentIndex() < 0:
+                combo.setEditText("")
+        finally:
+            combo.blockSignals(False)
