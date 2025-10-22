@@ -209,13 +209,32 @@ def _try_qt_filecontents_bytes(mime, formats: Sequence[str], index: int = 0) -> 
     logger.warning("Failed to obtain FileContents payload after %d attempts", len(candidates))
     return b""
 
-def _decode_filename_from_descriptor(descriptor_bytes: bytes, wide: bool) -> str:
-    # FILEGROUPDESCRIPTOR: first 4 bytes = count, then descriptors
+def _decode_filename_from_descriptor(
+    descriptor_bytes: bytes, entry_size: int, index: int, wide: bool
+) -> str:
+    """Extract ``index`` filename from FILEGROUPDESCRIPTOR payload."""
+
+    start = 4 + index * entry_size
+    if start >= len(descriptor_bytes):
+        return ""
+
+    end = min(start + entry_size, len(descriptor_bytes))
+    chunk = descriptor_bytes[start:end]
+
     # внутри entry: имя начинается примерно с offset 72 (ANSI) / 76+ (W)
-    enc = "utf-16le" if wide else (locale.getpreferredencoding(False) or "utf-8")
-    tail = descriptor_bytes[76:] if wide else descriptor_bytes[72:]
-    name = tail.decode(enc, errors="ignore").split("\x00", 1)[0].strip()
-    return name or "outlook_message.msg"
+    if wide:
+        offset = 76
+        encoding = "utf-16le"
+    else:
+        offset = 72
+        encoding = locale.getpreferredencoding(False) or "utf-8"
+
+    if offset >= len(chunk):
+        return ""
+
+    name_bytes = chunk[offset:]
+    name = name_bytes.decode(encoding, errors="ignore").split("\x00", 1)[0].strip()
+    return name
 
 def _read_descriptor(mime, descriptor_format: str) -> Tuple[int, int, bytes, bool]:
     """Return (count, entry_size, descriptor_bytes, is_wide)."""
@@ -348,19 +367,36 @@ def _extract_outlook_messages(mime) -> List[str]:
     if descriptor_format:
         count, entry_size, desc_bytes, is_wide = _read_descriptor(mime, descriptor_format)
         if count > 0 and len(desc_bytes) >= 4 + entry_size:
-            # one message (по твоему сценарию)
-            filename = _decode_filename_from_descriptor(desc_bytes, is_wide)
-            payload = _try_qt_filecontents_bytes(mime, formats, index=0)
-            if payload:
-                fd, temp_path = tempfile.mkstemp(prefix="smeta_outlook_", suffix=os.path.splitext(filename)[1] or ".msg")
+            filenames: List[Tuple[int, str]] = []
+            for index in range(count):
+                name = _decode_filename_from_descriptor(
+                    desc_bytes, entry_size, index, is_wide
+                )
+                filenames.append((index, name or ""))
+
+            msg_candidates = [item for item in filenames if item[1].lower().endswith(".msg")]
+            ordered = msg_candidates or filenames or [(0, "")]
+
+            for index, filename in ordered:
+                payload = _try_qt_filecontents_bytes(mime, formats, index=index)
+                if not payload:
+                    continue
+
+                suffix = os.path.splitext(filename)[1] or ".msg"
+                fd, temp_path = tempfile.mkstemp(
+                    prefix="smeta_outlook_",
+                    suffix=suffix,
+                )
                 os.close(fd)
                 with open(temp_path, "wb") as f:
                     f.write(payload)
                 _OUTLOOK_TEMP_FILES.add(temp_path)
-                logger.info("Created temporary Outlook file %s (FileContents path)", temp_path)
+                logger.info(
+                    "Created temporary Outlook file %s (FileContents path)", temp_path
+                )
                 return [temp_path]
-            else:
-                logger.warning("FileContents empty; switching to COM fallback")
+
+            logger.warning("FileContents empty for all descriptor entries; switching to COM fallback")
 
     # 3) COM fallback using RenPrivateMessages / RenPrivateItem
     pairs = _parse_ren_private_messages(mime)
