@@ -210,6 +210,8 @@ def test_extract_outlook_messages_com_fallback(monkeypatch, tmp_path):
         return str(path)
 
     monkeypatch.setattr(drop_areas, "_save_msg_via_outlook_com", fake_save_msg)
+    rebuild_calls = []
+    monkeypatch.setattr(drop_areas, "rebuild_outlook_com_cache", lambda: rebuild_calls.append(True))
 
     created_paths = drop_areas._extract_outlook_messages(mime)
 
@@ -223,6 +225,8 @@ def test_extract_outlook_messages_com_fallback(monkeypatch, tmp_path):
             if os.path.exists(path):
                 os.remove(path)
             drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+    assert rebuild_calls == [True]
 
 
 def test_extract_outlook_messages_handles_ansi_descriptor():

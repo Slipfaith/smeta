@@ -22,15 +22,25 @@ def test_rebuild_outlook_com_cache_removes_gen_py_on_failure(monkeypatch, tmp_pa
     gen_py.mkdir()
 
     ensure_calls = []
+    quit_calls = []
 
     def ensure_dispatch(prog_id):
         ensure_calls.append(prog_id)
         if len(ensure_calls) == 1:
             raise RuntimeError("broken cache")
-        return SimpleNamespace()
+        class FakeOutlook:
+            def Quit(self):
+                quit_calls.append("quit")
+
+        return FakeOutlook()
 
     fake_client = ModuleType("win32com.client")
     fake_client.gencache = SimpleNamespace(EnsureDispatch=ensure_dispatch)
+
+    def get_active_object(_):
+        raise RuntimeError("no running outlook")
+
+    fake_client.GetActiveObject = get_active_object
 
     fake_win32com = ModuleType("win32com")
     fake_win32com.__gen_path__ = str(gen_py)
@@ -56,5 +66,51 @@ def test_rebuild_outlook_com_cache_removes_gen_py_on_failure(monkeypatch, tmp_pa
     outlook_com_cache.rebuild_outlook_com_cache()
 
     assert ensure_calls == ["Outlook.Application", "Outlook.Application"]
+    assert quit_calls == ["quit"]
     assert not gen_py.exists()
+    assert pythoncom_calls in (["init", "uninit"], ["init"])  # CoUninitialize optional if init failed
+
+
+def test_rebuild_outlook_com_cache_does_not_quit_running_outlook(monkeypatch):
+    ensure_calls = []
+    quit_calls = []
+
+    def ensure_dispatch(prog_id):
+        ensure_calls.append(prog_id)
+
+        class FakeOutlook:
+            def Quit(self):
+                quit_calls.append("quit")
+
+        return FakeOutlook()
+
+    fake_client = ModuleType("win32com.client")
+    fake_client.gencache = SimpleNamespace(EnsureDispatch=ensure_dispatch)
+    fake_client.GetActiveObject = lambda prog_id: SimpleNamespace()
+
+    fake_win32com = ModuleType("win32com")
+    fake_win32com.__gen_path__ = None
+    fake_win32com.client = fake_client
+
+    pythoncom_calls = []
+
+    fake_pythoncom = ModuleType("pythoncom")
+
+    def co_init():
+        pythoncom_calls.append("init")
+
+    def co_uninit():
+        pythoncom_calls.append("uninit")
+
+    fake_pythoncom.CoInitialize = co_init
+    fake_pythoncom.CoUninitialize = co_uninit
+
+    monkeypatch.setitem(sys.modules, "win32com", fake_win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", fake_client)
+    monkeypatch.setitem(sys.modules, "pythoncom", fake_pythoncom)
+
+    outlook_com_cache.rebuild_outlook_com_cache()
+
+    assert ensure_calls == ["Outlook.Application"]
+    assert quit_calls == []
     assert pythoncom_calls in (["init", "uninit"], ["init"])  # CoUninitialize optional if init failed
