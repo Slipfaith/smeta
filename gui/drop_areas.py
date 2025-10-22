@@ -243,6 +243,23 @@ def _collect_existing_msg_paths(mime) -> List[str]:
             paths.append(path)
     return paths
 
+
+def mime_contains_outlook_message(mime) -> bool:
+    """Return True if mime data represents an Outlook message payload."""
+
+    return bool(_collect_existing_msg_paths(mime) or _mime_has_outlook_messages(mime))
+
+
+def extract_outlook_message_paths(mime) -> List[str]:
+    """Return file paths for Outlook messages contained in the mime data."""
+
+    existing_paths = _collect_existing_msg_paths(mime)
+    if existing_paths:
+        return existing_paths
+    if _mime_has_outlook_messages(mime):
+        return _extract_outlook_messages(mime)
+    return []
+
 # --------------------------- COM fallback (MAPI) ---------------------------
 
 def _read_bytes(mime, fmt: str) -> bytes:
@@ -448,7 +465,7 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
-        if _collect_existing_msg_paths(mime) or _mime_has_outlook_messages(mime):
+        if mime_contains_outlook_message(mime):
             event.acceptProposedAction()
             self._set_drag_state(True)
         else:
@@ -456,7 +473,7 @@ class ProjectInfoDropArea(QGroupBox):
 
     def dragMoveEvent(self, event):
         mime = event.mimeData()
-        if _collect_existing_msg_paths(mime) or _mime_has_outlook_messages(mime):
+        if mime_contains_outlook_message(mime):
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -468,12 +485,7 @@ class ProjectInfoDropArea(QGroupBox):
         self._set_drag_state(False)
         mime = event.mimeData()
 
-        # 1) paths from Explorer (real .msg)
-        msg_paths = _collect_existing_msg_paths(mime)
-
-        # 2) Outlook virtual files / COM fallback
-        if not msg_paths:
-            msg_paths = _extract_outlook_messages(mime)
+        msg_paths = extract_outlook_message_paths(mime)
 
         if not msg_paths:
             event.ignore()

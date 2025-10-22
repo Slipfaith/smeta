@@ -260,6 +260,10 @@ TRANSLATIONS = {
         "en": "Failed to process Outlook file",
     },
     "Outlook письмо": {"ru": "Outlook письмо", "en": "Outlook message"},
+    "Заменить текущие данные на данные из письма?": {
+        "ru": "Заменить текущие данные на данные из письма?",
+        "en": "Replace current data with information from the email?",
+    },
     "Файл": {"ru": "Файл", "en": "File"},
     "Обновление": {"ru": "Обновление", "en": "Update"},
     "Проверить обновления": {"ru": "Проверить обновления", "en": "Check for updates"},
