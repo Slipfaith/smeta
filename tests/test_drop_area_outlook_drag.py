@@ -301,3 +301,40 @@ def test_collect_existing_msg_paths_returns_existing_files(tmp_path):
     expected = os.path.normpath(str(existing_file))
     result = [os.path.normpath(path) for path in drop_areas._collect_existing_msg_paths(mime)]
     assert result == [expected]
+
+
+def test_dispatch_outlook_application_falls_back_to_dispatch(monkeypatch):
+    dispatch_called = []
+
+    class FakeClient:
+        def __init__(self):
+            self.gencache = SimpleNamespace(EnsureDispatch=self._ensure_dispatch)
+
+        def _ensure_dispatch(self, prog_id):
+            raise AttributeError("CLSIDToClassMap")
+
+        def Dispatch(self, prog_id):
+            dispatch_called.append(prog_id)
+            return SimpleNamespace(prog_id=prog_id)
+
+    result = drop_areas._dispatch_outlook_application(FakeClient())
+
+    assert dispatch_called == ["Outlook.Application"]
+    assert result.prog_id == "Outlook.Application"
+
+
+def test_dispatch_outlook_application_raises_when_dispatch_fails():
+    class FakeClient:
+        def __init__(self):
+            self.gencache = SimpleNamespace(EnsureDispatch=self._ensure_dispatch)
+
+        def _ensure_dispatch(self, prog_id):
+            raise AttributeError("CLSIDToClassMap")
+
+        def Dispatch(self, prog_id):
+            raise RuntimeError("dispatch failed")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        drop_areas._dispatch_outlook_application(FakeClient())
+
+    assert exc_info.value.__cause__ is not None

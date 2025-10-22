@@ -282,6 +282,30 @@ def _parse_ren_private_messages(mime) -> List[Tuple[bytes, Optional[bytes]]]:
             logger.warning("Failed to parse %s: %s", fmt, ex)
     return []
 
+def _dispatch_outlook_application(win32com_client):
+    """Return Outlook Application COM object while handling gencache corruption."""
+
+    last_error: Optional[Exception] = None
+
+    gencache = getattr(win32com_client, "gencache", None)
+    if gencache is not None:
+        try:
+            return gencache.EnsureDispatch("Outlook.Application")
+        except Exception as exc:  # pragma: no cover - depends on local COM cache state
+            last_error = exc
+            logger.warning(
+                "win32com gencache.EnsureDispatch failed: %s; falling back to Dispatch",
+                exc,
+            )
+
+    try:
+        return win32com_client.Dispatch("Outlook.Application")
+    except Exception as exc:
+        if last_error is not None:
+            raise exc from last_error
+        raise
+
+
 def _save_msg_via_outlook_com(eid: bytes, store: Optional[bytes]) -> Optional[str]:
     """
     Use Outlook COM to fetch MailItem by EntryID/StoreID and SaveAs temp .msg
@@ -295,7 +319,7 @@ def _save_msg_via_outlook_com(eid: bytes, store: Optional[bytes]) -> Optional[st
 
     try:
         pythoncom.CoInitialize()
-        app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+        app = _dispatch_outlook_application(win32com.client)
         ns = app.GetNamespace("MAPI")
         # EntryID/StoreID должны быть в hex-строке для GetItemFromID
         def b2hex(b: bytes) -> str:
@@ -377,7 +401,7 @@ def _extract_outlook_messages(mime) -> List[str]:
         import win32com.client  # pywin32
         import pythoncom
         pythoncom.CoInitialize()
-        app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+        app = _dispatch_outlook_application(win32com.client)
         expl = app.ActiveExplorer()
         if expl and expl.Selection and expl.Selection.Count >= 1:
             item = expl.Selection.Item(1)
