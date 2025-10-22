@@ -13,8 +13,15 @@ from PySide6.QtWidgets import (
     QSplitter,
     QComboBox,
 )
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal, QEvent
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QDesktopServices,
+    QGuiApplication,
+    QKeyEvent,
+    QKeySequence,
+)
 
 from logic.project_manager import ProjectManager
 from updater import (
@@ -25,7 +32,11 @@ from updater import (
     check_for_updates_background,
 )
 from gui.language_pair import LanguagePairWidget
-from gui.drop_areas import DropArea
+from gui.drop_areas import (
+    DropArea,
+    extract_outlook_message_paths,
+    mime_contains_outlook_message,
+)
 from gui.panels.left_panel import create_left_panel
 from gui.panels.right_panel import create_right_panel
 from gui.project_manager_dialog import ProjectManagerDialog
@@ -84,6 +95,12 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.project_manager = ProjectManager(self)
         self.setup_ui()
         self.setup_style()
+        self._clipboard_filter_installed = False
+        self._skip_next_paste_keypress = False
+        app = QGuiApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+            self._clipboard_filter_installed = True
         self.update_available.connect(self._handle_background_update_available)
         QTimer.singleShot(0, self.auto_check_for_updates)
 
@@ -450,6 +467,23 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.tabs.insertTab(0, drop_area, tr("Языковые пары", lang))
         self.pairs_scroll = drop_area
 
+    def _project_info_has_user_data(self) -> bool:
+        if any(
+            widget.text().strip()
+            for widget in (
+                self.project_name_edit,
+                self.client_name_edit,
+                self.contact_person_edit,
+                self.email_edit,
+            )
+        ):
+            return True
+        if self.legal_entity_combo.currentIndex() > 0:
+            return True
+        if self.currency_combo.currentIndex() > 0:
+            return True
+        return False
+
     def handle_project_info_drop(self, paths: List[str]):
         lang = self.gui_lang
         result, errors = import_project_info(paths)
@@ -569,6 +603,60 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         QMessageBox.information(
             self, tr("Готово", lang), "\n\n".join(message_sections)
         )
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ShortcutOverride:
+            if isinstance(event, QKeyEvent) and event.matches(QKeySequence.Paste):
+                if self.isActiveWindow() and self._handle_outlook_clipboard_paste():
+                    self._skip_next_paste_keypress = True
+                    event.accept()
+                    return True
+        elif event.type() == QEvent.KeyPress:
+            if isinstance(event, QKeyEvent) and event.matches(QKeySequence.Paste):
+                if self._skip_next_paste_keypress:
+                    self._skip_next_paste_keypress = False
+                    return True
+                if self.isActiveWindow() and self._handle_outlook_clipboard_paste():
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _handle_outlook_clipboard_paste(self) -> bool:
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return False
+        mime = clipboard.mimeData()
+        if mime is None or not mime_contains_outlook_message(mime):
+            return False
+
+        if self._project_info_has_user_data():
+            lang = self.gui_lang
+            answer = QMessageBox.question(
+                self,
+                tr("Подтверждение", lang),
+                tr("Заменить текущие данные на данные из письма?", lang),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return True
+
+        msg_paths = extract_outlook_message_paths(mime)
+        if not msg_paths:
+            logger.warning("Clipboard reported Outlook data but no message paths were extracted")
+            return True
+
+        logger.info("Processing Outlook clipboard paste with message paths: %s", msg_paths)
+        self.handle_project_info_drop(msg_paths)
+        return True
+
+    def closeEvent(self, event):
+        if getattr(self, "_clipboard_filter_installed", False):
+            app = QGuiApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self)
+            self._clipboard_filter_installed = False
+            self._skip_next_paste_keypress = False
+        super().closeEvent(event)
 
     def _hide_drop_hint(self):
         if getattr(self, "drop_hint_label", None):
