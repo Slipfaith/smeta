@@ -10,6 +10,7 @@ from PySide6.QtCore import QByteArray
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from gui.styles import DROP_AREA_BASE_STYLE, DROP_AREA_DRAG_ONLY_STYLE
+from logic.outlook_com_cache import rebuild_outlook_com_cache
 from logic.translation_config import tr
 
 logger = logging.getLogger(__name__)
@@ -385,6 +386,7 @@ def _extract_outlook_messages(mime) -> List[str]:
                 return [temp_path]
             else:
                 logger.warning("FileContents empty; switching to COM fallback")
+                rebuild_outlook_com_cache()
 
     # 3) COM fallback using RenPrivateMessages / RenPrivateItem
     pairs = _parse_ren_private_messages(mime)

@@ -30,6 +30,34 @@ def _resolve_gen_py_path(win32com_module) -> Optional[Path]:
     return path
 
 
+def _outlook_was_running(win32com_client) -> bool:
+    """Return ``True`` if an Outlook instance is already running."""
+
+    get_active = getattr(win32com_client, "GetActiveObject", None)
+    if get_active is None:
+        return False
+    try:
+        get_active("Outlook.Application")
+    except Exception:
+        return False
+    return True
+
+
+def _maybe_quit_outlook(app, was_running: bool) -> None:
+    """Close a temporary Outlook instance that was spawned for cache rebuild."""
+
+    if was_running:
+        return
+
+    quit_method = getattr(app, "Quit", None)
+    if quit_method is None:
+        return
+    try:
+        quit_method()
+    except Exception as exc:
+        logger.debug("Failed to quit temporary Outlook instance: %s", exc)
+
+
 def rebuild_outlook_com_cache() -> None:
     """Ensure the Outlook COM cache is usable on Windows systems."""
 
@@ -44,17 +72,24 @@ def rebuild_outlook_com_cache() -> None:
         logger.debug("Skipping COM cache rebuild; pywin32 missing: %s", exc)
         return
 
+    pythoncom_module = pythoncom
     coinitialized = False
     try:
         try:
-            pythoncom.CoInitialize()
+            pythoncom_module.CoInitialize()
             coinitialized = True
         except Exception:
             # CoInitialize may fail if COM already initialised; continue anyway.
             coinitialized = False
 
+        outlook_running = _outlook_was_running(win32com.client)
+
+        def ensure_dispatch_and_cleanup() -> None:
+            app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+            _maybe_quit_outlook(app, outlook_running)
+
         try:
-            win32com.client.gencache.EnsureDispatch("Outlook.Application")
+            ensure_dispatch_and_cleanup()
             return
         except Exception as exc:
             logger.warning(
@@ -78,7 +113,7 @@ def rebuild_outlook_com_cache() -> None:
             logger.debug("win32com gen_py cache directory not found; skipping removal")
 
         try:
-            win32com.client.gencache.EnsureDispatch("Outlook.Application")
+            ensure_dispatch_and_cleanup()
         except Exception as exc:
             logger.error("Failed to rebuild win32com cache for Outlook: %s", exc)
         else:
@@ -86,6 +121,6 @@ def rebuild_outlook_com_cache() -> None:
     finally:
         if coinitialized:
             try:
-                pythoncom.CoUninitialize()
+                pythoncom_module.CoUninitialize()
             except Exception:
                 pass
