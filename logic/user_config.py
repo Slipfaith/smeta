@@ -31,7 +31,7 @@ def _default_languages() -> List[Dict[str, str]]:
     return [
         {"en": "English",               "ru": "Английский"},
         {"en": "Russian",               "ru": "Русский"},
-        {"en": "Chinese (Simplified)",  "ru": "Китайский (упрощ.)"},
+        {"en": "Chinese (Simplified)",  "ru": "Китайский (Упрощенный)"},
         {"en": "Chinese (Traditional)", "ru": "Китайский (традиц.)"},
         {"en": "German",                "ru": "Немецкий"},
         {"en": "French",                "ru": "Французский"},
@@ -102,32 +102,31 @@ def load_languages() -> List[Dict[str, str]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, list):
-                out: List[Dict[str, str]] = []
-                seen = set()
-                for it in data:
-                    if not isinstance(it, dict):
-                        continue
-                    en = str(it.get("en", "")).strip()
-                    ru = str(it.get("ru", "")).strip()
-                    # хотя бы одно название должно быть
-                    if not (en or ru):
-                        continue
-                    # автозаполнение недостающего
-                    if not en:
-                        en = ru
-                    if not ru:
-                        ru = en
-                    key = _norm_pair(en, ru)
-                    if key not in seen:
-                        out.append({"en": en, "ru": ru})
-                        seen.add(key)
-                return out
     except Exception:
-        pass
-    # если не удалось — перезапишем дефолтом
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(_default_languages(), f, ensure_ascii=False, indent=2)
+        return _default_languages()
+
+    if isinstance(data, list):
+        out: List[Dict[str, str]] = []
+        seen = set()
+        for it in data:
+            if not isinstance(it, dict):
+                continue
+            en = str(it.get("en", "")).strip()
+            ru = str(it.get("ru", "")).strip()
+            # хотя бы одно название должно быть
+            if not (en or ru):
+                continue
+            # автозаполнение недостающего
+            if not en:
+                en = ru
+            if not ru:
+                ru = en
+            key = _norm_pair(en, ru)
+            if key not in seen:
+                out.append({"en": en, "ru": ru})
+                seen.add(key)
+        return out
+
     return _default_languages()
 
 
