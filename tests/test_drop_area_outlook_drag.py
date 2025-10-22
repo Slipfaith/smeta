@@ -283,6 +283,37 @@ def test_extract_outlook_messages_handles_multiple_items():
             drop_areas._OUTLOOK_TEMP_FILES.discard(path)
 
 
+def test_extract_outlook_messages_prefers_msg_entry_over_attachments():
+    mime = QMimeData()
+
+    descriptor_format = 'application/x-qt-windows-mime;value="FileGroupDescriptorW"'
+    contents_base = 'application/x-qt-windows-mime;value="FileContents"'
+
+    filenames = ["Attachment.docx", "Message.msg"]
+    descriptor_bytes = _make_descriptor_bytes(filenames)
+
+    mime.setData(descriptor_format, QByteArray(descriptor_bytes))
+
+    attachment_bytes = b"attachment"
+    message_bytes = b"actual-message"
+    mime.setData(f"{contents_base};index=0", QByteArray(attachment_bytes))
+    mime.setData(f"{contents_base};index=1", QByteArray(message_bytes))
+
+    created_paths = drop_areas._extract_outlook_messages(mime)
+
+    try:
+        assert len(created_paths) == 1
+        saved_path = created_paths[0]
+        assert saved_path.lower().endswith(".msg")
+        with open(saved_path, "rb") as fh:
+            assert fh.read() == message_bytes
+    finally:
+        for path in created_paths:
+            if os.path.exists(path):
+                os.remove(path)
+            drop_areas._OUTLOOK_TEMP_FILES.discard(path)
+
+
 def test_collect_existing_msg_paths_ignores_missing_files(tmp_path):
     mime = QMimeData()
     missing_path = tmp_path / "missing.msg"
