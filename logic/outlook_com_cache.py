@@ -48,6 +48,7 @@ def _get_outlook_process_ids() -> Optional[set[int]]:
             check=True,
             capture_output=True,
             text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception as exc:  # pragma: no cover - depends on local environment
         logger.debug("Failed to query Outlook processes: %s", exc)
