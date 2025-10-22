@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Set
 
 try:
     import psutil  # type: ignore
 except Exception:  # pragma: no cover - psutil might be missing
     psutil = None  # type: ignore
+
+
+_managed_excel_pids: Set[int] = set()
 
 
 def close_excel_processes() -> None:
@@ -19,12 +22,14 @@ def close_excel_processes() -> None:
     do not hang in memory if something goes wrong in the application.  It is
     a no-op on non-Windows systems or when :mod:`psutil` is not available.
     """
-    if sys.platform != "win32" or psutil is None:
+    if sys.platform != "win32" or psutil is None or not _managed_excel_pids:
         return
 
-    for proc in psutil.process_iter(["name"]):
-        if _is_excel_process(proc):
+    for proc in psutil.process_iter(["name", "pid"]):
+        pid = getattr(proc, "info", {}).get("pid")
+        if isinstance(pid, int) and pid in _managed_excel_pids and _is_excel_process(proc):
             _terminate_process(proc)
+            _managed_excel_pids.discard(pid)
 
 
 def _is_excel_process(proc) -> bool:
@@ -99,10 +104,12 @@ def apply_separators(xlsx_path: str, lang: str) -> bool:
     another format on a system with different locale settings.
     """
     excel = wb = None
+    pid: Optional[int] = None
     try:
         import win32com.client  # type: ignore
 
         excel = win32com.client.Dispatch("Excel.Application")
+        pid = _register_excel_process(excel)
         excel.Visible = False
         excel.DisplayAlerts = False
 
@@ -123,3 +130,32 @@ def apply_separators(xlsx_path: str, lang: str) -> bool:
                 excel.Quit()
             except Exception:
                 pass
+        _unregister_excel_pid(pid)
+
+
+def _register_excel_process(excel) -> Optional[int]:
+    pid = _get_excel_pid(excel)
+    if pid is not None:
+        _managed_excel_pids.add(pid)
+    return pid
+
+
+def _unregister_excel_pid(pid: Optional[int]) -> None:
+    if isinstance(pid, int):
+        _managed_excel_pids.discard(pid)
+
+
+def _get_excel_pid(excel) -> Optional[int]:
+    try:
+        hwnd = getattr(excel, "Hwnd", None)
+        if hwnd:
+            try:
+                import win32process  # type: ignore
+            except Exception:
+                return None
+            _thread_id, pid = win32process.GetWindowThreadProcessId(hwnd)  # type: ignore[arg-type]
+            if isinstance(pid, int):
+                return pid
+    except Exception:
+        return None
+    return None

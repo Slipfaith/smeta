@@ -5,8 +5,9 @@ from logic import excel_process
 
 
 class _FakeProc:
-    def __init__(self, name: str, terminate_raises: bool = False):
-        self.info = {"name": name}
+    def __init__(self, name: str, pid: int, terminate_raises: bool = False):
+        self.info = {"name": name, "pid": pid}
+        self.pid = pid
         self.terminated = False
         self.killed = False
         self._terminate_raises = terminate_raises
@@ -36,6 +37,7 @@ def test_close_excel_processes_skips_on_non_windows(monkeypatch):
 
     monkeypatch.setattr(excel_process.sys, "platform", "linux")
     monkeypatch.setattr(excel_process, "psutil", _Sentinel)
+    excel_process._managed_excel_pids.clear()
 
     excel_process.close_excel_processes()
 
@@ -43,8 +45,8 @@ def test_close_excel_processes_skips_on_non_windows(monkeypatch):
 
 
 def test_close_excel_processes_terminates_matching_processes(monkeypatch):
-    target = _FakeProc("EXCEL.EXE")
-    other = _FakeProc("notepad.exe")
+    target = _FakeProc("EXCEL.EXE", pid=123)
+    other = _FakeProc("notepad.exe", pid=456)
 
     class _FakePsutil:
         @staticmethod
@@ -53,16 +55,19 @@ def test_close_excel_processes_terminates_matching_processes(monkeypatch):
 
     monkeypatch.setattr(excel_process.sys, "platform", "win32")
     monkeypatch.setattr(excel_process, "psutil", _FakePsutil)
+    excel_process._managed_excel_pids.clear()
+    excel_process._managed_excel_pids.add(target.pid)
 
     excel_process.close_excel_processes()
 
     assert target.terminated is True
     assert other.terminated is False
     assert target.killed is False
+    assert target.pid not in excel_process._managed_excel_pids
 
 
 def test_close_excel_processes_kills_when_terminate_fails(monkeypatch):
-    target = _FakeProc("excel.exe", terminate_raises=True)
+    target = _FakeProc("excel.exe", pid=999, terminate_raises=True)
 
     class _FakePsutil:
         @staticmethod
@@ -71,10 +76,13 @@ def test_close_excel_processes_kills_when_terminate_fails(monkeypatch):
 
     monkeypatch.setattr(excel_process.sys, "platform", "win32")
     monkeypatch.setattr(excel_process, "psutil", _FakePsutil)
+    excel_process._managed_excel_pids.clear()
+    excel_process._managed_excel_pids.add(target.pid)
 
     excel_process.close_excel_processes()
 
     assert target.killed is True
+    assert target.pid not in excel_process._managed_excel_pids
 
 
 class _FakeWorkbook:
@@ -147,6 +155,8 @@ def test_apply_separators_success(monkeypatch, tmp_path):
     excel = _FakeExcel(workbook)
 
     _install_fake_win32(monkeypatch, excel)
+    monkeypatch.setattr(excel_process, "_get_excel_pid", lambda _: 321)
+    excel_process._managed_excel_pids.clear()
 
     xlsx_path = tmp_path / "example.xlsx"
     xlsx_path.write_text("dummy")
@@ -160,6 +170,7 @@ def test_apply_separators_success(monkeypatch, tmp_path):
     assert excel.DecimalSeparator == ","
     assert excel.ThousandsSeparator == " "
     assert excel.UseSystemSeparators is True
+    assert excel_process._managed_excel_pids == set()
 
 
 def test_apply_separators_handles_failure_and_cleans_up(monkeypatch, tmp_path):
@@ -167,6 +178,8 @@ def test_apply_separators_handles_failure_and_cleans_up(monkeypatch, tmp_path):
     excel = _FakeExcel(workbook)
 
     _install_fake_win32(monkeypatch, excel)
+    monkeypatch.setattr(excel_process, "_get_excel_pid", lambda _: 654)
+    excel_process._managed_excel_pids.clear()
 
     xlsx_path = tmp_path / "example.xlsx"
     xlsx_path.write_text("dummy")
@@ -176,3 +189,4 @@ def test_apply_separators_handles_failure_and_cleans_up(monkeypatch, tmp_path):
     assert workbook.closed is True
     assert excel.quit_called is True
     assert excel.UseSystemSeparators is True
+    assert excel_process._managed_excel_pids == set()
