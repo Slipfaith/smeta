@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 
 from gui.main_window import TranslationCostCalculator
 from logic.excel_process import close_excel_processes
+from logic.outlook_com_cache import rebuild_outlook_com_cache
 from logic.logging_utils import setup_logging
 
 
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 def main() -> int:
     setup_logging()
     logger.info("Starting application")
+
+    rebuild_outlook_com_cache()
 
     app = QApplication(sys.argv)
 
