@@ -17,6 +17,7 @@ from gui.styles import (
     PALETTE_TOOLTIP_TEXT_COLOR,
     PALETTE_WINDOW_COLOR,
     PALETTE_WINDOW_TEXT_COLOR,
+    TITLE_BAR_STYLE,
 )
 
 

@@ -64,7 +64,10 @@ a = Analysis(
     pathex=[str(project_root)],
     binaries=[],
     datas=additional_datas,
-    hiddenimports=[],
+    hiddenimports=[
+        'gui.styles',
+        'utils.theme',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
