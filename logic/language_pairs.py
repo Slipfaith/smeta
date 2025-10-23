@@ -160,7 +160,6 @@ class LanguagePairsMixin:
     def _reset_language_pair_inputs(self) -> None:
         """Return language combo boxes to their default selections."""
 
-        self._select_language_in_combo(self.source_lang_combo, "English")
         self._select_language_in_combo(self.target_lang_combo, "English")
 
     def _select_language_in_combo(self, combo: QComboBox, en_name: str) -> None:
