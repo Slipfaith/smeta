@@ -1183,7 +1183,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                         repeat_total += add_val
                     else:
                         new_total += add_val
-                total_volume = new_total + repeat_total
                 repeat_row = table.rowCount() - 1
                 if replace:
                     table.item(0, 1).setText(str(new_total))
@@ -1206,11 +1205,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                     table.item(0, 1).setText(str(prev_new + new_total))
                     table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
             else:
-                total_volume = 0
                 for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
                     row_name = row_info["name"]
                     add_val = volumes.get(row_name, 0)
-                    total_volume += add_val
 
                     if replace:
                         table.item(idx, 1).setText(str(add_val))
@@ -1244,13 +1241,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.update_total()
 
         self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
-
-        result_msg = "Обработка завершена!\n\n"
-        if added_pairs > 0:
-            result_msg += f"Добавлено новых языковых пар: {added_pairs}\n"
-        if updated_pairs > 0:
-            result_msg += f"Обновлено существующих пар: {updated_pairs}\n"
-        result_msg += f"\nВсего обработано языковых пар: {len(data)}"
 
 
     def load_project_data(self, project_data: Dict[str, Any]):

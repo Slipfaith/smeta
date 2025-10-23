@@ -1,35 +1,11 @@
-import os
 import logging
-import tempfile
+import os
 from contextlib import contextmanager
-from typing import Dict, Any
+from typing import Any, Dict
 
-from .excel_exporter import ExcelExporter
 from .excel_process import temporary_separators
 
 logger = logging.getLogger("PdfExporter")
-
-
-def export_to_pdf(
-    project_data: Dict[str, Any],
-    output_path: str,
-    template_path: str,
-    currency: str = "RUB",
-    lang: str = "ru",
-) -> bool:
-    """Export project data to PDF using ExcelExporter and xlsx_to_pdf conversion."""
-    try:
-        exporter = ExcelExporter(template_path, currency=currency, lang=lang)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            xlsx_path = os.path.join(tmpdir, "temp.xlsx")
-            if not exporter.export_to_excel(project_data, xlsx_path, fit_to_page=True):
-                return False
-            if not xlsx_to_pdf(xlsx_path, output_path, lang=lang):
-                raise RuntimeError("Не удалось конвертировать в PDF")
-        return True
-    except Exception:
-        logger.exception("Ошибка экспорта PDF")
-        return False
 
 
 def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
