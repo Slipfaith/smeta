@@ -142,6 +142,7 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     pairs_layout.addLayout(add_pair_layout)
 
     window.add_pair_btn = QPushButton(tr("Добавить языковую пару", lang))
+    window.add_pair_btn.setFocusPolicy(Qt.NoFocus)
     window.add_pair_btn.clicked.connect(window.add_language_pair)
     pairs_layout.addWidget(window.add_pair_btn)
 
