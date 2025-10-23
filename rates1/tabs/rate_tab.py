@@ -961,7 +961,17 @@ class RateTab(QWidget):
 
     @staticmethod
     def _safe_text(value) -> str:
-        return str(value).strip() if value is not None else ""
+        if value is None:
+            return ""
+
+        text_getter = getattr(value, "text", None)
+        if callable(text_getter):
+            value = text_getter()
+
+        if value is None:
+            return ""
+
+        return str(value).strip().casefold()
 
     def _normalized_keys(self, value: str) -> List[str]:
         text = self._safe_text(value)
@@ -1390,13 +1400,9 @@ class RateTab(QWidget):
                 item.setData(Qt.BackgroundRole, None)
 
     @staticmethod
-    def _safe_text(item):
-        return "" if item is None else item.text()
-
-    @staticmethod
     def _parse_float(value):
         try:
-            if value in ("", "N/A"):
+            if not value or value == "n/a":
                 return None
             return float(value)
         except (TypeError, ValueError):
