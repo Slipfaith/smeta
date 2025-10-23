@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtWidgets import QMessageBox, QComboBox
 
@@ -42,28 +42,77 @@ class LanguagePairsMixin:
         }
 
     def add_language_pair(self):
-        src = self._parse_combo(self.source_lang_combo)
-        tgt = self._parse_combo(self.target_lang_combo)
-        if not src["text"] or not tgt["text"]:
-            lang = self.gui_lang
+        lang = self.gui_lang
+        sources = [entry for entry in self._collect_source_entries() if entry.get("text")]
+        if not sources:
+            QMessageBox.warning(self, tr("Ошибка", lang), tr("Выберите исходный язык.", lang))
+            return
+
+        pairs_to_add = self._collect_target_entries(sources)
+        if not pairs_to_add:
             QMessageBox.warning(
-                self, tr("Ошибка", lang), tr("Выберите/введите оба языка", lang)
+                self,
+                tr("Ошибка", lang),
+                tr("Не удалось определить целевые языки. Проверьте настройки соответствий.", lang),
             )
             return
 
+        added = False
+        duplicates: List[str] = []
+        for src_entry, tgt_entry in pairs_to_add:
+            success, pair_key = self._add_language_pair_from_entries(src_entry, tgt_entry)
+            if success:
+                added = True
+            elif pair_key:
+                duplicates.append(pair_key)
+
+        if not added:
+            if duplicates:
+                QMessageBox.warning(
+                    self,
+                    tr("Ошибка", lang),
+                    tr("Все выбранные языковые пары уже существуют.", lang),
+                )
+            return
+
+        self.update_pairs_list()
+        self.update_total()
+
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
+
+        self._after_language_pairs_added()
+        self._reset_language_pair_inputs()
+
+    def _collect_source_entries(self) -> List[Dict[str, Any]]:
+        src = self._parse_combo(self.source_lang_combo)
+        return [src] if src.get("text") else []
+
+    def _collect_target_entries(
+        self, sources: Iterable[Dict[str, Any]]
+    ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        sources = list(sources)
+        if not sources:
+            return []
+        tgt = self._parse_combo(self.target_lang_combo)
+        if not tgt.get("text"):
+            return []
+        return [(sources[0], tgt)]
+
+    def _add_language_pair_from_entries(
+        self, src: Dict[str, Any], tgt: Dict[str, Any]
+    ) -> Tuple[bool, Optional[str]]:
+        if not src.get("text") or not tgt.get("text"):
+            return False, None
+
         def key_name(obj: Dict[str, Any]) -> str:
-            return obj["en"] or obj["ru"] or obj["text"]
+            return obj.get("en") or obj.get("ru") or obj.get("text") or ""
 
         left_key = key_name(src)
         right_key = key_name(tgt)
         pair_key = f"{left_key} → {right_key}"
 
         if pair_key in self.language_pairs:
-            lang = self.gui_lang
-            QMessageBox.warning(
-                self, tr("Ошибка", lang), tr("Такая языковая пара уже существует", lang)
-            )
-            return
+            return False, pair_key
 
         self._store_pair_language_inputs(pair_key, src, tgt, left_key, right_key)
 
@@ -72,16 +121,15 @@ class LanguagePairsMixin:
         tgt_labels = self._labels_from_entry(labels.get("target", {}))
         lang_key = "ru" if self.lang_display_ru else "en"
         locale = "ru" if self.lang_display_ru else "en"
-        src_value = src_labels[lang_key]
-        tgt_value = tgt_labels[lang_key]
+        src_value = src_labels.get(lang_key, "")
+        tgt_value = tgt_labels.get(lang_key, "")
         if not src_value:
             src_value = self._prepare_language_label(src.get("text", ""), locale)
         if not tgt_value:
             tgt_value = self._prepare_language_label(tgt.get("text", ""), locale)
-        display_name = f"{src_value} - {tgt_value}"
-        header_value = tgt_labels[lang_key]
+        display_name = f"{src_value} - {tgt_value}" if tgt_value else src_value
+        header_value = tgt_labels.get(lang_key, "")
         if not header_value:
-            locale = "ru" if self.lang_display_ru else "en"
             header_value = self._prepare_language_label(tgt.get("text", ""), locale)
         self.pair_headers[pair_key] = header_value
 
@@ -103,13 +151,13 @@ class LanguagePairsMixin:
             widget.set_only_new_and_repeats_mode(True)
 
         self.pairs_layout.insertWidget(self.pairs_layout.count() - 1, widget)
+        return True, pair_key
 
-        self.update_pairs_list()
-        self.update_total()
+    def _after_language_pairs_added(self) -> None:
+        """Hook for subclasses to react after pairs are added."""
 
-        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
-
-        self._reset_language_pair_inputs()
+        # Default implementation does nothing.
+        return
 
     def _extract_pair_parts(self, pair_key: str) -> Tuple[str, str]:
         for sep in (" → ", " - "):
