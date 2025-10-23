@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
-    QToolButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -133,32 +132,9 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     pairs_layout.addLayout(mode_layout)
 
     add_pair_layout = QHBoxLayout()
-    source_container = QVBoxLayout()
-    source_row = QHBoxLayout()
     window.source_lang_combo = window._make_lang_combo()
     window.source_lang_combo.setEditable(True)
-    window.source_lang_combo.currentTextChanged.connect(
-        window._on_source_combo_changed
-    )
-    source_row.addWidget(window.source_lang_combo)
-    window.source_multi_button = QToolButton()
-    window.source_multi_button.setText("⋯")
-    window.source_multi_button.setToolTip(tr("Выбрать несколько исходных языков", lang))
-    window.source_multi_button.setFocusPolicy(Qt.NoFocus)
-    window.source_multi_button.clicked.connect(window.open_multi_source_dialog)
-    source_row.addWidget(window.source_multi_button)
-    source_container.addLayout(source_row)
-    window.multi_source_summary_label = QLabel()
-    window.multi_source_summary_label.setWordWrap(True)
-    window.multi_source_summary_label.hide()
-    source_container.addWidget(window.multi_source_summary_label)
-    window.source_target_settings_btn = QPushButton(tr("Настроить соответствия", lang))
-    window.source_target_settings_btn.setFlat(True)
-    window.source_target_settings_btn.setCursor(Qt.PointingHandCursor)
-    window.source_target_settings_btn.setFocusPolicy(Qt.NoFocus)
-    window.source_target_settings_btn.clicked.connect(window.open_source_target_settings)
-    source_container.addWidget(window.source_target_settings_btn)
-    add_pair_layout.addLayout(source_container)
+    add_pair_layout.addWidget(window.source_lang_combo)
     add_pair_layout.addWidget(QLabel("→"))
     window.target_lang_combo = window._make_lang_combo()
     window.target_lang_combo.setEditable(True)

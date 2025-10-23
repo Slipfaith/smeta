@@ -1,11 +1,10 @@
 import json
 import os
 import platform
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import List, Dict, Optional, Tuple
 
 APP_NAME = "ProjectCalculator"
 LANG_FILE = "languages.json"
-SOURCE_TARGET_FILE = "source_target_mapping.json"
 
 
 def _appdata_base() -> str:
@@ -195,79 +194,3 @@ def add_language(en: str, ru: str) -> bool:
         langs[idx] = new_entry
 
     return save_languages(langs)
-
-
-def _mapping_path() -> str:
-    return os.path.join(get_appdata_dir(), SOURCE_TARGET_FILE)
-
-
-def load_source_target_mapping() -> Dict[str, List[str]]:
-    """Load persisted mapping between source and target languages."""
-
-    path = _mapping_path()
-    if not os.path.exists(path):
-        return {}
-
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-
-    result: Dict[str, List[str]] = {}
-    if not isinstance(data, dict):
-        return result
-
-    for src, targets in data.items():
-        if not isinstance(src, str):
-            continue
-        if not isinstance(targets, Iterable):
-            continue
-        cleaned: List[str] = []
-        seen = set()
-        for tgt in targets:
-            if not isinstance(tgt, str):
-                continue
-            norm = tgt.strip()
-            if not norm:
-                continue
-            lowered = norm.lower()
-            if lowered in seen:
-                continue
-            cleaned.append(norm)
-            seen.add(lowered)
-        key = src.strip()
-        if key and cleaned:
-            result[key] = cleaned
-    return result
-
-
-def save_source_target_mapping(mapping: Dict[str, Iterable[str]]) -> bool:
-    """Persist mapping between source and target languages to the user config."""
-
-    payload: Dict[str, List[str]] = {}
-    for raw_key, raw_values in mapping.items():
-        key = str(raw_key or "").strip()
-        if not key:
-            continue
-        cleaned: List[str] = []
-        seen = set()
-        for value in raw_values:
-            text = str(value or "").strip()
-            if not text:
-                continue
-            lowered = text.lower()
-            if lowered in seen:
-                continue
-            cleaned.append(text)
-            seen.add(lowered)
-        if cleaned:
-            payload[key] = cleaned
-
-    path = _mapping_path()
-    try:
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
-        return False

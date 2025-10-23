@@ -44,15 +44,8 @@ from gui.project_setup_widget import ProjectSetupWidget
 from gui.styles import APP_STYLE
 from gui.utils import format_language_display
 from gui.rates_manager_window import RatesManagerWindow
-from gui.source_selection_dialog import SourceSelectionDialog
-from gui.source_target_settings_dialog import SourceTargetSettingsDialog
 from logic import rates_importer
-from logic.user_config import (
-    add_language,
-    load_languages,
-    load_source_target_mapping,
-    save_source_target_mapping,
-)
+from logic.user_config import add_language, load_languages
 from logic.importers import import_project_info, import_xml_reports
 from logic.service_config import ServiceConfig
 from logic.pm_store import load_pm_history, save_pm_history
@@ -83,11 +76,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.lang_display_ru: bool = True  # Controls language for quotation/Excel
         self.gui_lang: str = "ru"  # Controls application GUI language
         self._languages: List[Dict[str, str]] = load_languages()
-        self._multi_source_selection: List[Dict[str, Any]] = []
-        self._suppress_source_combo_change = False
-        self._source_target_mapping: Dict[str, List[str]] = (
-            self._normalize_source_target_mapping(load_source_target_mapping())
-        )
         self.pm_managers, self.pm_last_index = load_pm_history()
         if 0 <= self.pm_last_index < len(self.pm_managers):
             self.current_pm = self.pm_managers[self.pm_last_index]
@@ -268,9 +256,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             combo.setCurrentIndex(-1)
             combo.setEditText(prev_text)
 
-        if combo is getattr(self, "source_lang_combo", None):
-            self._update_multi_source_summary()
-
     def set_app_language(self, lang: str):
         """Change application GUI language via menu action."""
         self.gui_lang = lang
@@ -312,8 +297,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 self.pair_headers[pair_key] = display_name
         self.update_pairs_list()
 
-        self._update_multi_source_summary()
-
     def _update_gui_language(self, lang: str):
         """Update visible GUI texts when language is changed via menu."""
         self.project_group.setTitle(tr("Информация о проекте", lang))
@@ -335,12 +318,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
         self.current_pairs_label.setText(tr("Текущие пары", lang) + ":")
         self.clear_pairs_btn.setText(tr("Очистить", lang))
-        if getattr(self, "source_multi_button", None):
-            self.source_multi_button.setToolTip(
-                tr("Выбрать несколько исходных языков", lang)
-            )
-        if getattr(self, "source_target_settings_btn", None):
-            self.source_target_settings_btn.setText(tr("Настроить соответствия", lang))
         self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
         self.add_lang_group.setTitle(tr("Добавить язык в справочник", lang))
         self.lang_ru_label.setText(tr("Название RU", lang) + ":")
@@ -371,7 +348,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if self.rates_window:
             self.rates_window.set_language(lang)
         self.update_menu_texts()
-        self._update_multi_source_summary()
 
     def update_menu_texts(self):
         lang = self.gui_lang
@@ -796,76 +772,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 }
         return {"en": "", "ru": "", "text": text, "dict": False}
 
-    def _normalize_language_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        en_name = str(entry.get("en", "")).strip()
-        ru_name = str(entry.get("ru", "")).strip()
-        text_value = str(entry.get("text", "")).strip()
-        if not text_value:
-            text_value = en_name or ru_name
-        normalized = {
-            "en": en_name,
-            "ru": ru_name,
-            "text": text_value,
-            "dict": True,
-        }
-        normalized["key"] = entry.get("key") or en_name or ru_name or text_value
-        return normalized
-
-    def _normalize_language_key(self, name: str) -> str:
-        return str(name or "").strip().lower()
-
-    def _normalize_source_target_mapping(
-        self, mapping: Dict[str, Iterable[str]]
-    ) -> Dict[str, List[str]]:
-        normalized: Dict[str, List[str]] = {}
-        for src, targets in (mapping or {}).items():
-            src_norm = self._normalize_language_key(src)
-            if not src_norm:
-                continue
-            cleaned: List[str] = []
-            seen = set()
-            for tgt in targets:
-                tgt_norm = self._normalize_language_key(tgt)
-                if not tgt_norm or tgt_norm == src_norm or tgt_norm in seen:
-                    continue
-                cleaned.append(tgt_norm)
-                seen.add(tgt_norm)
-            if cleaned:
-                normalized[src_norm] = cleaned
-        return normalized
-
-    def _export_source_target_mapping(self) -> Dict[str, List[str]]:
-        exported: Dict[str, List[str]] = {}
-        for src_norm, targets in self._source_target_mapping.items():
-            src_info = self._language_entry_from_norm(src_norm)
-            src_en = src_info.get("en") or src_norm
-            seen = set()
-            cleaned: List[str] = []
-            for tgt_norm in targets:
-                tgt_info = self._language_entry_from_norm(tgt_norm)
-                tgt_en = tgt_info.get("en") or tgt_norm
-                if not tgt_en or tgt_en in seen:
-                    continue
-                seen.add(tgt_en)
-                cleaned.append(tgt_en)
-            if cleaned:
-                exported[src_en] = cleaned
-        return exported
-
-    def _language_entry_from_norm(self, norm: str) -> Dict[str, Any]:
-        info = self._find_language_by_key(norm)
-        en_name = info.get("en") or norm
-        ru_name = info.get("ru") or norm
-        text_value = ru_name if self.lang_display_ru else en_name
-        entry = {
-            "en": en_name,
-            "ru": ru_name,
-            "text": text_value,
-            "dict": True,
-            "key": en_name or ru_name or norm,
-        }
-        return entry
-
     def _store_pair_language_inputs(
         self,
         pair_key: str,
@@ -899,89 +805,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             "target": target_entry,
         }
 
-    def _collect_source_entries(self) -> List[Dict[str, Any]]:
-        if self._multi_source_selection:
-            entries: List[Dict[str, Any]] = []
-            seen = set()
-            for entry in self._multi_source_selection:
-                normalized = self._normalize_language_key(
-                    entry.get("key") or entry.get("en") or entry.get("text")
-                )
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                entries.append(self._normalize_language_entry(entry))
-            if entries:
-                return entries
-        return super()._collect_source_entries()
-
-    def _collect_target_entries(
-        self, sources: Iterable[Dict[str, Any]]
-    ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
-        normalized_sources = [self._normalize_language_entry(src) for src in sources]
-        if not normalized_sources:
-            return []
-
-        if not self._multi_source_selection:
-            return super()._collect_target_entries(normalized_sources)
-
-        fallback_pairs = super()._collect_target_entries(normalized_sources)
-        fallback_entry = fallback_pairs[0][1] if fallback_pairs else None
-        fallback_valid = bool(fallback_entry and fallback_entry.get("text"))
-
-        results: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-        seen_pairs: Set[Tuple[str, str]] = set()
-
-        for src in normalized_sources:
-            src_norm = self._normalize_language_key(src.get("key") or src.get("en") or src.get("text"))
-            target_norms = self._source_target_mapping.get(src_norm, [])
-            added_for_source = False
-            for tgt_norm in target_norms:
-                if tgt_norm == src_norm:
-                    continue
-                target_entry = self._language_entry_from_norm(tgt_norm)
-                tgt_norm_key = self._normalize_language_key(
-                    target_entry.get("key") or target_entry.get("en") or target_entry.get("text")
-                )
-                if not tgt_norm_key:
-                    continue
-                pair_key = (src_norm, tgt_norm_key)
-                if pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
-                results.append((src, target_entry))
-                added_for_source = True
-            if not added_for_source and fallback_valid:
-                fallback_copy = dict(fallback_entry)
-                tgt_norm_key = self._normalize_language_key(
-                    fallback_copy.get("key")
-                    or fallback_copy.get("en")
-                    or fallback_copy.get("text")
-                )
-                pair_key = (src_norm, tgt_norm_key)
-                if tgt_norm_key and pair_key not in seen_pairs:
-                    seen_pairs.add(pair_key)
-                    results.append((src, fallback_copy))
-
-        if not results and fallback_valid:
-            fallback_copy = dict(fallback_entry)
-            tgt_norm_key = self._normalize_language_key(
-                fallback_copy.get("key")
-                or fallback_copy.get("en")
-                or fallback_copy.get("text")
-            )
-            for src in normalized_sources:
-                src_norm = self._normalize_language_key(
-                    src.get("key") or src.get("en") or src.get("text")
-                )
-                pair_key = (src_norm, tgt_norm_key)
-                if not tgt_norm_key or pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
-                results.append((src, dict(fallback_copy)))
-
-        return results
-
     def _pair_sort_key(self, pair_key: str) -> str:
         _, right = self._extract_pair_parts(pair_key)
         return right or pair_key
@@ -999,95 +822,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 map_key = (language_code, script_code)
                 region_map.setdefault(map_key, set()).add(territory_code)
         self._language_variant_regions = region_map
-
-    def _update_multi_source_summary(self) -> None:
-        label = getattr(self, "multi_source_summary_label", None)
-        if label is None:
-            return
-        if not self._multi_source_selection:
-            label.hide()
-            label.clear()
-            return
-
-        lang = self.gui_lang
-        locale = "ru" if self.lang_display_ru else "en"
-        names: List[str] = []
-        seen = set()
-        for entry in self._multi_source_selection:
-            value = entry.get("ru") if locale == "ru" else entry.get("en")
-            if not value:
-                value = entry.get("text") or entry.get("en") or entry.get("ru") or ""
-            prepared = self._prepare_language_label(value, locale) if value else ""
-            if not prepared or prepared in seen:
-                continue
-            seen.add(prepared)
-            names.append(prepared)
-
-        if not names:
-            label.setText(tr("Исходные языки не выбраны", lang))
-            label.show()
-            return
-
-        summary = ", ".join(names)
-        label.setText(tr("Выбраны исходные языки: {0}", lang).format(summary))
-        label.show()
-
-    def _on_source_combo_changed(self, _text: str) -> None:
-        if self._suppress_source_combo_change:
-            return
-        if self._multi_source_selection:
-            self._multi_source_selection = []
-            self._update_multi_source_summary()
-
-    def open_multi_source_dialog(self) -> None:
-        selected_norms = [
-            self._normalize_language_key(
-                entry.get("key") or entry.get("en") or entry.get("text")
-            )
-            for entry in self._multi_source_selection
-        ]
-        dialog = SourceSelectionDialog(
-            self,
-            self._languages,
-            selected_norms,
-            self.gui_lang,
-            self.lang_display_ru,
-        )
-        if not dialog.exec():
-            return
-
-        selected = [self._normalize_language_entry(entry) for entry in dialog.selected_languages()]
-        self._multi_source_selection = selected
-        if selected:
-            first = selected[0]
-            self._suppress_source_combo_change = True
-            try:
-                self._select_language_in_combo(
-                    self.source_lang_combo, first.get("en") or first.get("text", "")
-                )
-            finally:
-                self._suppress_source_combo_change = False
-        self._update_multi_source_summary()
-
-    def open_source_target_settings(self) -> None:
-        dialog = SourceTargetSettingsDialog(
-            self,
-            self._languages,
-            self._export_source_target_mapping(),
-            self.gui_lang,
-            self.lang_display_ru,
-        )
-        if not dialog.exec():
-            return
-
-        result = dialog.result_mapping()
-        self._source_target_mapping = self._normalize_source_target_mapping(result)
-        if not save_source_target_mapping(result):
-            QMessageBox.warning(
-                self,
-                tr("Ошибка", self.gui_lang),
-                tr("Не удалось сохранить настройки.", self.gui_lang),
-            )
 
     def _prepare_language_label(self, name: str, locale: str) -> str:
         if not name:
