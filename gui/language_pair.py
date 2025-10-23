@@ -183,10 +183,16 @@ class LanguagePairWidget(QWidget):
                 fuzzy_actions[act] = cfg
 
             row_cfg = rows[row]
-            if row_cfg.get("deleted"):
-                del_act.setEnabled(False)
-            else:
-                restore_act.setEnabled(False)
+
+            selected_deleted_rows = sorted(
+                {
+                    index.row()
+                    for index in table.selectedIndexes()
+                    if 0 <= index.row() < len(rows)
+                    and rows[index.row()].get("deleted")
+                }
+            )
+
             active_rows = sum(1 for r in rows if not r.get("deleted"))
             selected_rows = sorted(
                 {
@@ -196,12 +202,21 @@ class LanguagePairWidget(QWidget):
                     and not rows[index.row()].get("deleted")
                 }
             )
+            can_delete = False
             if selected_rows:
-                if active_rows - len(selected_rows) < 1:
-                    del_act.setEnabled(False)
+                can_delete = active_rows - len(selected_rows) >= 1
             else:
-                if active_rows <= 1:
-                    del_act.setEnabled(False)
+                can_delete = active_rows > 1 and not row_cfg.get("deleted")
+            if not can_delete:
+                del_act.setEnabled(False)
+
+            can_restore = False
+            if selected_deleted_rows:
+                can_restore = True
+            elif row_cfg.get("deleted"):
+                can_restore = True
+            if not can_restore:
+                restore_act.setEnabled(False)
             action = menu.exec(table.mapToGlobal(pos))
             if action == add_act:
                 self._add_row_after(table, rows, group, row)
@@ -209,7 +224,8 @@ class LanguagePairWidget(QWidget):
                 targets = selected_rows if selected_rows else [row]
                 self._delete_rows(table, rows, group, targets)
             elif action == restore_act:
-                self._restore_row(table, rows, group, row)
+                targets = selected_deleted_rows if selected_deleted_rows else [row]
+                self._restore_rows(table, rows, group, targets)
             elif action in fuzzy_actions:
                 self._add_row_after(table, rows, group, row, fuzzy_actions[action])
 
@@ -314,6 +330,9 @@ class LanguagePairWidget(QWidget):
                     item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 else:
                     item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            font = item.font()
+            font.setStrikeOut(deleted)
+            item.setFont(font)
 
     def _delete_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
         self._delete_rows(table, rows, group, [row])
@@ -351,12 +370,19 @@ class LanguagePairWidget(QWidget):
         self.update_rates_and_sums(table, rows, base_rate_row)
 
     def _restore_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
+        self._restore_rows(table, rows, group, [row])
+
+    def _restore_rows(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, targets: List[int]):
         base_rate_row = getattr(group, 'base_rate_row', None)
-        self._set_row_deleted(table, rows, row, False)
-        if rows[row]['is_base'] and base_rate_row is None:
-            base_rate_row = row
+        restored_any = False
+        for row in sorted({r for r in targets if 0 <= r < len(rows) and rows[r].get('deleted')}):
+            self._set_row_deleted(table, rows, row, False)
+            restored_any = True
+            if rows[row]['is_base']:
+                base_rate_row = row
+        if restored_any:
             setattr(group, 'base_rate_row', base_rate_row)
-        self.update_rates_and_sums(table, rows, base_rate_row)
+            self.update_rates_and_sums(table, rows, base_rate_row)
 
     # ---------------- Logic ----------------
     def set_only_new_and_repeats_mode(self, enabled: bool):

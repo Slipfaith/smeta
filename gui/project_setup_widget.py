@@ -75,6 +75,7 @@ class ProjectSetupWidget(QWidget):
         total_item.setFlags(Qt.ItemIsEnabled)
         self.table.setItem(0, 3, total_item)
         self.rows_deleted = [False]
+        self._set_row_deleted(0, False)
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -104,22 +105,34 @@ class ProjectSetupWidget(QWidget):
                     and not self.rows_deleted[index.row()]
                 }
             )
+            selected_deleted = sorted(
+                {
+                    index.row()
+                    for index in self.table.selectedIndexes()
+                    if 0 <= index.row() < len(self.rows_deleted)
+                    and self.rows_deleted[index.row()]
+                }
+            )
 
-            if 0 <= row < len(self.rows_deleted):
-                if self.rows_deleted[row]:
-                    del_act.setEnabled(False)
-                else:
-                    restore_act.setEnabled(False)
-            else:
+            if not (0 <= row < len(self.rows_deleted)):
                 del_act.setEnabled(False)
                 restore_act.setEnabled(False)
 
+            can_delete = False
             if selectable:
-                if active_rows - len(selectable) < 1:
-                    del_act.setEnabled(False)
-            else:
-                if active_rows <= 1:
-                    del_act.setEnabled(False)
+                can_delete = active_rows - len(selectable) >= 1
+            elif 0 <= row < len(self.rows_deleted):
+                can_delete = (not self.rows_deleted[row]) and active_rows > 1
+            if not can_delete:
+                del_act.setEnabled(False)
+
+            can_restore = False
+            if selected_deleted:
+                can_restore = True
+            elif 0 <= row < len(self.rows_deleted) and self.rows_deleted[row]:
+                can_restore = True
+            if not can_restore:
+                restore_act.setEnabled(False)
             action = menu.exec(self.table.mapToGlobal(pos))
             if action == add_act:
                 self.add_row_after(row)
@@ -127,7 +140,8 @@ class ProjectSetupWidget(QWidget):
                 targets = selectable if selectable else [row]
                 self.remove_rows(targets)
             elif action == restore_act:
-                self.restore_row_at(row)
+                targets = selected_deleted if selected_deleted else [row]
+                self.restore_rows(targets)
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
@@ -212,8 +226,14 @@ class ProjectSetupWidget(QWidget):
         self.update_sums()
 
     def restore_row_at(self, row: int):
-        if row >= 0 and self.rows_deleted[row]:
+        self.restore_rows([row])
+
+    def restore_rows(self, rows: list[int]):
+        restored = False
+        for row in sorted({r for r in rows if 0 <= r < len(self.rows_deleted) and self.rows_deleted[r]}):
             self._set_row_deleted(row, False)
+            restored = True
+        if restored:
             self.update_sums()
 
     def _set_row_deleted(self, row: int, deleted: bool):
@@ -226,13 +246,16 @@ class ProjectSetupWidget(QWidget):
                 item.setForeground(Qt.gray)
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 if col == 3:
-                    item.setText("0.00")
+                    item.setText(format_amount(0.0, self.lang))
             else:
                 item.setForeground(Qt.black)
                 flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
                 if col != 3:
                     flags |= Qt.ItemIsEditable
                 item.setFlags(flags)
+            font = item.font()
+            font.setStrikeOut(deleted)
+            item.setFont(font)
 
     def set_volume(self, value: float):
         if self.table.rowCount() == 0:
