@@ -514,12 +514,18 @@ class RatesMappingWidget(QWidget):
     def _set_excel_text_from_match(
         self, cell: SourceTargetCell, row: int, column: int, value: Optional[str]
     ) -> None:
+        new_text = (value or "").strip()
+        if not new_text and cell.excel_text().strip():
+            # Сохраняем предыдущие настройки, если новый набор ставок
+            # не содержит подходящего соответствия.
+            return
+
         self._updating_excel_from_matches = True
         try:
             cell.set_excel_text(value or "")
         finally:
             self._updating_excel_from_matches = False
-        if not (value or "").strip():
+        if not new_text:
             self._manual_excel_cells.discard((row, column))
 
     def _is_manual_excel_cell(self, row: int, column: int) -> bool:
