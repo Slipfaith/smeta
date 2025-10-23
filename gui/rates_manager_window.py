@@ -375,6 +375,7 @@ class RatesMappingWidget(QWidget):
         self._apply_matches(auto_fill=True)
         self._update_status()
         self._refresh_all_rate_display()
+        self._force_table_refresh()
 
     def auto_fill_from_rates(self, force: bool = False) -> None:
         _ = force  # параметр сохранён для совместимости с существующими вызовами
@@ -538,7 +539,7 @@ class RatesMappingWidget(QWidget):
             if item is not None:
                 item.setText("")
 
-        self.table.viewport().update()
+        self._force_table_refresh()
         self._update_import_button_state()
 
     def _set_excel_text_from_match(
@@ -610,22 +611,49 @@ class RatesMappingWidget(QWidget):
     def _refresh_rate_display(self, row: int) -> None:
         if row >= self.table.rowCount():
             return
-        item = self.table.item(row, 2)
-        if item is None:
-            item = QTableWidgetItem("")
-            item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 2, item)
         key = self.selected_rate_key()
         storage = self._ensure_rate_storage(row)
         value = storage.get(key, "")
+        new_item = QTableWidgetItem(value)
+        new_item.setTextAlignment(Qt.AlignCenter)
         self._updating_rate_item = True
-        item.setText(value)
+        self.table.setItem(row, 2, new_item)
         self._updating_rate_item = False
         self._update_import_button_state()
+        self._force_table_refresh([row])
 
     def _refresh_all_rate_display(self) -> None:
         for row in range(self.table.rowCount()):
             self._refresh_rate_display(row)
+
+    def _force_table_refresh(self, rows: Optional[Iterable[int]] = None) -> None:
+        model = self.table.model()
+        if model is None or self.table.columnCount() == 0:
+            self.table.viewport().update()
+            return
+
+        if rows is None:
+            if self.table.rowCount() == 0:
+                self.table.viewport().update()
+                return
+            top_row = 0
+            bottom_row = self.table.rowCount() - 1
+        else:
+            valid_rows = [
+                row
+                for row in rows
+                if isinstance(row, int) and 0 <= row < self.table.rowCount()
+            ]
+            if not valid_rows:
+                self.table.viewport().update()
+                return
+            top_row = min(valid_rows)
+            bottom_row = max(valid_rows)
+
+        top_left = model.index(top_row, 0)
+        bottom_right = model.index(bottom_row, self.table.columnCount() - 1)
+        model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+        self.table.viewport().update()
 
     def _parse_rate(self, basic: str, complex_: str, hour: str) -> Optional[RateRow]:
         def _to_float(value: str) -> Optional[float]:
