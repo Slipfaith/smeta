@@ -313,6 +313,8 @@ class RatesMappingWidget(QWidget):
             )
             storage = self._ensure_rate_storage(row)
             value = storage.get(key, "").strip()
+            if value.upper() == "N/A":
+                value = ""
             if not src_text or not tgt_text or not value:
                 return False
         return True
@@ -353,6 +355,7 @@ class RatesMappingWidget(QWidget):
         currency: str,
         rate_type: str,
     ) -> None:
+        self._clear_previous_rates()
         self._rates = rates or {}
         self._source_label = source_label
         self._currency = currency
@@ -371,6 +374,7 @@ class RatesMappingWidget(QWidget):
         self._refresh_language_combos()
         self._apply_matches(auto_fill=True)
         self._update_status()
+        self._refresh_all_rate_display()
 
     def auto_fill_from_rates(self, force: bool = False) -> None:
         _ = force  # параметр сохранён для совместимости с существующими вызовами
@@ -509,6 +513,32 @@ class RatesMappingWidget(QWidget):
             else:
                 self._manual_excel_cells.discard(key)
         self._update_rate_from_row(row)
+        self._update_import_button_state()
+
+    def _clear_previous_rates(self) -> None:
+        if self.table.rowCount() == 0:
+            self._manual_excel_cells.clear()
+            self._rate_values.clear()
+            return
+
+        self._manual_excel_cells.clear()
+        self._rate_values.clear()
+
+        for row in range(self.table.rowCount()):
+            for column in (0, 1):
+                widget = self.table.cellWidget(row, column)
+                if isinstance(widget, SourceTargetCell):
+                    widget.set_excel_text("", emit=False)
+
+            storage = self._ensure_rate_storage(row)
+            for key in ("basic", "complex", "hour"):
+                storage[key] = ""
+
+            item = self.table.item(row, 2)
+            if item is not None:
+                item.setText("")
+
+        self.table.viewport().update()
         self._update_import_button_state()
 
     def _set_excel_text_from_match(
