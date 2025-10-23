@@ -30,6 +30,13 @@ def _format_display(text: str, locale: str) -> str:
     if not stripped:
         return ""
     formatted = stripped[0].upper() + stripped[1:]
+    if locale.lower().startswith("ru"):
+        replacements = {
+            "китайский (упрощенная)": "Китайский (упрощенный)",
+        }
+        replacement = replacements.get(formatted.lower())
+        if replacement:
+            formatted = replacement
     return apply_territory_overrides(formatted, locale)
 
 
