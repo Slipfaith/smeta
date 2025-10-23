@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel,
     QHBoxLayout, QComboBox, QTableWidget, QTableWidgetItem,
-    QListWidget, QAbstractItemView,
+    QListWidget, QListWidgetItem, QAbstractItemView,
     QStyledItemDelegate, QHeaderView, QSizePolicy, QLineEdit,
     QDialog, QApplication, QFileDialog
 )
@@ -176,13 +176,38 @@ class RateTab(QWidget):
 
         # --- Поля ввода языков ---
         self.lang_layout = QHBoxLayout()
-        self.source_lang_label = QLabel()
-        self.source_lang_combo = QComboBox()
-        self.selected_target_lang_label = QLabel()
 
-        self.lang_layout.addWidget(self.source_lang_label)
-        self.lang_layout.addWidget(self.source_lang_combo)
+        self.source_section_layout = QVBoxLayout()
+        self.source_section_layout.setContentsMargins(*RATE_TAB_LANG_SECTION_MARGINS)
+        self.source_section_layout.setSpacing(RATE_TAB_LANG_SECTION_SPACING)
+
+        self.source_lang_label = QLabel()
+        self.source_section_layout.addWidget(self.source_lang_label)
+
+        self.source_lang_combo = QComboBox()
+        self.source_section_layout.addWidget(self.source_lang_combo)
+
+        self.source_selection_list = QListWidget()
+        self.source_selection_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.source_selection_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.source_selection_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.source_selection_list.setMinimumWidth(RATE_TAB_LANG_LIST_WIDTH)
+        self.source_selection_list.setMaximumWidth(RATE_TAB_LANG_LIST_WIDTH)
+        self.source_selection_list.setMinimumHeight(RATE_TAB_LANG_LIST_HEIGHT)
+        self.source_selection_list.setMaximumHeight(RATE_TAB_LANG_LIST_HEIGHT)
+        self.source_section_layout.addWidget(self.source_selection_list)
+
+        self.source_selection_list.itemSelectionChanged.connect(
+            self._handle_source_selection_changed
+        )
+        self.source_selection_list.itemChanged.connect(
+            self._handle_source_item_changed
+        )
+
+        self.lang_layout.addLayout(self.source_section_layout)
         self.lang_layout.addStretch()
+
+        self.selected_target_lang_label = QLabel()
         self.lang_layout.addWidget(self.selected_target_lang_label)
         self.layout_main.addLayout(self.lang_layout)
 
@@ -330,6 +355,11 @@ class RateTab(QWidget):
         self._excel_matches: List[rates_importer.PairMatch] = []
         self._missing_rate_color = QColor(RATE_TAB_MISSING_RATE_COLOR)
 
+        self._selected_targets_by_source: Dict[str, List[str]] = {}
+        self._active_source: Optional[str] = None
+        self._source_order: List[str] = []
+        self._block_source_item_signal = False
+
         self.history_data = []
         self.last_saved_selection = None
 
@@ -349,10 +379,9 @@ class RateTab(QWidget):
         # Автопересчёт при смене ставки/валюты
         self.rate_combo.currentIndexChanged.connect(self.process_data)
         self.currency_combo.currentIndexChanged.connect(self.process_data)
-        self.source_lang_combo.currentIndexChanged.connect(self.update_target_languages)
-
-        # При смене SourceLang - обновляем таргеты
-        self.source_lang_combo.currentIndexChanged.connect(self.update_target_languages)
+        self.source_lang_combo.currentIndexChanged.connect(
+            self._handle_source_combo_change
+        )
 
         self.history_combo.currentIndexChanged.connect(self.apply_history_selection)
         self._currency_order = ["USD", "EUR", "RUB", "CNY"]
@@ -435,6 +464,166 @@ class RateTab(QWidget):
         self.selected_target_lang_label.setText(
             tr("Выбрано языков: {0}", lang).format(count)
         )
+
+    # ------------------------------------------------------------------
+    # Source language helpers
+    # ------------------------------------------------------------------
+    def _handle_source_combo_change(self, _index: int) -> None:
+        previous_source = self._active_source
+        if previous_source:
+            previous_targets = [
+                self.selected_lang_list.item(i).text()
+                for i in range(self.selected_lang_list.count())
+            ]
+            self._store_targets_for_source(previous_source, previous_targets)
+
+        current = self.source_lang_combo.currentText().strip()
+        self._sync_source_selection_controls(current)
+        self.update_target_languages()
+
+    def _handle_source_selection_changed(self) -> None:
+        if self._block_source_item_signal:
+            return
+        item = self.source_selection_list.currentItem()
+        if item is None:
+            return
+        text = item.text().strip()
+        if not text:
+            return
+        index = self.source_lang_combo.findText(text)
+        if index < 0:
+            return
+        self.source_lang_combo.blockSignals(True)
+        self.source_lang_combo.setCurrentIndex(index)
+        self.source_lang_combo.blockSignals(False)
+        self._handle_source_combo_change(index)
+
+    def _handle_source_item_changed(self, item: QListWidgetItem) -> None:
+        if self._block_source_item_signal or item is None:
+            return
+        source = item.text().strip()
+        expected = bool(self._selected_targets_by_source.get(source))
+        desired_state = Qt.Checked if expected else Qt.Unchecked
+        if item.checkState() != desired_state:
+            self._block_source_item_signal = True
+            item.setCheckState(desired_state)
+            self._block_source_item_signal = False
+
+    def _sync_source_selection_controls(self, active: str) -> None:
+        if self._block_source_item_signal:
+            return
+        self._block_source_item_signal = True
+        try:
+            if active:
+                for row in range(self.source_selection_list.count()):
+                    item = self.source_selection_list.item(row)
+                    if item and item.text() == active:
+                        self.source_selection_list.setCurrentRow(row)
+                        break
+            else:
+                self.source_selection_list.clearSelection()
+        finally:
+            self._block_source_item_signal = False
+
+    def _find_source_item(self, text: str) -> Optional[QListWidgetItem]:
+        for row in range(self.source_selection_list.count()):
+            item = self.source_selection_list.item(row)
+            if item and item.text() == text:
+                return item
+        return None
+
+    def _set_source_checked(self, source: str, checked: bool) -> None:
+        item = self._find_source_item(source)
+        if item is None:
+            return
+        state = Qt.Checked if checked else Qt.Unchecked
+        if item.checkState() == state:
+            return
+        self._block_source_item_signal = True
+        item.setCheckState(state)
+        self._block_source_item_signal = False
+
+    def _store_targets_for_source(
+        self, source: str, targets: Optional[List[str]] = None
+    ) -> None:
+        source = source.strip()
+        if not source:
+            return
+        if targets is None:
+            targets = [
+                self.selected_lang_list.item(i).text()
+                for i in range(self.selected_lang_list.count())
+            ]
+        unique_targets = []
+        seen: Set[str] = set()
+        for target in targets:
+            normalized = target.strip()
+            if not normalized:
+                continue
+            if normalized in seen:
+                continue
+            unique_targets.append(normalized)
+            seen.add(normalized)
+
+        if unique_targets:
+            self._selected_targets_by_source[source] = unique_targets
+            self._set_source_checked(source, True)
+        else:
+            self._selected_targets_by_source.pop(source, None)
+            self._set_source_checked(source, False)
+
+    def _sync_active_source_selection(self) -> None:
+        current = self._active_source or self.source_lang_combo.currentText().strip()
+        if not current:
+            return
+        self._store_targets_for_source(current)
+
+    def _clear_source_controls(self) -> None:
+        self.source_lang_combo.blockSignals(True)
+        self.source_lang_combo.clear()
+        self.source_lang_combo.blockSignals(False)
+        self._block_source_item_signal = True
+        self.source_selection_list.clear()
+        self._block_source_item_signal = False
+        self._active_source = None
+        self._source_order = []
+
+    def _populate_source_controls(self, sources: List[str]) -> None:
+        self._clear_source_controls()
+        if not sources:
+            self.available_lang_list.clear()
+            self.selected_lang_list.clear()
+            self._update_selection_summary()
+            return
+
+        self._source_order = list(sources)
+        self.source_lang_combo.blockSignals(True)
+        self.source_lang_combo.addItems(sources)
+        self.source_lang_combo.setCurrentIndex(0)
+        self.source_lang_combo.blockSignals(False)
+
+        self._block_source_item_signal = True
+        for text in sources:
+            item = QListWidgetItem(text)
+            item.setFlags(
+                item.flags()
+                | Qt.ItemIsUserCheckable
+                | Qt.ItemIsEnabled
+                | Qt.ItemIsSelectable
+            )
+            item.setCheckState(Qt.Unchecked)
+            self.source_selection_list.addItem(item)
+        self._block_source_item_signal = False
+
+        self._handle_source_combo_change(0)
+
+    def _get_current_selections(self) -> Dict[str, List[str]]:
+        selections: Dict[str, List[str]] = {}
+        for source in self._source_order:
+            targets = self._selected_targets_by_source.get(source, [])
+            if targets:
+                selections[source] = list(targets)
+        return selections
 
     # ----------------------------------------------------------------
     # 1) Загрузка MLV_Rates_USD_EUR_RUR_CNY
@@ -562,6 +751,10 @@ class RateTab(QWidget):
         self.available_lang_list.clear()
         self.selected_lang_list.clear()
         self._update_selection_summary()
+        self._selected_targets_by_source.clear()
+        self._active_source = None
+        self._source_order = []
+        self.last_saved_selection = None
 
         if not self.is_second_file:
             # MLV_Rates_USD_EUR_RUR_CNY
@@ -571,8 +764,7 @@ class RateTab(QWidget):
                 self.df.iloc[:, 0].dropna().tolist(),
                 {"source"},
             )
-            self.source_lang_combo.clear()
-            self.source_lang_combo.addItems(source_list)
+            self._populate_source_controls(source_list)
         else:
             # TEP (Source RU)
             if "SourceLang" not in self.df.columns:
@@ -581,19 +773,30 @@ class RateTab(QWidget):
                 self.df["SourceLang"].dropna().tolist(),
                 {"source"},
             )
-            self.source_lang_combo.clear()
-            self.source_lang_combo.addItems(source_list)
+            self._populate_source_controls(source_list)
 
         self._apply_auto_selection()
 
     def update_target_languages(self):
         if self.df is None:
             return
-        source_lang = self.source_lang_combo.currentText()
+        source_lang = self.source_lang_combo.currentText().strip()
+
+        if self._active_source:
+            previous_targets = [
+                self.selected_lang_list.item(i).text()
+                for i in range(self.selected_lang_list.count())
+            ]
+            self._store_targets_for_source(self._active_source, previous_targets)
 
         self.available_lang_list.clear()
         self.selected_lang_list.clear()
         self._update_selection_summary()
+
+        if not source_lang:
+            return
+
+        self._active_source = source_lang
 
         if not self.is_second_file:
             filtered = self.df[self.df.iloc[:, 0] == source_lang]
@@ -611,6 +814,20 @@ class RateTab(QWidget):
                 {"target"},
             )
             self.available_lang_list.addItems(targets)
+
+        saved_targets = self._selected_targets_by_source.get(source_lang, [])
+        if saved_targets:
+            saved_set = {target.strip() for target in saved_targets}
+            for row in range(self.available_lang_list.count() - 1, -1, -1):
+                item = self.available_lang_list.item(row)
+                if item.text().strip() in saved_set:
+                    self.selected_lang_list.addItem(item.text())
+                    self.available_lang_list.takeItem(row)
+            self.selected_lang_list.sortItems()
+            self._set_source_checked(source_lang, True)
+        else:
+            self._set_source_checked(source_lang, False)
+        self._update_selection_summary()
 
     def set_gui_pairs(self, pairs: Iterable[Tuple[str, str]]):
         cleaned: List[Tuple[str, str]] = []
@@ -639,9 +856,8 @@ class RateTab(QWidget):
         self.last_saved_selection = None
 
         self.available_search.clear()
-        self.source_lang_combo.blockSignals(True)
-        self.source_lang_combo.clear()
-        self.source_lang_combo.blockSignals(False)
+        self._clear_source_controls()
+        self._selected_targets_by_source.clear()
         self.available_lang_list.clear()
         self.selected_lang_list.clear()
 
@@ -945,29 +1161,26 @@ class RateTab(QWidget):
 
     def process_data(self):
         print("=> process_data() called.")
+        self._sync_active_source_selection()
+        selections = self._get_current_selections()
+
         if self.df is None:
             print("process_data: df is None => return")
             self._update_selection_summary()
             self._emit_current_selection()
             return
 
-        source_lang = self.source_lang_combo.currentText()
-        target_languages = [
-            self.selected_lang_list.item(i).text()
-            for i in range(self.selected_lang_list.count())
-        ]
-        lang = self._lang()
-        if not target_languages:
+        if not selections:
             self._update_selection_summary()
             self.table.setRowCount(0)
-            print("process_data: нет target_languages => return")
+            print("process_data: нет выбранных источников => return")
             self._emit_current_selection()
             return
 
+        lang = self._lang()
         self._update_selection_summary()
 
         selected_currency = self.currency_combo.currentData() or "USD"
-
         rate_number = self.rate_combo.currentData() or 1
 
         self.table.setColumnCount(5)
@@ -983,102 +1196,110 @@ class RateTab(QWidget):
 
         if not self.is_second_file:
             print("process_data: MLV_Rates_USD_EUR_RUR_CNY логика...")
-            filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
+            for source_lang, target_languages in selections.items():
+                filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
 
-            for targ in target_languages:
-                row_found = False
-                for _, row_ in filtered_df.iterrows():
-                    if row_.iloc[1] == targ:
-                        row_found = True
-                        try:
-                            # Hourly = округлять до целого => round(..., 0) => int
-                            if selected_currency in ["USD","EUR"]:
-                                if rate_number == 1:
-                                    if selected_currency=="USD":
-                                        col_base = 2
+                for targ in target_languages:
+                    row_found = False
+                    for _, row_ in filtered_df.iterrows():
+                        if row_.iloc[1] == targ:
+                            row_found = True
+                            try:
+                                # Hourly = округлять до целого => round(..., 0) => int
+                                if selected_currency in ["USD", "EUR"]:
+                                    if rate_number == 1:
+                                        if selected_currency == "USD":
+                                            col_base = 2
+                                        else:
+                                            col_base = 5
+                                        basic_round = complex_round = 3
+                                        hour_round = 0
                                     else:
-                                        col_base = 5
-                                    basic_round = complex_round = 3
-                                    hour_round = 0
-                                else:
-                                    if selected_currency=="USD":
-                                        col_base = 8
+                                        if selected_currency == "USD":
+                                            col_base = 8
+                                        else:
+                                            col_base = 11
+                                        basic_round = complex_round = 3
+                                        hour_round = 0
+                                elif selected_currency in ["RUB", "CNY"]:
+                                    if rate_number == 1:
+                                        if selected_currency == "RUB":
+                                            col_base = 15
+                                        else:
+                                            col_base = 21
+                                        basic_round = complex_round = 2
+                                        hour_round = 0
                                     else:
-                                        col_base = 11
-                                    basic_round = complex_round = 3
-                                    hour_round = 0
-                            elif selected_currency in ["RUB","CNY"]:
-                                if rate_number == 1:
-                                    if selected_currency=="RUB":
-                                        col_base = 15
+                                        if selected_currency == "RUB":
+                                            col_base = 18
+                                        else:
+                                            col_base = 24
+                                        basic_round = complex_round = 2
+                                        hour_round = 0
+                                else:
+                                    col_base = None
+
+                                if col_base is not None and (col_base + 2) < len(row_):
+                                    bval = safe_float(row_.iloc[col_base])
+                                    cval = safe_float(row_.iloc[col_base + 1])
+                                    hval = safe_float(row_.iloc[col_base + 2])
+
+                                    if bval is not None:
+                                        b_rounded = round(bval, basic_round)
+                                        basic = format_value(b_rounded)
                                     else:
-                                        col_base = 21
-                                    basic_round = complex_round = 2
-                                    hour_round = 0
-                                else:
-                                    if selected_currency=="RUB":
-                                        col_base = 18
+                                        basic = "N/A"
+
+                                    if cval is not None:
+                                        c_rounded = round(cval, complex_round)
+                                        complex_ = format_value(c_rounded)
                                     else:
-                                        col_base = 24
-                                    basic_round = complex_round = 2
-                                    hour_round = 0
-                            else:
-                                col_base = None
+                                        complex_ = "N/A"
 
-                            if col_base is not None and (col_base + 2) < len(row_):
-                                bval = safe_float(row_.iloc[col_base])
-                                cval = safe_float(row_.iloc[col_base + 1])
-                                hval = safe_float(row_.iloc[col_base + 2])
-
-                                if bval is not None:
-                                    b_rounded = round(bval, basic_round)
-                                    basic = format_value(b_rounded)
+                                    if hval is not None:
+                                        h_rounded = int(round(hval, hour_round))
+                                        hour_ = format_value(h_rounded)
+                                    else:
+                                        hour_ = "N/A"
                                 else:
-                                    basic = "N/A"
-
-                                if cval is not None:
-                                    c_rounded = round(cval, complex_round)
-                                    complex_ = format_value(c_rounded)
-                                else:
-                                    complex_ = "N/A"
-
-                                if hval is not None:
-                                    h_rounded = int(round(hval, hour_round))
-                                    hour_ = format_value(h_rounded)
-                                else:
-                                    hour_ = "N/A"
-                            else:
+                                    basic = complex_ = hour_ = "N/A"
+                            except Exception as e:
+                                print(
+                                    "Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:",
+                                    e,
+                                )
                                 basic = complex_ = hour_ = "N/A"
-                        except Exception as e:
-                            print("Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:", e)
-                            basic = complex_ = hour_ = "N/A"
 
-                        rindex = self.table.rowCount()
-                        self.table.insertRow(rindex)
-                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
-                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
+                            rindex = self.table.rowCount()
+                            self.table.insertRow(rindex)
+                            self.table.setItem(
+                                rindex, 0, QTableWidgetItem(str(source_lang))
+                            )
+                            self.table.setItem(rindex, 1, QTableWidgetItem(targ))
 
-                        b_item = QTableWidgetItem(str(basic))
-                        b_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 2, b_item)
+                            b_item = QTableWidgetItem(str(basic))
+                            b_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 2, b_item)
 
-                        c_item = QTableWidgetItem(str(complex_))
-                        c_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 3, c_item)
+                            c_item = QTableWidgetItem(str(complex_))
+                            c_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 3, c_item)
 
-                        h_item = QTableWidgetItem(str(hour_))
-                        h_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 4, h_item)
+                            h_item = QTableWidgetItem(str(hour_))
+                            h_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 4, h_item)
 
-                if not row_found:
-                    rr = self.table.rowCount()
-                    self.table.insertRow(rr)
-                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
-                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
-                    for cc in [2, 3, 4]:
-                        na_item = QTableWidgetItem("N/A")
-                        na_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rr, cc, na_item)
+                    if not row_found:
+                        rr = self.table.rowCount()
+                        self.table.insertRow(rr)
+                        self.table.setItem(
+                            rr, 0, QTableWidgetItem(str(source_lang))
+                        )
+                        self.table.setItem(rr, 1, QTableWidgetItem(targ))
+                        for cc in [2, 3, 4]:
+                            na_item = QTableWidgetItem("N/A")
+                            na_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rr, cc, na_item)
 
         else:
             print("process_data: TEP (Source RU) логика...")
@@ -1086,86 +1307,91 @@ class RateTab(QWidget):
                 print("НЕТ 'SourceLang'/'TargetLang' => return")
                 return
 
-            filtered_df = self.df[self.df["SourceLang"] == source_lang]
-            for targ in target_languages:
-                row_found = False
-                for _, row_ in filtered_df.iterrows():
-                    if pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ):
-                        row_found = True
-                        if selected_currency=="USD":
-                            if rate_number==1:
-                                col_b = "USD_Basic_R1"
-                                col_c = "USD_Complex_R1"
-                                col_h = "USD_Hourly_R1"
-                                br, cr, hr = 3,3,0
-                            else:
-                                col_b = "USD_Basic_R2"
-                                col_c = "USD_Complex_R2"
-                                col_h = "USD_Hourly_R2"
-                                br, cr, hr = 3,3,0
-                        elif selected_currency=="RUB":
-                            if rate_number==1:
-                                col_b = "RUB_Basic_R1"
-                                col_c = "RUB_Complex_R1"
-                                col_h = "RUB_Hourly_R1"
-                                br, cr, hr = 2,2,0
+            for source_lang, target_languages in selections.items():
+                filtered_df = self.df[self.df["SourceLang"] == source_lang]
+                for targ in target_languages:
+                    row_found = False
+                    for _, row_ in filtered_df.iterrows():
+                        if pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ):
+                            row_found = True
+                            if selected_currency == "USD":
+                                if rate_number == 1:
+                                    col_b = "USD_Basic_R1"
+                                    col_c = "USD_Complex_R1"
+                                    col_h = "USD_Hourly_R1"
+                                    br, cr, hr = 3, 3, 0
+                                else:
+                                    col_b = "USD_Basic_R2"
+                                    col_c = "USD_Complex_R2"
+                                    col_h = "USD_Hourly_R2"
+                                    br, cr, hr = 3, 3, 0
+                            elif selected_currency == "RUB":
+                                if rate_number == 1:
+                                    col_b = "RUB_Basic_R1"
+                                    col_c = "RUB_Complex_R1"
+                                    col_h = "RUB_Hourly_R1"
+                                    br, cr, hr = 2, 2, 0
+                                else:
+                                    col_b = None
+                                    col_c = None
+                                    col_h = None
                             else:
                                 col_b = None
                                 col_c = None
                                 col_h = None
-                        else:
-                            col_b = None
-                            col_c = None
-                            col_h = None
 
-                        bval = safe_float(row_.get(col_b)) if col_b else None
-                        cval = safe_float(row_.get(col_c)) if col_c else None
-                        hval = safe_float(row_.get(col_h)) if col_h else None
+                            bval = safe_float(row_.get(col_b)) if col_b else None
+                            cval = safe_float(row_.get(col_c)) if col_c else None
+                            hval = safe_float(row_.get(col_h)) if col_h else None
 
-                        if bval is not None:
-                            basic_rounded = round(bval, br)
-                            basic = format_value(basic_rounded)
-                        else:
-                            basic = "N/A"
+                            if bval is not None:
+                                basic_rounded = round(bval, br)
+                                basic = format_value(basic_rounded)
+                            else:
+                                basic = "N/A"
 
-                        if cval is not None:
-                            complex_rounded = round(cval, cr)
-                            complex_ = format_value(complex_rounded)
-                        else:
-                            complex_ = "N/A"
+                            if cval is not None:
+                                complex_rounded = round(cval, cr)
+                                complex_ = format_value(complex_rounded)
+                            else:
+                                complex_ = "N/A"
 
-                        if hval is not None:
-                            hourly_rounded = int(round(hval, hr))
-                            hour_ = format_value(hourly_rounded)
-                        else:
-                            hour_ = "N/A"
+                            if hval is not None:
+                                hourly_rounded = int(round(hval, hr))
+                                hour_ = format_value(hourly_rounded)
+                            else:
+                                hour_ = "N/A"
 
-                        rindex = self.table.rowCount()
-                        self.table.insertRow(rindex)
-                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
-                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
+                            rindex = self.table.rowCount()
+                            self.table.insertRow(rindex)
+                            self.table.setItem(
+                                rindex, 0, QTableWidgetItem(str(source_lang))
+                            )
+                            self.table.setItem(rindex, 1, QTableWidgetItem(targ))
 
-                        b_item = QTableWidgetItem(str(basic))
-                        b_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 2, b_item)
+                            b_item = QTableWidgetItem(str(basic))
+                            b_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 2, b_item)
 
-                        c_item = QTableWidgetItem(str(complex_))
-                        c_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 3, c_item)
+                            c_item = QTableWidgetItem(str(complex_))
+                            c_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 3, c_item)
 
-                        h_item = QTableWidgetItem(str(hour_))
-                        h_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 4, h_item)
+                            h_item = QTableWidgetItem(str(hour_))
+                            h_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rindex, 4, h_item)
 
-                if not row_found:
-                    rr = self.table.rowCount()
-                    self.table.insertRow(rr)
-                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
-                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
-                    for cc in [2, 3, 4]:
-                        na_item = QTableWidgetItem("N/A")
-                        na_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rr, cc, na_item)
+                    if not row_found:
+                        rr = self.table.rowCount()
+                        self.table.insertRow(rr)
+                        self.table.setItem(
+                            rr, 0, QTableWidgetItem(str(source_lang))
+                        )
+                        self.table.setItem(rr, 1, QTableWidgetItem(targ))
+                        for cc in [2, 3, 4]:
+                            na_item = QTableWidgetItem("N/A")
+                            na_item.setTextAlignment(Qt.AlignCenter)
+                            self.table.setItem(rr, cc, na_item)
 
         self._refresh_missing_rate_highlights()
 
@@ -1206,6 +1432,7 @@ class RateTab(QWidget):
                 }
             )
 
+        selections = self._get_current_selections()
         payload = {
             "rows": rows,
             "currency": selected_currency,
@@ -1213,7 +1440,11 @@ class RateTab(QWidget):
             "rate_type": f"R{rate_number}",
             "source_label": "TEP (Source RU)" if self.is_second_file else "MLV_Rates_USD_EUR_RUR_CNY",
             "is_second_file": self.is_second_file,
-            "source_language": self.source_lang_combo.currentText(),
+            "source_language": ", ".join(selections.keys()),
+            "source_languages": list(selections.keys()),
+            "targets_by_source": {
+                source: list(targets) for source, targets in selections.items()
+            },
         }
         self.rates_updated.emit(payload)
 
@@ -1288,13 +1519,18 @@ class RateTab(QWidget):
         self.process_data()
 
     def save_current_selection(self):
-        source = self.source_lang_combo.currentText()
-        targets = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
-        key = (source, tuple(targets))
-        if targets and key != self.last_saved_selection:
+        selections = self._get_current_selections()
+        if not selections:
+            return
+
+        key = tuple((source, tuple(targets)) for source, targets in selections.items())
+        if key == self.last_saved_selection:
+            return
+
+        for source, targets in selections.items():
             add_entry(source, targets, self.is_second_file)
-            self.last_saved_selection = key
-            self.load_history_combo()
+        self.last_saved_selection = key
+        self.load_history_combo()
 
     # ------------------------------------------------------------------
     # Экспорт ставок в Excel (все валюты и R1/R2)
@@ -1303,9 +1539,8 @@ class RateTab(QWidget):
         if self.df is None:
             return
 
-        source_lang = self.source_lang_combo.currentText()
-        target_languages = [self.selected_lang_list.item(i).text() for i in range(self.selected_lang_list.count())]
-        if not target_languages:
+        selections = self._get_current_selections()
+        if not selections:
             return
 
         lang = self._lang()
@@ -1323,9 +1558,22 @@ class RateTab(QWidget):
         sheets = {}
         for rate_number in [1, 2]:
             for currency in ["USD", "EUR", "RUB", "CNY"]:
-                df_rates = self.build_rates_dataframe(source_lang, target_languages, rate_number, currency)
+                frames = []
+                for source_lang, target_languages in selections.items():
+                    if not target_languages:
+                        continue
+                    df_rates = self.build_rates_dataframe(
+                        source_lang, target_languages, rate_number, currency
+                    )
+                    if not df_rates.empty:
+                        frames.append(df_rates)
                 sheet_name = f"R{rate_number}_{currency}"
-                sheets[sheet_name] = df_rates
+                if frames:
+                    sheets[sheet_name] = pd.concat(frames, ignore_index=True)
+                else:
+                    sheets[sheet_name] = pd.DataFrame(
+                        columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"]
+                    )
 
         export_rate_tables(sheets, file_path)
 
