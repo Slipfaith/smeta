@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
-from typing import Iterable, Tuple
+from typing import Tuple
 
 import langcodes
 
