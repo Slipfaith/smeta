@@ -84,6 +84,9 @@ class AdditionalServiceTable(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_menu)
 
+        self.rows_deleted: list[bool] = [False]
+        self._set_row_deleted(0, False)
+
         layout.addWidget(self.table)
 
         subtotal_layout = QHBoxLayout()
@@ -112,22 +115,45 @@ class AdditionalServiceTable(QWidget):
         menu = QMenu(self.table)
         add_act = menu.addAction(tr("Добавить строку", self.lang))
         del_act = menu.addAction(tr("Удалить", self.lang))
+        restore_act = menu.addAction(tr("Восстановить", self.lang))
 
         selected_rows = sorted(
             {
                 index.row()
                 for index in self.table.selectedIndexes()
                 if 0 <= index.row() < self.table.rowCount()
+                and not self.rows_deleted[index.row()]
             }
         )
+        selected_deleted_rows = sorted(
+            {
+                index.row()
+                for index in self.table.selectedIndexes()
+                if 0 <= index.row() < self.table.rowCount()
+                and self.rows_deleted[index.row()]
+            }
+        )
+
         rows_to_delete = selected_rows if selected_rows else [row]
         if not self._can_delete_rows(rows_to_delete):
             del_act.setEnabled(False)
+
+        can_restore = False
+        if selected_deleted_rows:
+            can_restore = True
+        elif 0 <= row < len(self.rows_deleted) and self.rows_deleted[row]:
+            can_restore = True
+        if not can_restore:
+            restore_act.setEnabled(False)
+
         action = menu.exec(self.table.mapToGlobal(pos))
         if action == add_act:
             self.add_row_after(row)
         elif action == del_act:
             self.remove_rows(rows_to_delete)
+        elif action == restore_act:
+            targets = selected_deleted_rows if selected_deleted_rows else [row]
+            self.restore_rows(targets)
 
     def add_row_after(self, row: int) -> None:
         insert_at = row + 1
@@ -137,45 +163,94 @@ class AdditionalServiceTable(QWidget):
             if col == 4:
                 item.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(insert_at, col, item)
+        self.rows_deleted.insert(insert_at, False)
+        self._set_row_deleted(insert_at, False)
         self.update_sums()
 
     def remove_row(self, row: int) -> None:
         self.remove_rows([row])
 
     def remove_rows(self, rows: list[int]) -> None:
-        if self.table.rowCount() <= 1:
+        active_indices = [i for i, deleted in enumerate(self.rows_deleted) if not deleted]
+        if len(active_indices) <= 1:
             return
-        unique_rows = sorted(
-            {r for r in rows if 0 <= r < self.table.rowCount()}, reverse=True
+        removable = sorted(
+            {
+                row
+                for row in rows
+                if 0 <= row < len(self.rows_deleted) and not self.rows_deleted[row]
+            }
         )
-        if not unique_rows:
+        if not removable:
             return
-        max_removable = self.table.rowCount() - 1
-        if max_removable <= 0:
-            return
-        if len(unique_rows) > max_removable:
-            unique_rows = unique_rows[-max_removable:]
-        for row in unique_rows:
-            self.table.removeRow(row)
-        if self.table.rowCount() == 0:
-            self.add_row_after(-1)
+        max_remove = len(active_indices) - 1
+        if len(removable) > max_remove:
+            removable = removable[-max_remove:]
+        for row in removable:
+            self._set_row_deleted(row, True)
         self.update_sums()
 
+    def restore_rows(self, rows: list[int]) -> None:
+        restored = False
+        for row in sorted({r for r in rows if 0 <= r < len(self.rows_deleted) and self.rows_deleted[r]}):
+            self._set_row_deleted(row, False)
+            restored = True
+        if restored:
+            self.update_sums()
+
     def _can_delete_rows(self, rows: list[int]) -> bool:
-        if self.table.rowCount() <= 1:
+        active = [i for i, deleted in enumerate(self.rows_deleted) if not deleted]
+        if len(active) <= 1:
             return False
         valid = {
-            r for r in rows if 0 <= r < self.table.rowCount()
+            r
+            for r in rows
+            if 0 <= r < len(self.rows_deleted) and not self.rows_deleted[r]
         }
         if not valid:
             return False
-        remaining = self.table.rowCount() - len(valid)
+        remaining = len(active) - len(valid)
         return remaining >= 1
+
+    def _set_row_deleted(self, row: int, deleted: bool) -> None:
+        if not (0 <= row < len(self.rows_deleted)):
+            return
+        self.rows_deleted[row] = deleted
+        self.table.blockSignals(True)
+        try:
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item is None:
+                    continue
+                font = item.font()
+                font.setStrikeOut(deleted)
+                item.setFont(font)
+                if deleted:
+                    item.setForeground(Qt.gray)
+                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                    if col == 4:
+                        item.setText(format_amount(0.0, self.lang))
+                else:
+                    item.setForeground(Qt.black)
+                    flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                    if col != 4:
+                        flags |= Qt.ItemIsEditable
+                    item.setFlags(flags)
+        finally:
+            self.table.blockSignals(False)
 
     # ------------------------------------------------------------ calculations
     def update_sums(self) -> None:
         subtotal = 0.0
         for r in range(self.table.rowCount()):
+            if r >= len(self.rows_deleted) or self.rows_deleted[r]:
+                item = self.table.item(r, 4)
+                if item is None:
+                    item = QTableWidgetItem("0.00")
+                    item.setFlags(Qt.ItemIsEnabled)
+                    self.table.setItem(r, 4, item)
+                item.setText(format_amount(0.0, self.lang))
+                continue
             volume = _to_float(self._text(r, 2))
             rate_item = self.table.item(r, 3)
             rate_text = rate_item.text() if rate_item else "0"
