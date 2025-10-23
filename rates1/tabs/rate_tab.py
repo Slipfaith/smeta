@@ -338,6 +338,7 @@ class RateTab(QWidget):
         self._auto_selection_done = False
         self._excel_matches: List[rates_importer.PairMatch] = []
         self._missing_rate_color = QColor(RATE_TAB_MISSING_RATE_COLOR)
+        self._row_is_gui: List[bool] = []
 
         self.history_data = []
         self.last_saved_selection = None
@@ -657,6 +658,7 @@ class RateTab(QWidget):
         self.table.clear()
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
+        self._row_is_gui.clear()
 
         self.load_history_combo()
         self._update_language_texts()
@@ -1074,20 +1076,20 @@ class RateTab(QWidget):
             )
         return requests
 
-    def _collect_pair_requests(self) -> List[PairRequest]:
-        requests: List[PairRequest] = []
+    def _collect_pair_requests(self) -> List[Tuple[PairRequest, bool]]:
+        requests: List[Tuple[PairRequest, bool]] = []
         seen: Set[Tuple[str, str]] = set()
         for pair in self._pairs_from_gui():
             key = self._pair_key(pair.display_source, pair.display_target)
             if key in seen:
                 continue
-            requests.append(pair)
+            requests.append((pair, True))
             seen.add(key)
         for pair in self._manual_pair_requests():
             key = self._pair_key(pair.display_source, pair.display_target)
             if key in seen:
                 continue
-            requests.append(pair)
+            requests.append((pair, False))
             seen.add(key)
         return requests
 
@@ -1168,6 +1170,7 @@ class RateTab(QWidget):
             print("process_data: df is None => return")
             self._update_selection_summary()
             self.table.setRowCount(0)
+            self._row_is_gui.clear()
             self._emit_current_selection()
             return
 
@@ -1182,6 +1185,7 @@ class RateTab(QWidget):
         if not pair_requests:
             print("process_data: нет language pairs => return")
             self.table.setRowCount(0)
+            self._row_is_gui.clear()
             self._emit_current_selection(selected_currency, rate_number)
             return
 
@@ -1195,9 +1199,10 @@ class RateTab(QWidget):
         ]
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(0)
+        self._row_is_gui.clear()
 
         subset_cache: Dict[str, Optional[pd.DataFrame]] = {}
-        for pair in pair_requests:
+        for pair, is_from_gui in pair_requests:
             display_source = pair.display_source or pair.data_source
             display_target = pair.display_target or pair.data_target
             if not display_source or not display_target:
@@ -1211,7 +1216,9 @@ class RateTab(QWidget):
             values = self._lookup_rates_for_pair(
                 subset, pair, selected_currency, rate_number
             )
-            self._append_rate_row(display_source, display_target, *values)
+            self._append_rate_row(
+                display_source, display_target, *values, is_gui_pair=is_from_gui
+            )
 
         self._refresh_missing_rate_highlights()
 
@@ -1233,7 +1240,9 @@ class RateTab(QWidget):
         self._emit_current_selection(selected_currency, rate_number)
         print("=> process_data() done.")
 
-    def _append_rate_row(self, source_lang, target_lang, basic, complex_, hour_):
+    def _append_rate_row(
+        self, source_lang, target_lang, basic, complex_, hour_, *, is_gui_pair: bool
+    ):
         rindex = self.table.rowCount()
         self.table.insertRow(rindex)
         self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
@@ -1243,6 +1252,7 @@ class RateTab(QWidget):
             item = QTableWidgetItem(str(value))
             item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(rindex, column, item)
+        self._row_is_gui.append(is_gui_pair)
 
     def _extract_mlv_rates(self, row_, selected_currency, rate_number):
         col_base = None
@@ -1356,6 +1366,8 @@ class RateTab(QWidget):
 
         rows = []
         for row in range(self.table.rowCount()):
+            if row >= len(self._row_is_gui) or not self._row_is_gui[row]:
+                continue
             rows.append(
                 {
                     "source": self._safe_text(self.table.item(row, 0)),
