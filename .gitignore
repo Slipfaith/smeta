@@ -120,3 +120,5 @@ secrets.txt
 config_local.py
 .pyscn/
 
+# Environment variables
+.env
