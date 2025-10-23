@@ -1192,7 +1192,9 @@ class RateTab(QWidget):
             tr("Hour", lang),
         ]
         self.table.setHorizontalHeaderLabels(headers)
+        self.table.clearContents()
         self.table.setRowCount(0)
+        self.table.viewport().update()
 
         if not self.is_second_file:
             print("process_data: MLV_Rates_USD_EUR_RUR_CNY логика...")

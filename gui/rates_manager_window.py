@@ -535,9 +535,7 @@ class RatesMappingWidget(QWidget):
             for key in ("basic", "complex", "hour"):
                 storage[key] = ""
 
-            item = self.table.item(row, 2)
-            if item is not None:
-                item.setText("")
+            self._refresh_rate_display(row)
 
         self._force_table_refresh()
         self._update_import_button_state()
@@ -614,11 +612,18 @@ class RatesMappingWidget(QWidget):
         key = self.selected_rate_key()
         storage = self._ensure_rate_storage(row)
         value = storage.get(key, "")
-        new_item = QTableWidgetItem(value)
-        new_item.setTextAlignment(Qt.AlignCenter)
+        existing_item = self.table.item(row, 2)
+        if existing_item is None:
+            existing_item = QTableWidgetItem("")
+            existing_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 2, existing_item)
+
         self._updating_rate_item = True
-        self.table.setItem(row, 2, new_item)
-        self._updating_rate_item = False
+        try:
+            existing_item.setText(value)
+        finally:
+            self._updating_rate_item = False
+
         self._update_import_button_state()
         self._force_table_refresh([row])
 
