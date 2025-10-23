@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
-from typing import Tuple
+from typing import Optional, Tuple
 
 import langcodes
 
@@ -210,16 +210,41 @@ def normalize_language_name(name: str, locale: str = "ru") -> str:
             return ""
 
 
+def _language_display_override(text: Optional[str], locale: str) -> Optional[str]:
+    if not text:
+        return None
+    if locale != "ru":
+        return None
+    language, script, _ = language_identity(text)
+    if language != "zh":
+        return None
+    if script == "Hans":
+        return "Китайский (упрощенный)"
+    if script == "Hant":
+        return "Китайский (традиционный)"
+    return None
+
+
 def resolve_language_display(value: str, locale: str = "ru") -> str:
     value = value.strip()
     if not value:
         return ""
 
+    override = _language_display_override(value, locale)
+    if override:
+        return override
+
     display = expand_language_code(value, locale=locale)
+    override = _language_display_override(display, locale)
+    if override:
+        return override
     if display:
         return display
 
     normalized = normalize_language_name(value, locale=locale)
+    override = _language_display_override(normalized, locale)
+    if override:
+        return override
     if normalized:
         return normalized
 
