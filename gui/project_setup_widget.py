@@ -92,35 +92,42 @@ class ProjectSetupWidget(QWidget):
                 row = self.table.rowCount() - 1
             menu = QMenu(self.table)
             add_act = menu.addAction(tr("Добавить строку", self.lang))
-            del_act = menu.addAction(tr("Удалить строку", self.lang))
-            restore_act = menu.addAction(tr("Восстановить строку", self.lang))
-            del_selected_act = menu.addAction(
-                tr("Удалить выбранные строки", self.lang)
+            del_act = menu.addAction(tr("Удалить", self.lang))
+            restore_act = menu.addAction(tr("Восстановить", self.lang))
+
+            active_rows = sum(1 for d in self.rows_deleted if not d)
+            selectable = sorted(
+                {
+                    index.row()
+                    for index in self.table.selectedIndexes()
+                    if 0 <= index.row() < len(self.rows_deleted)
+                    and not self.rows_deleted[index.row()]
+                }
             )
-            if self.rows_deleted[row]:
-                del_act.setEnabled(False)
+
+            if 0 <= row < len(self.rows_deleted):
+                if self.rows_deleted[row]:
+                    del_act.setEnabled(False)
+                else:
+                    restore_act.setEnabled(False)
             else:
-                restore_act.setEnabled(False)
-            if sum(1 for d in self.rows_deleted if not d) <= 1:
                 del_act.setEnabled(False)
-            selectable = [
-                idx
-                for idx in {index.row() for index in self.table.selectedIndexes()}
-                if 0 <= idx < len(self.rows_deleted) and not self.rows_deleted[idx]
-            ]
-            if len(selectable) <= 1 or sum(
-                1 for d in self.rows_deleted if not d
-            ) - len(selectable) < 1:
-                del_selected_act.setEnabled(False)
+                restore_act.setEnabled(False)
+
+            if selectable:
+                if active_rows - len(selectable) < 1:
+                    del_act.setEnabled(False)
+            else:
+                if active_rows <= 1:
+                    del_act.setEnabled(False)
             action = menu.exec(self.table.mapToGlobal(pos))
             if action == add_act:
                 self.add_row_after(row)
             elif action == del_act:
-                self.remove_row_at(row)
+                targets = selectable if selectable else [row]
+                self.remove_rows(targets)
             elif action == restore_act:
                 self.restore_row_at(row)
-            elif action == del_selected_act:
-                self.remove_selected_rows()
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(show_menu)
@@ -180,21 +187,20 @@ class ProjectSetupWidget(QWidget):
         self.remove_row_at(self.table.currentRow())
 
     def remove_row_at(self, row: int):
-        if row >= 0 and not self.rows_deleted[row]:
-            if sum(1 for d in self.rows_deleted if not d) <= 1:
-                return
-            self._set_row_deleted(row, True)
-            self.update_sums()
+        self.remove_rows([row])
 
-    def remove_selected_rows(self):
+    def remove_rows(self, rows: list[int]):
         active_indices = [i for i, deleted in enumerate(self.rows_deleted) if not deleted]
-        selected = sorted({index.row() for index in self.table.selectedIndexes()})
-        removable = [
-            row
-            for row in selected
-            if 0 <= row < len(self.rows_deleted) and not self.rows_deleted[row]
-        ]
-        if len(removable) <= 1:
+        if len(active_indices) <= 1:
+            return
+        removable = sorted(
+            {
+                row
+                for row in rows
+                if 0 <= row < len(self.rows_deleted) and not self.rows_deleted[row]
+            }
+        )
+        if not removable:
             return
         max_remove = len(active_indices) - 1
         if max_remove <= 0:

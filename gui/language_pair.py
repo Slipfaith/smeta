@@ -173,11 +173,8 @@ class LanguagePairWidget(QWidget):
                 return
             menu = QMenu(table)
             add_act = menu.addAction(tr("Добавить строку", self.lang))
-            del_act = menu.addAction(tr("Удалить строку", self.lang))
-            restore_act = menu.addAction(tr("Восстановить строку", self.lang))
-            del_selected_act = menu.addAction(
-                tr("Удалить выбранные строки", self.lang)
-            )
+            del_act = menu.addAction(tr("Удалить", self.lang))
+            restore_act = menu.addAction(tr("Восстановить", self.lang))
 
             fuzzy_menu = menu.addMenu(tr("Фаззи", self.lang))
             fuzzy_actions = {}
@@ -190,29 +187,29 @@ class LanguagePairWidget(QWidget):
                 del_act.setEnabled(False)
             else:
                 restore_act.setEnabled(False)
-            if sum(1 for r in rows if not r.get("deleted")) <= 1:
-                del_act.setEnabled(False)
-            selected_rows = {
-                index.row() for index in table.selectedIndexes()
-            }
-            selectable = [
-                r
-                for r in selected_rows
-                if 0 <= r < len(rows) and not rows[r].get("deleted")
-            ]
-            if len(selectable) <= 1 or sum(
-                1 for r in rows if not r.get("deleted")
-            ) - len(selectable) < 1:
-                del_selected_act.setEnabled(False)
+            active_rows = sum(1 for r in rows if not r.get("deleted"))
+            selected_rows = sorted(
+                {
+                    index.row()
+                    for index in table.selectedIndexes()
+                    if 0 <= index.row() < len(rows)
+                    and not rows[index.row()].get("deleted")
+                }
+            )
+            if selected_rows:
+                if active_rows - len(selected_rows) < 1:
+                    del_act.setEnabled(False)
+            else:
+                if active_rows <= 1:
+                    del_act.setEnabled(False)
             action = menu.exec(table.mapToGlobal(pos))
             if action == add_act:
                 self._add_row_after(table, rows, group, row)
             elif action == del_act:
-                self._delete_row(table, rows, group, row)
+                targets = selected_rows if selected_rows else [row]
+                self._delete_rows(table, rows, group, targets)
             elif action == restore_act:
                 self._restore_row(table, rows, group, row)
-            elif action == del_selected_act:
-                self._delete_selected_rows(table, rows, group)
             elif action in fuzzy_actions:
                 self._add_row_after(table, rows, group, row, fuzzy_actions[action])
 
@@ -319,24 +316,26 @@ class LanguagePairWidget(QWidget):
                     item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
 
     def _delete_row(self, table: QTableWidget, rows: List[Dict], group: QGroupBox, row: int):
-        if sum(1 for r in rows if not r.get('deleted')) <= 1:
-            return
-        base_rate_row = getattr(group, 'base_rate_row', None)
-        self._set_row_deleted(table, rows, row, True)
-        if base_rate_row == row:
-            base_rate_row = None
-            setattr(group, 'base_rate_row', base_rate_row)
-        self.update_rates_and_sums(table, rows, base_rate_row)
+        self._delete_rows(table, rows, group, [row])
 
-    def _delete_selected_rows(
-        self, table: QTableWidget, rows: List[Dict], group: QGroupBox
+    def _delete_rows(
+        self,
+        table: QTableWidget,
+        rows: List[Dict],
+        group: QGroupBox,
+        targets: List[int],
     ):
-        selected = sorted({index.row() for index in table.selectedIndexes()})
         active = [idx for idx, cfg in enumerate(rows) if not cfg.get("deleted")]
-        removable = [
-            r for r in selected if 0 <= r < len(rows) and not rows[r].get("deleted")
-        ]
-        if len(removable) <= 1:
+        if len(active) <= 1:
+            return
+        removable = sorted(
+            {
+                r
+                for r in targets
+                if 0 <= r < len(rows) and not rows[r].get("deleted")
+            }
+        )
+        if not removable:
             return
         max_remove = len(active) - 1
         if max_remove <= 0:
