@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ import langcodes
 import openpyxl
 
 from .xml_parser_common import expand_language_code, language_identity
+
+logger = logging.getLogger(__name__)
 
 RateRecord = Dict[str, float]
 RatesMap = Dict[Tuple[str, str], RateRecord]
@@ -97,26 +100,57 @@ def load_rates_from_excel(
         with keys ``basic``, ``complex`` and ``hour``.
     """
     sheet_name = f"{rate_type}_{currency}".upper()
+    logger.debug(
+        "Loading Excel rates: sheet=%s, currency=%s, rate_type=%s, path_type=%s",
+        sheet_name,
+        currency,
+        rate_type,
+        type(path_or_stream).__name__,
+    )
+
     stream = path_or_stream
     if hasattr(stream, "seek"):
+        logger.debug("Resetting stream pointer before reading workbook")
         stream.seek(0)
     wb = openpyxl.load_workbook(stream, data_only=True)
+    logger.debug("Workbook sheets available: %s", ", ".join(wb.sheetnames))
     if sheet_name not in wb.sheetnames:
+        logger.error("Requested sheet %s not found in workbook", sheet_name)
         raise ValueError(f"Sheet {sheet_name} not found in workbook")
 
     ws = wb[sheet_name]
     rates: RatesMap = {}
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for index, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         src, tgt, basic, complex_, hour = row
+        logger.debug(
+            "Row %d raw values: src=%r, tgt=%r, basic=%r, complex=%r, hour=%r",
+            index,
+            src,
+            tgt,
+            basic,
+            complex_,
+            hour,
+        )
         if not src or not tgt:
+            logger.debug("Row %d skipped: missing source or target", index)
             continue
         src_code = _normalize_language(str(src))
         tgt_code = _normalize_language(str(tgt))
-        rates[(src_code, tgt_code)] = {
+        rate_record = {
             "basic": float(basic or 0),
             "complex": float(complex_ or 0),
             "hour": float(hour or 0),
         }
+        logger.debug(
+            "Row %d normalized: src_code=%s, tgt_code=%s, rates=%s",
+            index,
+            src_code,
+            tgt_code,
+            rate_record,
+        )
+        rates[(src_code, tgt_code)] = rate_record
+
+    logger.debug("Loaded %d rate entries from sheet %s", len(rates), sheet_name)
     return rates
 
 
@@ -147,15 +181,33 @@ def match_pairs(gui_pairs: Iterable[Tuple[str, str]], rates: RatesMap) -> List[P
         A list describing how each GUI pair was matched.  If a corresponding
         rate was not found, ``rates`` attribute will be ``None``.
     """
+    gui_pairs = list(gui_pairs)
     results: List[PairMatch] = []
     available_sources = {src for src, _ in rates}
     available_targets = {tgt for _, tgt in rates}
+    logger.debug(
+        "Matching %d GUI pairs against %d available rates", len(gui_pairs), len(rates)
+    )
+    sources_display = ", ".join(sorted(available_sources)) or "<none>"
+    targets_display = ", ".join(sorted(available_targets)) or "<none>"
+    logger.debug("Available source codes: %s", sources_display)
+    logger.debug("Available target codes: %s", targets_display)
     for gui_src, gui_tgt in gui_pairs:
         src_code = _normalize_language(gui_src)
         tgt_code = _normalize_language(gui_tgt)
         rate = rates.get((src_code, tgt_code))
         excel_src = _language_name(src_code) if src_code in available_sources else ""
         excel_tgt = _language_name(tgt_code) if tgt_code in available_targets else ""
+        logger.debug(
+            "Pair matched: gui=(%s, %s) -> codes=(%s, %s), found_rate=%s, excel_names=(%s, %s)",
+            gui_src,
+            gui_tgt,
+            src_code,
+            tgt_code,
+            rate,
+            excel_src,
+            excel_tgt,
+        )
         results.append(
             PairMatch(
                 gui_source=gui_src,
