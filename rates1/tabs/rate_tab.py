@@ -1,5 +1,6 @@
 
 import os
+from dataclasses import dataclass
 
 # =================== PySide6 ===================
 from PySide6.QtWidgets import (
@@ -90,6 +91,14 @@ def safe_float(val):
     except (TypeError, ValueError):
         return None
     return None if pd.isna(val) else val
+
+
+@dataclass(frozen=True)
+class PairRequest:
+    display_source: str
+    display_target: str
+    data_source: str
+    data_target: str
 
 # --------------------------------------------------------------
 # Полупрозрачное окошко "Loading..."
@@ -943,32 +952,228 @@ class RateTab(QWidget):
         clipboard_text = "\n".join(copied_data)
         QApplication.clipboard().setText(clipboard_text)
 
+    @staticmethod
+    def _pair_key(source: str, target: str) -> Tuple[str, str]:
+        return (
+            str(source or "").strip().casefold(),
+            str(target or "").strip().casefold(),
+        )
+
+    @staticmethod
+    def _safe_text(value) -> str:
+        return str(value).strip() if value is not None else ""
+
+    def _normalized_keys(self, value: str) -> List[str]:
+        text = self._safe_text(value)
+        if not text:
+            return []
+        keys: List[str] = []
+        normalized = self._normalize_language_name(text)
+        if normalized:
+            keys.append(normalized)
+            base = normalized.split("-", 1)[0]
+            if base and base not in keys:
+                keys.append(base)
+        lowered = text.casefold()
+        if lowered and lowered not in keys:
+            keys.append(lowered)
+        return keys
+
+    def _manual_pair_requests(self) -> List[PairRequest]:
+        source = self._safe_text(self.source_lang_combo.currentText())
+        if not source:
+            return []
+        requests: List[PairRequest] = []
+        for idx in range(self.selected_lang_list.count()):
+            target = self._safe_text(self.selected_lang_list.item(idx).text())
+            if not target:
+                continue
+            requests.append(
+                PairRequest(
+                    display_source=source,
+                    display_target=target,
+                    data_source=source,
+                    data_target=target,
+                )
+            )
+        return requests
+
+    def _build_dataset_language_lookup(self) -> Tuple[Dict[str, Dict[str, str]], Dict[str, str]]:
+        source_targets: Dict[str, Dict[str, str]] = {}
+        source_display: Dict[str, str] = {}
+        if self.df is None or self.df.shape[0] == 0:
+            return source_targets, source_display
+
+        if not self.is_second_file:
+            if self.df.shape[1] < 2:
+                return source_targets, source_display
+            iterator = zip(self.df.iloc[:, 0], self.df.iloc[:, 1])
+        else:
+            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
+                return source_targets, source_display
+            iterator = zip(self.df["SourceLang"], self.df["TargetLang"])
+
+        for raw_source, raw_target in iterator:
+            source_text = self._safe_text(raw_source)
+            target_text = self._safe_text(raw_target)
+            if not source_text or not target_text:
+                continue
+            source_keys = self._normalized_keys(source_text)
+            target_keys = self._normalized_keys(target_text)
+            for src_key in source_keys:
+                source_display.setdefault(src_key, source_text)
+                target_map = source_targets.setdefault(src_key, {})
+                for tgt_key in target_keys:
+                    target_map.setdefault(tgt_key, target_text)
+
+        return source_targets, source_display
+
+    def _pairs_from_gui(self) -> List[PairRequest]:
+        if not getattr(self, "_gui_pairs", None):
+            return []
+        target_lookup, source_display = self._build_dataset_language_lookup()
+        requests: List[PairRequest] = []
+        for gui_src, gui_tgt in self._gui_pairs:
+            display_source = self._safe_text(gui_src)
+            display_target = self._safe_text(gui_tgt)
+            data_source = ""
+            data_target = ""
+            target_map: Dict[str, str] = {}
+            for key in self._normalized_keys(display_source):
+                if key in source_display:
+                    data_source = source_display[key]
+                    target_map = target_lookup.get(key, {})
+                    break
+            if not data_source:
+                data_source = display_source
+            if not target_map:
+                target_map = {}
+            for key in self._normalized_keys(display_target):
+                if key in target_map:
+                    data_target = target_map[key]
+                    break
+            if not data_target:
+                data_target = display_target
+            requests.append(
+                PairRequest(
+                    display_source=display_source or data_source,
+                    display_target=display_target or data_target,
+                    data_source=data_source,
+                    data_target=data_target,
+                )
+            )
+        return requests
+
+    def _collect_pair_requests(self) -> List[PairRequest]:
+        requests: List[PairRequest] = []
+        seen: Set[Tuple[str, str]] = set()
+        for pair in self._pairs_from_gui():
+            key = self._pair_key(pair.display_source, pair.display_target)
+            if key in seen:
+                continue
+            requests.append(pair)
+            seen.add(key)
+        for pair in self._manual_pair_requests():
+            key = self._pair_key(pair.display_source, pair.display_target)
+            if key in seen:
+                continue
+            requests.append(pair)
+            seen.add(key)
+        return requests
+
+    def _filter_rows_by_source(self, source_value: str) -> Optional[pd.DataFrame]:
+        if not source_value or self.df is None:
+            return None
+
+        if not self.is_second_file:
+            series = self.df.iloc[:, 0]
+        else:
+            if "SourceLang" not in self.df.columns:
+                return None
+            series = self.df["SourceLang"]
+
+        trimmed = series.map(self._safe_text)
+        mask = trimmed == source_value
+        if mask.any():
+            return self.df.loc[mask.index[mask]]
+
+        desired = set(self._normalized_keys(source_value))
+        if not desired:
+            return None
+
+        matches = trimmed.apply(
+            lambda text: bool(desired & set(self._normalized_keys(text)))
+        )
+        if matches.any():
+            return self.df.loc[matches.index[matches]]
+        return None
+
+    def _target_matches(self, dataset_target: str, pair: PairRequest) -> bool:
+        dataset_keys = set(self._normalized_keys(dataset_target))
+        if not dataset_keys:
+            return False
+        for key in self._normalized_keys(pair.data_target):
+            if key and key in dataset_keys:
+                return True
+        for key in self._normalized_keys(pair.display_target):
+            if key and key in dataset_keys:
+                return True
+        return False
+
+    def _lookup_rates_for_pair(
+        self,
+        subset: Optional[pd.DataFrame],
+        pair: PairRequest,
+        selected_currency: str,
+        rate_number: int,
+    ) -> Tuple[str, str, str]:
+        if subset is None or subset.empty:
+            return "N/A", "N/A", "N/A"
+
+        fallback_values: Optional[Tuple[str, str, str]] = None
+        for _, row_ in subset.iterrows():
+            if not self.is_second_file:
+                target_value = self._safe_text(row_.iloc[1] if len(row_) > 1 else "")
+            else:
+                target_value = self._safe_text(row_.get("TargetLang"))
+            if not target_value or not self._target_matches(target_value, pair):
+                continue
+            if not self.is_second_file:
+                values = self._extract_mlv_rates(row_, selected_currency, rate_number)
+            else:
+                values = self._extract_tep_rates(row_, selected_currency, rate_number)
+            if any(val != "N/A" for val in values):
+                return values
+            if fallback_values is None:
+                fallback_values = values
+
+        if fallback_values is not None:
+            return fallback_values
+
+        return "N/A", "N/A", "N/A"
+
     def process_data(self):
         print("=> process_data() called.")
         if self.df is None:
             print("process_data: df is None => return")
             self._update_selection_summary()
-            self._emit_current_selection()
-            return
-
-        source_lang = self.source_lang_combo.currentText()
-        target_languages = [
-            self.selected_lang_list.item(i).text()
-            for i in range(self.selected_lang_list.count())
-        ]
-        lang = self._lang()
-        if not target_languages:
-            self._update_selection_summary()
             self.table.setRowCount(0)
-            print("process_data: нет target_languages => return")
             self._emit_current_selection()
             return
 
+        lang = self._lang()
+        pair_requests = self._collect_pair_requests()
         self._update_selection_summary()
 
         selected_currency = self.currency_combo.currentData() or "USD"
 
         rate_number = self.rate_combo.currentData() or 1
+
+        if not pair_requests:
+            print("process_data: нет language pairs => return")
+            self.table.setRowCount(0)
+            self._emit_current_selection(selected_currency, rate_number)
+            return
 
         self.table.setColumnCount(5)
         headers = [
@@ -981,64 +1186,22 @@ class RateTab(QWidget):
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(0)
 
-        if not self.is_second_file:
-            print("process_data: MLV_Rates_USD_EUR_RUR_CNY логика...")
-            filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
-
-            for targ in target_languages:
-                row_found = False
-                fallback_values = None
-                for _, row_ in filtered_df.iterrows():
-                    if row_.iloc[1] != targ:
-                        continue
-                    row_found = True
-                    try:
-                        values = self._extract_mlv_rates(row_, selected_currency, rate_number)
-                    except Exception as e:
-                        print("Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:", e)
-                        values = ("N/A", "N/A", "N/A")
-
-                    if any(val != "N/A" for val in values):
-                        self._append_rate_row(source_lang, targ, *values)
-                        fallback_values = None
-                        break
-
-                    if fallback_values is None:
-                        fallback_values = values
-
-                if row_found and fallback_values is not None:
-                    self._append_rate_row(source_lang, targ, *fallback_values)
-                if not row_found:
-                    self._append_rate_row(source_lang, targ, "N/A", "N/A", "N/A")
-
-        else:
-            print("process_data: TEP (Source RU) логика...")
-            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                print("НЕТ 'SourceLang'/'TargetLang' => return")
-                return
-
-            filtered_df = self.df[self.df["SourceLang"] == source_lang]
-            for targ in target_languages:
-                row_found = False
-                fallback_values = None
-                for _, row_ in filtered_df.iterrows():
-                    if not (pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ)):
-                        continue
-                    row_found = True
-                    values = self._extract_tep_rates(row_, selected_currency, rate_number)
-
-                    if any(val != "N/A" for val in values):
-                        self._append_rate_row(source_lang, targ, *values)
-                        fallback_values = None
-                        break
-
-                    if fallback_values is None:
-                        fallback_values = values
-
-                if row_found and fallback_values is not None:
-                    self._append_rate_row(source_lang, targ, *fallback_values)
-                if not row_found:
-                    self._append_rate_row(source_lang, targ, "N/A", "N/A", "N/A")
+        subset_cache: Dict[str, Optional[pd.DataFrame]] = {}
+        for pair in pair_requests:
+            display_source = pair.display_source or pair.data_source
+            display_target = pair.display_target or pair.data_target
+            if not display_source or not display_target:
+                continue
+            source_key = pair.data_source or pair.display_source
+            subset: Optional[pd.DataFrame] = None
+            if source_key:
+                if source_key not in subset_cache:
+                    subset_cache[source_key] = self._filter_rows_by_source(source_key)
+                subset = subset_cache[source_key]
+            values = self._lookup_rates_for_pair(
+                subset, pair, selected_currency, rate_number
+            )
+            self._append_rate_row(display_source, display_target, *values)
 
         self._refresh_missing_rate_highlights()
 
