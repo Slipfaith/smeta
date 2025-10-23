@@ -987,98 +987,29 @@ class RateTab(QWidget):
 
             for targ in target_languages:
                 row_found = False
+                fallback_values = None
                 for _, row_ in filtered_df.iterrows():
-                    if row_.iloc[1] == targ:
-                        row_found = True
-                        try:
-                            # Hourly = округлять до целого => round(..., 0) => int
-                            if selected_currency in ["USD","EUR"]:
-                                if rate_number == 1:
-                                    if selected_currency=="USD":
-                                        col_base = 2
-                                    else:
-                                        col_base = 5
-                                    basic_round = complex_round = 3
-                                    hour_round = 0
-                                else:
-                                    if selected_currency=="USD":
-                                        col_base = 8
-                                    else:
-                                        col_base = 11
-                                    basic_round = complex_round = 3
-                                    hour_round = 0
-                            elif selected_currency in ["RUB","CNY"]:
-                                if rate_number == 1:
-                                    if selected_currency=="RUB":
-                                        col_base = 15
-                                    else:
-                                        col_base = 21
-                                    basic_round = complex_round = 2
-                                    hour_round = 0
-                                else:
-                                    if selected_currency=="RUB":
-                                        col_base = 18
-                                    else:
-                                        col_base = 24
-                                    basic_round = complex_round = 2
-                                    hour_round = 0
-                            else:
-                                col_base = None
+                    if row_.iloc[1] != targ:
+                        continue
+                    row_found = True
+                    try:
+                        values = self._extract_mlv_rates(row_, selected_currency, rate_number)
+                    except Exception as e:
+                        print("Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:", e)
+                        values = ("N/A", "N/A", "N/A")
 
-                            if col_base is not None and (col_base + 2) < len(row_):
-                                bval = safe_float(row_.iloc[col_base])
-                                cval = safe_float(row_.iloc[col_base + 1])
-                                hval = safe_float(row_.iloc[col_base + 2])
+                    if any(val != "N/A" for val in values):
+                        self._append_rate_row(source_lang, targ, *values)
+                        fallback_values = None
+                        break
 
-                                if bval is not None:
-                                    b_rounded = round(bval, basic_round)
-                                    basic = format_value(b_rounded)
-                                else:
-                                    basic = "N/A"
+                    if fallback_values is None:
+                        fallback_values = values
 
-                                if cval is not None:
-                                    c_rounded = round(cval, complex_round)
-                                    complex_ = format_value(c_rounded)
-                                else:
-                                    complex_ = "N/A"
-
-                                if hval is not None:
-                                    h_rounded = int(round(hval, hour_round))
-                                    hour_ = format_value(h_rounded)
-                                else:
-                                    hour_ = "N/A"
-                            else:
-                                basic = complex_ = hour_ = "N/A"
-                        except Exception as e:
-                            print("Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:", e)
-                            basic = complex_ = hour_ = "N/A"
-
-                        rindex = self.table.rowCount()
-                        self.table.insertRow(rindex)
-                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
-                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
-
-                        b_item = QTableWidgetItem(str(basic))
-                        b_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 2, b_item)
-
-                        c_item = QTableWidgetItem(str(complex_))
-                        c_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 3, c_item)
-
-                        h_item = QTableWidgetItem(str(hour_))
-                        h_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 4, h_item)
-
+                if row_found and fallback_values is not None:
+                    self._append_rate_row(source_lang, targ, *fallback_values)
                 if not row_found:
-                    rr = self.table.rowCount()
-                    self.table.insertRow(rr)
-                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
-                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
-                    for cc in [2, 3, 4]:
-                        na_item = QTableWidgetItem("N/A")
-                        na_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rr, cc, na_item)
+                    self._append_rate_row(source_lang, targ, "N/A", "N/A", "N/A")
 
         else:
             print("process_data: TEP (Source RU) логика...")
@@ -1089,83 +1020,25 @@ class RateTab(QWidget):
             filtered_df = self.df[self.df["SourceLang"] == source_lang]
             for targ in target_languages:
                 row_found = False
+                fallback_values = None
                 for _, row_ in filtered_df.iterrows():
-                    if pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ):
-                        row_found = True
-                        if selected_currency=="USD":
-                            if rate_number==1:
-                                col_b = "USD_Basic_R1"
-                                col_c = "USD_Complex_R1"
-                                col_h = "USD_Hourly_R1"
-                                br, cr, hr = 3,3,0
-                            else:
-                                col_b = "USD_Basic_R2"
-                                col_c = "USD_Complex_R2"
-                                col_h = "USD_Hourly_R2"
-                                br, cr, hr = 3,3,0
-                        elif selected_currency=="RUB":
-                            if rate_number==1:
-                                col_b = "RUB_Basic_R1"
-                                col_c = "RUB_Complex_R1"
-                                col_h = "RUB_Hourly_R1"
-                                br, cr, hr = 2,2,0
-                            else:
-                                col_b = None
-                                col_c = None
-                                col_h = None
-                        else:
-                            col_b = None
-                            col_c = None
-                            col_h = None
+                    if not (pd.notnull(row_["TargetLang"]) and str(row_["TargetLang"]) == str(targ)):
+                        continue
+                    row_found = True
+                    values = self._extract_tep_rates(row_, selected_currency, rate_number)
 
-                        bval = safe_float(row_.get(col_b)) if col_b else None
-                        cval = safe_float(row_.get(col_c)) if col_c else None
-                        hval = safe_float(row_.get(col_h)) if col_h else None
+                    if any(val != "N/A" for val in values):
+                        self._append_rate_row(source_lang, targ, *values)
+                        fallback_values = None
+                        break
 
-                        if bval is not None:
-                            basic_rounded = round(bval, br)
-                            basic = format_value(basic_rounded)
-                        else:
-                            basic = "N/A"
+                    if fallback_values is None:
+                        fallback_values = values
 
-                        if cval is not None:
-                            complex_rounded = round(cval, cr)
-                            complex_ = format_value(complex_rounded)
-                        else:
-                            complex_ = "N/A"
-
-                        if hval is not None:
-                            hourly_rounded = int(round(hval, hr))
-                            hour_ = format_value(hourly_rounded)
-                        else:
-                            hour_ = "N/A"
-
-                        rindex = self.table.rowCount()
-                        self.table.insertRow(rindex)
-                        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
-                        self.table.setItem(rindex, 1, QTableWidgetItem(targ))
-
-                        b_item = QTableWidgetItem(str(basic))
-                        b_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 2, b_item)
-
-                        c_item = QTableWidgetItem(str(complex_))
-                        c_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 3, c_item)
-
-                        h_item = QTableWidgetItem(str(hour_))
-                        h_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rindex, 4, h_item)
-
+                if row_found and fallback_values is not None:
+                    self._append_rate_row(source_lang, targ, *fallback_values)
                 if not row_found:
-                    rr = self.table.rowCount()
-                    self.table.insertRow(rr)
-                    self.table.setItem(rr, 0, QTableWidgetItem(str(source_lang)))
-                    self.table.setItem(rr, 1, QTableWidgetItem(targ))
-                    for cc in [2, 3, 4]:
-                        na_item = QTableWidgetItem("N/A")
-                        na_item.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(rr, cc, na_item)
+                    self._append_rate_row(source_lang, targ, "N/A", "N/A", "N/A")
 
         self._refresh_missing_rate_highlights()
 
@@ -1186,6 +1059,120 @@ class RateTab(QWidget):
         self.save_current_selection()
         self._emit_current_selection(selected_currency, rate_number)
         print("=> process_data() done.")
+
+    def _append_rate_row(self, source_lang, target_lang, basic, complex_, hour_):
+        rindex = self.table.rowCount()
+        self.table.insertRow(rindex)
+        self.table.setItem(rindex, 0, QTableWidgetItem(str(source_lang)))
+        self.table.setItem(rindex, 1, QTableWidgetItem(str(target_lang)))
+
+        for column, value in enumerate((basic, complex_, hour_), start=2):
+            item = QTableWidgetItem(str(value))
+            item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(rindex, column, item)
+
+    def _extract_mlv_rates(self, row_, selected_currency, rate_number):
+        col_base = None
+        basic_round = complex_round = hour_round = 0
+
+        if selected_currency in ["USD", "EUR"]:
+            if rate_number == 1:
+                if selected_currency == "USD":
+                    col_base = 2
+                else:
+                    col_base = 5
+                basic_round = complex_round = 3
+            else:
+                if selected_currency == "USD":
+                    col_base = 8
+                else:
+                    col_base = 11
+                basic_round = complex_round = 3
+        elif selected_currency in ["RUB", "CNY"]:
+            if rate_number == 1:
+                if selected_currency == "RUB":
+                    col_base = 15
+                else:
+                    col_base = 21
+                basic_round = complex_round = 2
+            else:
+                if selected_currency == "RUB":
+                    col_base = 18
+                else:
+                    col_base = 24
+                basic_round = complex_round = 2
+
+        if col_base is not None and (col_base + 2) < len(row_):
+            bval = safe_float(row_.iloc[col_base])
+            cval = safe_float(row_.iloc[col_base + 1])
+            hval = safe_float(row_.iloc[col_base + 2])
+        else:
+            bval = cval = hval = None
+
+        basic = (
+            format_value(round(bval, basic_round))
+            if bval is not None
+            else "N/A"
+        )
+        complex_ = (
+            format_value(round(cval, complex_round))
+            if cval is not None
+            else "N/A"
+        )
+        hour_ = (
+            format_value(int(round(hval, hour_round)))
+            if hval is not None
+            else "N/A"
+        )
+
+        return basic, complex_, hour_
+
+    def _extract_tep_rates(self, row_, selected_currency, rate_number):
+        if selected_currency == "USD":
+            if rate_number == 1:
+                col_b = "USD_Basic_R1"
+                col_c = "USD_Complex_R1"
+                col_h = "USD_Hourly_R1"
+                br, cr, hr = 3, 3, 0
+            else:
+                col_b = "USD_Basic_R2"
+                col_c = "USD_Complex_R2"
+                col_h = "USD_Hourly_R2"
+                br, cr, hr = 3, 3, 0
+        elif selected_currency == "RUB":
+            if rate_number == 1:
+                col_b = "RUB_Basic_R1"
+                col_c = "RUB_Complex_R1"
+                col_h = "RUB_Hourly_R1"
+                br, cr, hr = 2, 2, 0
+            else:
+                col_b = col_c = col_h = None
+                br = cr = hr = 0
+        else:
+            col_b = col_c = col_h = None
+            br = cr = hr = 0
+
+        bval = safe_float(row_.get(col_b)) if col_b else None
+        cval = safe_float(row_.get(col_c)) if col_c else None
+        hval = safe_float(row_.get(col_h)) if col_h else None
+
+        basic = (
+            format_value(round(bval, br))
+            if bval is not None
+            else "N/A"
+        )
+        complex_ = (
+            format_value(round(cval, cr))
+            if cval is not None
+            else "N/A"
+        )
+        hour_ = (
+            format_value(int(round(hval, hr)))
+            if hval is not None
+            else "N/A"
+        )
+
+        return basic, complex_, hour_
 
     def _emit_current_selection(self, selected_currency=None, rate_number=None):
         """Emit the currently displayed rates for embedding into other UIs."""
