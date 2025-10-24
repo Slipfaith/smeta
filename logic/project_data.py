@@ -84,14 +84,20 @@ class ProjectData:
 
         language_pairs.sort(key=_sort_key)
 
-        additional_services = window.additional_services_widget.get_data()
-        if additional_services:
-            total_discount_amount += sum(
-                block.get("discount_amount", 0.0) for block in additional_services
-            )
-            total_markup_amount += sum(
-                block.get("markup_amount", 0.0) for block in additional_services
-            )
+        additional_services_widget = getattr(
+            window, "additional_services_widget", None
+        )
+        if additional_services_widget is not None:
+            additional_services = additional_services_widget.get_data()
+            if additional_services:
+                total_discount_amount += sum(
+                    block.get("discount_amount", 0.0) for block in additional_services
+                )
+                total_markup_amount += sum(
+                    block.get("markup_amount", 0.0) for block in additional_services
+                )
+        else:
+            additional_services = []
 
         return cls(
             project_name=window.project_name_edit.text(),
