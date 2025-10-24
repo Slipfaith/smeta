@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QMessageBox, QComboBox
 from gui.language_pair import LanguagePairWidget
 from logic.translation_config import tr
 from logic.xml_parser_common import resolve_language_display
+from logic.activity_logger import log_window_action
 
 
 class LanguagePairsMixin:
@@ -110,6 +111,11 @@ class LanguagePairsMixin:
         self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
 
         self._reset_language_pair_inputs()
+        log_window_action(
+            "Добавлена языковая пара",
+            self,
+            details={"Пара": pair_key, "Отображение": display_name},
+        )
 
     def _extract_pair_parts(self, pair_key: str) -> Tuple[str, str]:
         for sep in (" → ", " - "):
@@ -145,10 +151,16 @@ class LanguagePairsMixin:
         self.update_total()
 
         self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
+        log_window_action(
+            "Удалена языковая пара",
+            self,
+            details={"Пара": pair_key},
+        )
 
     def clear_language_pairs(self):
         for w in self.language_pairs.values():
             w.setParent(None)
+        removed = list(self.language_pairs.keys())
         self.language_pairs.clear()
         self.pair_headers.clear()
         self._pair_language_inputs.clear()
@@ -156,6 +168,11 @@ class LanguagePairsMixin:
         self.update_total()
 
         self._update_language_variant_regions_from_pairs([])
+        log_window_action(
+            "Удалены все языковые пары",
+            self,
+            details={"Количество": len(removed)},
+        )
 
     def _reset_language_pair_inputs(self) -> None:
         """Return language combo boxes to their default selections."""

@@ -4,6 +4,7 @@ import logging
 import re
 import textwrap
 import threading
+from time import perf_counter
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from copy import deepcopy
 from openpyxl import load_workbook, Workbook
@@ -530,8 +531,14 @@ class ExcelExporter:
         progress_callback: Callable[[int, str], None], optional
             Функция для обновления прогресса.
         """
+        start_time = perf_counter()
+        success = False
+        self.logger.info(
+            "#### Экспорт Excel начат\n- **Файл:** %s\n- **Шаблон:** %s",
+            output_path,
+            self.template_path,
+        )
         try:
-            self.logger.info("Starting export to %s", output_path)
             if not os.path.exists(self.template_path):
                 raise FileNotFoundError(f"Шаблон не найден: {self.template_path}")
 
@@ -643,7 +650,7 @@ class ExcelExporter:
             if template:
                 self._insert_logo(quotation_ws, template)
 
-            self.logger.info("Saving workbook to %s", output_path)
+            self.logger.info("#### Сохранение Excel\n- **Файл:** %s", output_path)
             step("Сохранение файла")
             wb.save(output_path)
             self._apply_separators_async(output_path)
@@ -651,11 +658,20 @@ class ExcelExporter:
             if progress_callback:
                 progress_callback(100, "Готово")
 
-            self.logger.info("Export completed successfully")
+            success = True
             return True
         except Exception:
             self.logger.exception("Ошибка экспорта в Excel")
             return False
+        finally:
+            elapsed = perf_counter() - start_time
+            status = "успешно" if success else "с ошибкой"
+            self.logger.info(
+                "#### Экспорт Excel завершён %s\n- **Файл:** %s\n- **Длительность, сек:** %.2f",
+                status,
+                output_path,
+                elapsed,
+            )
 
     def _apply_separators_async(self, output_path: str) -> None:
         """Adjust number separators without blocking the UI."""

@@ -1,4 +1,3 @@
-import logging
 import sys
 
 from resource_utils import resource_path
@@ -9,14 +8,16 @@ from PySide6.QtGui import QIcon
 from gui.main_window import TranslationCostCalculator
 from logic.excel_process import close_excel_processes
 from logic.logging_utils import setup_logging
-
-
-logger = logging.getLogger(__name__)
+from logic.activity_logger import log_user_action
 
 
 def main() -> int:
-    setup_logging()
-    logger.info("Starting application")
+    log_path = setup_logging()
+    log_user_action(
+        "Запуск приложения",
+        details={"Файл журнала": str(log_path)},
+        snapshot=None,
+    )
 
     app = QApplication(sys.argv)
 

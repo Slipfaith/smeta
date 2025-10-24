@@ -1,4 +1,5 @@
 
+import logging
 import os
 
 # =================== PySide6 ===================
@@ -38,6 +39,7 @@ from gui.styles import (
 )
 
 # =================== pandas ===================
+from logic.activity_logger import log_user_action
 import pandas as pd
 
 # =================== typing ===================
@@ -516,18 +518,32 @@ class RateTab(QWidget):
         QApplication.processEvents()
 
         try:
-            print("MLV_Rates_USD_EUR_RUR_CNY: site_id =", self.site_id, "file_path =", self.file_path)
+            log_user_action(
+                "Загрузка ставок MLV_Rates_USD_EUR_RUR_CNY",
+                details={"site_id": self.site_id, "file_path": self.file_path},
+            )
             token = authenticate_with_msal(self.client_id, self.tenant_id, self.scope)
             if not token:
-                print("Не удалось получить access_token для MLV_Rates_USD_EUR_RUR_CNY")
+                log_user_action(
+                    "Не получен access_token для MLV_Rates_USD_EUR_RUR_CNY",
+                    details={"site_id": self.site_id},
+                    level=logging.ERROR,
+                )
                 return
 
             df_temp = download_excel_from_sharepoint(token, self.site_id, self.file_path)
             if df_temp is None:
-                print("Не удалось скачать MLV_Rates_USD_EUR_RUR_CNY Excel")
+                log_user_action(
+                    "Не удалось скачать Excel MLV_Rates_USD_EUR_RUR_CNY",
+                    details={"site_id": self.site_id, "file_path": self.file_path},
+                    level=logging.ERROR,
+                )
                 return
 
-            print(f"MLV_Rates_USD_EUR_RUR_CNY Excel загружен: {df_temp.shape}")
+            log_user_action(
+                "MLV_Rates_USD_EUR_RUR_CNY Excel загружен",
+                details={"shape": list(df_temp.shape)},
+            )
             self.df = df_temp
             self.is_second_file = False
             self._auto_selection_done = False
@@ -551,10 +567,17 @@ class RateTab(QWidget):
         QApplication.processEvents()
 
         try:
-            print(f"Начинаем скачивать TEP (Source RU) (fileId): {self.file_id_2}")
+            log_user_action(
+                "Загрузка ставок TEP (Source RU)",
+                details={"file_id": self.file_id_2, "site_id": self.site_id_2},
+            )
             token = authenticate_with_msal(self.client_id, self.tenant_id, self.scope)
             if not token:
-                print("Не удалось получить access_token для TEP (Source RU)")
+                log_user_action(
+                    "Не получен access_token для TEP (Source RU)",
+                    details={"file_id": self.file_id_2},
+                    level=logging.ERROR,
+                )
                 return
 
             df_temp = download_excel_by_fileid(
@@ -565,10 +588,17 @@ class RateTab(QWidget):
                 skiprows=3
             )
             if df_temp is None:
-                print("Не удалось скачать/прочитать TEP (Source RU) Excel")
+                log_user_action(
+                    "Не удалось скачать или прочитать TEP (Source RU)",
+                    details={"file_id": self.file_id_2},
+                    level=logging.ERROR,
+                )
                 return
 
-            print(f"TEP (Source RU) Excel загружен, shape = {df_temp.shape}")
+            log_user_action(
+                "TEP (Source RU) Excel загружен",
+                details={"shape": list(df_temp.shape)},
+            )
             if df_temp.shape[1] > 11:
                 df_temp = df_temp.iloc[:, :11]
             rename_map = {}
@@ -972,7 +1002,11 @@ class RateTab(QWidget):
             self.available_lang_list.takeItem(self.available_lang_list.row(item))
             self.process_data()
         except Exception as e:
-            print("move_to_selected => исключение:", e)
+            log_user_action(
+                "Исключение при переносе языка в выбранные",
+                details={"ошибка": str(e)},
+                level=logging.ERROR,
+            )
 
     def move_to_available(self, item):
         try:
@@ -980,7 +1014,11 @@ class RateTab(QWidget):
             self.selected_lang_list.takeItem(self.selected_lang_list.row(item))
             self.process_data()
         except Exception as e:
-            print("move_to_available => исключение:", e)
+            log_user_action(
+                "Исключение при переносе языка в доступные",
+                details={"ошибка": str(e)},
+                level=logging.ERROR,
+            )
 
     def toggle_selection_state(self) -> None:
         total = self.available_lang_list.count() + self.selected_lang_list.count()
@@ -1039,12 +1077,18 @@ class RateTab(QWidget):
         QApplication.clipboard().setText(clipboard_text)
 
     def process_data(self):
-        print("=> process_data() called.")
+        log_user_action(
+            "Запущена обработка ставок",
+            details={"второй файл": self.is_second_file},
+        )
         self._sync_active_source_selection()
         selections = self._get_current_selections()
 
         if self.df is None:
-            print("process_data: df is None => return")
+            log_user_action(
+                "Обработка ставок: нет данных",
+                level=logging.ERROR,
+            )
             self._update_selection_summary()
             self._emit_current_selection()
             return
@@ -1052,7 +1096,10 @@ class RateTab(QWidget):
         if not selections:
             self._update_selection_summary()
             self.table.setRowCount(0)
-            print("process_data: нет выбранных источников => return")
+            log_user_action(
+                "Обработка ставок: не выбраны исходные языки",
+                level=logging.ERROR,
+            )
             self._emit_current_selection()
             return
 
@@ -1098,7 +1145,10 @@ class RateTab(QWidget):
                 _set_item_text(row_index, column, value, center=True)
 
         if not self.is_second_file:
-            print("process_data: MLV_Rates_USD_EUR_RUR_CNY логика...")
+            log_user_action(
+                "Обработка ставок MLV_Rates_USD_EUR_RUR_CNY",
+                details={"пары": selections},
+            )
 
             pair_rows: Dict[Tuple[str, str], int] = {}
 
@@ -1135,9 +1185,10 @@ class RateTab(QWidget):
                                 row_, selected_currency, rate_number
                             )
                         except Exception as exc:
-                            print(
-                                "Ошибка при обработке MLV_Rates_USD_EUR_RUR_CNY:",
-                                exc,
+                            log_user_action(
+                                "Ошибка обработки строки MLV_Rates_USD_EUR_RUR_CNY",
+                                details={"ошибка": str(exc), "source": source_text, "target": target_text},
+                                level=logging.ERROR,
                             )
                             basic = complex_ = hour_ = None
 
@@ -1149,9 +1200,15 @@ class RateTab(QWidget):
                         update_rate_cells(row_index, None, None, None)
 
         else:
-            print("process_data: TEP (Source RU) логика...")
+            log_user_action(
+                "Обработка ставок TEP (Source RU)",
+                details={"пары": selections},
+            )
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                print("НЕТ 'SourceLang'/'TargetLang' => return")
+                log_user_action(
+                    "В таблице TEP отсутствуют необходимые столбцы",
+                    level=logging.ERROR,
+                )
                 return
 
             pair_rows: Dict[Tuple[str, str], int] = {}
@@ -1213,7 +1270,10 @@ class RateTab(QWidget):
         header.setStretchLastSection(False)
         self.table.viewport().update()
         self._emit_current_selection(selected_currency, rate_number)
-        print("=> process_data() done.")
+        log_user_action(
+            "Обработка ставок завершена",
+            details={"валюта": selected_currency, "ставка": rate_number},
+        )
 
     def _emit_current_selection(self, selected_currency=None, rate_number=None):
         """Emit the currently displayed rates for embedding into other UIs."""

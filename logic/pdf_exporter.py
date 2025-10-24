@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import contextmanager
+from time import perf_counter
 from typing import Any, Dict
 
 from .excel_process import temporary_separators
@@ -17,6 +18,13 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
     """
 
     excel = wb = None
+    start_time = perf_counter()
+    logger.info(
+        "#### Конвертация Excel→PDF начата\n- **Excel:** %s\n- **PDF:** %s\n- **Язык:** %s",
+        xlsx_path,
+        pdf_path,
+        lang,
+    )
     try:
         import win32com.client  # type: ignore
 
@@ -43,6 +51,15 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str, lang: str = "ru") -> bool:
             except Exception:
                 pass
 
+    elapsed = perf_counter() - start_time
+    status = "успешно" if success else "с ошибкой"
+    logger.info(
+        "#### Конвертация Excel→PDF завершена %s\n- **Excel:** %s\n- **PDF:** %s\n- **Длительность, сек:** %.2f",
+        status,
+        xlsx_path,
+        pdf_path,
+        elapsed,
+    )
     return success
 
 

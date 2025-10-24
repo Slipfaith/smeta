@@ -53,6 +53,7 @@ from logic.language_pairs import LanguagePairsMixin
 from logic.legal_entities import get_legal_entity_metadata, load_legal_entities
 from logic.translation_config import tr
 from logic.logging_utils import get_last_run_log_path
+from logic.activity_logger import log_user_action, log_window_action
 from logic.xml_parser_common import language_identity, resolve_language_display
 from logic.calculations import (
     convert_to_rub as calculate_convert_to_rub,
@@ -102,6 +103,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             app.installEventFilter(self)
             self._clipboard_filter_installed = True
         self.update_available.connect(self._handle_background_update_available)
+        log_window_action(
+            "Главное окно инициализировано",
+            self,
+            details={"GUI язык": self.gui_lang},
+        )
         QTimer.singleShot(0, self.auto_check_for_updates)
 
     def setup_ui(self):
@@ -205,6 +211,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 tr("Ошибка", self.gui_lang),
                 tr("Не удалось получить доступ к файлу журнала.", self.gui_lang),
             )
+            log_user_action(
+                "Не удалось подготовить журнал к открытию",
+                details={"Путь": str(log_path)},
+                level=logging.ERROR,
+            )
             return
 
         opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
@@ -214,6 +225,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 self,
                 tr("Ошибка", self.gui_lang),
                 tr("Не удалось открыть файл журнала.", self.gui_lang),
+            )
+            log_user_action(
+                "Не удалось открыть журнал",
+                details={"Путь": str(log_path)},
+                level=logging.ERROR,
+            )
+        else:
+            log_user_action(
+                "Открыт журнал последнего запуска",
+                details={"Путь": str(log_path)},
             )
 
     def _make_lang_combo(self) -> QComboBox:
@@ -265,6 +286,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         desired_slider_value = 1 if lang == "ru" else 0
         if self.lang_mode_slider.value() != desired_slider_value:
             self.lang_mode_slider.setValue(desired_slider_value)
+        log_window_action(
+            "Изменён язык интерфейса",
+            self,
+            details={"Язык": lang},
+        )
 
     def on_lang_mode_changed(self, value: int):
         """Handle slider changes – update language pair names everywhere."""
@@ -272,6 +298,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.lang_display_ru = value == 1
         self._update_language_names(lang)
         self.update_total()
+        log_window_action(
+            "Изменён язык расчётов",
+            self,
+            details={"Значение": value, "Русский": self.lang_display_ru},
+        )
 
     def _update_language_names(self, lang: str):
         """Update language names in GUI widgets and Excel headers."""
@@ -373,6 +404,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.lang_en_action.setText("english")
 
     def manual_update_check(self):
+        log_user_action("Ручная проверка обновлений")
         check_for_updates(self, force=True)
 
     def auto_check_for_updates(self):
@@ -457,6 +489,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         else:
             self.vat_spin.setValue(0.0)
 
+        log_window_action(
+            "Изменено юридическое лицо",
+            self,
+            details={
+                "Юрлицо": normalized_entity,
+                "НДС включён": vat_enabled,
+                "Ставка НДС": self.vat_spin.value(),
+            },
+        )
+
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
 
@@ -486,6 +528,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def handle_project_info_drop(self, paths: List[str]):
         lang = self.gui_lang
+        log_user_action(
+            "Импорт информации о проекте из Outlook",
+            details={"Файлы": paths},
+        )
         result, errors = import_project_info(paths)
 
         if errors:
@@ -494,8 +540,17 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 tr("Ошибка обработки Outlook файла", lang),
                 "\n".join(errors),
             )
+            log_user_action(
+                "Импорт информации о проекте завершился с ошибками",
+                details={"Файлы": paths, "Ошибки": errors},
+                level=logging.ERROR,
+            )
 
         if not result:
+            log_user_action(
+                "Импорт информации о проекте не дал результатов",
+                details={"Файлы": paths},
+            )
             return
 
         self._apply_project_info_payload(result)
@@ -600,6 +655,17 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if sent_at:
             message_sections.append(f"{tr('Дата отправки', lang)}: {sent_at}")
 
+        log_window_action(
+            "Данные проекта обновлены из Outlook",
+            self,
+            details={
+                "Обновлены поля": updated_fields,
+                "Проверить": manual_checks,
+                "Не определены": missing,
+                "Источник": header,
+            },
+        )
+
         QMessageBox.information(
             self, tr("Готово", lang), "\n\n".join(message_sections)
         )
@@ -677,6 +743,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.only_new_repeats_btn.setText(
                 tr("Только новые слова и повторы", lang)
             )
+        log_window_action(
+            "Переключён режим расчёта повторов",
+            self,
+            details={"Только повторы": self.only_new_repeats_mode},
+        )
 
     def setup_style(self):
         self.setStyleSheet(APP_STYLE)
@@ -740,6 +811,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 tr("Ошибка", lang),
                 tr("Укажите хотя бы одно название (RU или EN).", lang),
             )
+            log_user_action(
+                "Добавление языка отменено",
+                details={"RU": ru, "EN": en},
+                level=logging.ERROR,
+            )
             return
 
         if add_language(en, ru):
@@ -752,10 +828,19 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.populate_lang_combo(self.target_lang_combo)
             self.new_lang_ru.clear()
             self.new_lang_en.clear()
+            log_user_action(
+                "Добавлен новый язык в справочник",
+                details={"RU": ru, "EN": en},
+            )
         else:
             lang = self.gui_lang
             QMessageBox.critical(
                 self, tr("Ошибка", lang), tr("Не удалось сохранить язык в конфиг.", lang)
+            )
+            log_user_action(
+                "Не удалось добавить язык",
+                details={"RU": ru, "EN": en},
+                level=logging.ERROR,
             )
 
     def _parse_combo(self, combo: QComboBox) -> Dict[str, Any]:
@@ -975,6 +1060,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             )
 
         self.update_total()
+        log_window_action("Все данные очищены", self)
 
     def open_rates_panel(self) -> None:
         if not self.language_pairs:
@@ -984,10 +1070,20 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 tr("Ошибка", lang),
                 tr("Сначала добавьте языковые пары", lang),
             )
+            log_user_action(
+                "Открытие панели ставок отменено",
+                details={"Причина": "Нет языковых пар"},
+                level=logging.ERROR,
+            )
             return
 
         pairs, pair_map = self._collect_pairs_for_rates()
         if not pairs:
+            log_user_action(
+                "Открытие панели ставок отменено",
+                details={"Причина": "Не удалось собрать пары"},
+                level=logging.ERROR,
+            )
             return
 
         self._import_pair_map = pair_map
@@ -1000,6 +1096,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.rates_window.show()
         self.rates_window.raise_()
         self.rates_window.activateWindow()
+        log_user_action(
+            "Открыта панель ставок",
+            details={"Пары": pairs},
+        )
 
     def import_rates_from_excel(self) -> None:
         """Backward-compatible alias for external integrations."""
@@ -1066,11 +1166,23 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                     widget.set_basic_rate(value)
 
     def handle_xml_drop(self, paths: List[str], replace: bool = False):
+        log_user_action(
+            "Импорт отчётов XML",
+            details={
+                "Файлы": paths,
+                "Режим": "замена" if replace else "объединение",
+            },
+        )
         result, errors = import_xml_reports(paths)
 
         if errors:
             lang = self.gui_lang
             QMessageBox.critical(self, tr("Ошибка", lang), "\n".join(errors))
+            log_user_action(
+                "Импорт отчётов XML завершился с ошибками",
+                details={"Файлы": paths, "Ошибки": errors},
+                level=logging.ERROR,
+            )
             return
 
         warnings = result.get("warnings", [])
@@ -1081,6 +1193,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 + "\n".join(warnings)
             )
             QMessageBox.warning(self, tr("Предупреждение", lang), warning_msg)
+            log_user_action(
+                "Импорт отчётов XML: предупреждения",
+                details={"Файлы": paths, "Предупреждения": warnings},
+            )
 
         data = result.get("data", {})
         report_sources = result.get("report_sources", {})
@@ -1104,6 +1220,10 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 self,
                 tr("Результат обработки", lang),
                 "\n".join(message_lines),
+            )
+            log_user_action(
+                "Импорт отчётов XML без данных",
+                details={"Файлы": paths},
             )
             return
 
@@ -1238,6 +1358,15 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.language_pairs = dict(sorted_items)
 
         self.update_pairs_list()
+        log_window_action(
+            "Импорт отчётов XML завершён",
+            self,
+            details={
+                "Добавлено пар": added_pairs,
+                "Обновлено пар": updated_pairs,
+                "Всего файлов": len(paths),
+            },
+        )
         self.update_total()
 
         self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
@@ -1374,3 +1503,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.additional_services_widget.load_data(additional)
 
         self.update_total()
+        log_window_action(
+            "Загружены данные проекта",
+            self,
+            details={
+                "Проект": project_data.get("project_name", ""),
+                "Клиент": project_data.get("client_name", ""),
+            },
+        )
