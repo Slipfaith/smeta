@@ -294,6 +294,12 @@ class RatesMappingWidget(QWidget):
             IMPORT_BUTTON_ENABLED_STYLE if enabled else IMPORT_BUTTON_DISABLED_STYLE
         )
 
+    def set_import_button_width(self, width: int) -> None:
+        target = int(width) if isinstance(width, (int, float)) else 0
+        if target <= 0:
+            target = self.import_btn.sizeHint().width()
+        self.import_btn.setFixedWidth(target)
+
     def _can_import(self) -> bool:
         if not self._rates or self.table.rowCount() == 0:
             return False
@@ -771,12 +777,18 @@ class RatesManagerWindow(QMainWindow):
 
         self.rate_tab.rates_updated.connect(self._handle_rate_payload)
         self.mapping_widget.import_requested.connect(self._apply_to_main_window)
+        self._sync_action_button_widths()
 
     def set_language(self, lang: str) -> None:
         """Update visible texts to the requested language."""
         self.setWindowTitle(tr("Панель ставок", lang))
         self.mapping_widget.set_language(lang)
         self.rate_tab.set_language(lang)
+        self._sync_action_button_widths()
+
+    def _sync_action_button_widths(self) -> None:
+        export_width = self.rate_tab.export_button.sizeHint().width()
+        self.mapping_widget.set_import_button_width(export_width)
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -786,6 +798,7 @@ class RatesManagerWindow(QMainWindow):
         self._current_pairs = []
         self.mapping_widget.reset_state()
         self.rate_tab.reset_state()
+        self._sync_action_button_widths()
 
     def update_pairs(self, pairs: Iterable[Tuple[str, str]]) -> None:
         self._current_pairs = list(pairs)

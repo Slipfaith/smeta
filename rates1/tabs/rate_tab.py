@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel,
     QHBoxLayout, QComboBox, QTableWidget, QTableWidgetItem,
-    QListWidget, QListWidgetItem, QAbstractItemView,
+    QListWidget, QAbstractItemView,
     QStyledItemDelegate, QHeaderView, QSizePolicy, QLineEdit,
     QDialog, QApplication, QFileDialog
 )
@@ -56,7 +56,6 @@ from services.excel_export import export_rate_tables
 
 # =================== dotenv ===================
 from dotenv import load_dotenv
-from utils.history import load_history, add_entry
 
 load_dotenv()
 
@@ -175,8 +174,6 @@ class RateTab(QWidget):
         self.layout_main.addLayout(self.load_layout)
 
         # --- Поля ввода языков ---
-        self.lang_layout = QHBoxLayout()
-
         self.source_section_layout = QVBoxLayout()
         self.source_section_layout.setContentsMargins(*RATE_TAB_LANG_SECTION_MARGINS)
         self.source_section_layout.setSpacing(RATE_TAB_LANG_SECTION_SPACING)
@@ -185,31 +182,10 @@ class RateTab(QWidget):
         self.source_section_layout.addWidget(self.source_lang_label)
 
         self.source_lang_combo = QComboBox()
+        self.source_lang_combo.setMinimumWidth(RATE_TAB_LANG_LIST_WIDTH)
         self.source_section_layout.addWidget(self.source_lang_combo)
 
-        self.source_selection_list = QListWidget()
-        self.source_selection_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.source_selection_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.source_selection_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.source_selection_list.setMinimumWidth(RATE_TAB_LANG_LIST_WIDTH)
-        self.source_selection_list.setMaximumWidth(RATE_TAB_LANG_LIST_WIDTH)
-        self.source_selection_list.setMinimumHeight(RATE_TAB_LANG_LIST_HEIGHT)
-        self.source_selection_list.setMaximumHeight(RATE_TAB_LANG_LIST_HEIGHT)
-        self.source_section_layout.addWidget(self.source_selection_list)
-
-        self.source_selection_list.itemSelectionChanged.connect(
-            self._handle_source_selection_changed
-        )
-        self.source_selection_list.itemChanged.connect(
-            self._handle_source_item_changed
-        )
-
-        self.lang_layout.addLayout(self.source_section_layout)
-        self.lang_layout.addStretch()
-
-        self.selected_target_lang_label = QLabel()
-        self.lang_layout.addWidget(self.selected_target_lang_label)
-        self.layout_main.addLayout(self.lang_layout)
+        self.layout_main.addLayout(self.source_section_layout)
 
         # --- Списки доступных/выбранных языков ---
         lang_list_width = RATE_TAB_LANG_LIST_WIDTH
@@ -283,42 +259,23 @@ class RateTab(QWidget):
         self.select_buttons_layout = QHBoxLayout()
         self.select_buttons_layout.setContentsMargins(*RATE_TAB_SELECT_BUTTONS_LAYOUT_MARGINS)
         self.select_buttons_layout.setSpacing(RATE_TAB_SELECT_BUTTONS_LAYOUT_SPACING)
-        self.select_all_button = QPushButton()
-        self.deselect_all_button = QPushButton()
-        self.select_all_button.clicked.connect(self.select_all_available)
-        self.deselect_all_button.clicked.connect(self.deselect_all_available)
-        self.select_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
-        self.deselect_all_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
-        self.select_buttons_layout.addWidget(self.select_all_button)
-        self.select_buttons_layout.addWidget(self.deselect_all_button)
+        self.toggle_selection_button = QPushButton()
+        self.toggle_selection_button.clicked.connect(self.toggle_selection_state)
+        self.toggle_selection_button.setStyleSheet(RATE_SELECTION_ACTION_BUTTON_STYLE)
+        self.select_buttons_layout.addWidget(self.toggle_selection_button)
         self.select_buttons_layout.addStretch(1)
         self.layout_main.addLayout(self.select_buttons_layout)
 
         # -- Removed text size slider --
 
-        # --- Выбор ставки (Client rates 1/2) ---
-        self.rate_layout = QHBoxLayout()
-        self.rate_label = QLabel()
+        # --- Выбор ставки и валюты ---
+        self.rate_currency_layout = QHBoxLayout()
         self.rate_combo = QComboBox()
-        self.rate_layout.addWidget(self.rate_label)
-        self.rate_layout.addWidget(self.rate_combo)
-        self.layout_main.addLayout(self.rate_layout)
-
-        # --- Выбор валюты (USD, EUR, RUB, CNY) ---
-        self.currency_layout = QHBoxLayout()
-        self.currency_label = QLabel()
         self.currency_combo = QComboBox()
-        self.currency_layout.addWidget(self.currency_label)
-        self.currency_layout.addWidget(self.currency_combo)
-        self.layout_main.addLayout(self.currency_layout)
-
-        # --- История выбора языков ---
-        self.history_layout = QHBoxLayout()
-        self.history_label = QLabel()
-        self.history_combo = QComboBox()
-        self.history_layout.addWidget(self.history_label)
-        self.history_layout.addWidget(self.history_combo)
-        self.layout_main.addLayout(self.history_layout)
+        self.rate_currency_layout.addWidget(self.rate_combo)
+        self.rate_currency_layout.addWidget(self.currency_combo)
+        self.rate_currency_layout.addStretch(1)
+        self.layout_main.addLayout(self.rate_currency_layout)
 
         # --- Таблица ---
         self.table = QTableWidget()
@@ -358,10 +315,6 @@ class RateTab(QWidget):
         self._selected_targets_by_source: Dict[str, List[str]] = {}
         self._active_source: Optional[str] = None
         self._source_order: List[str] = []
-        self._block_source_item_signal = False
-
-        self.history_data = []
-        self.last_saved_selection = None
 
         # MS Graph настройки через .env
         self.client_id = os.getenv('CLIENT_ID')
@@ -382,8 +335,6 @@ class RateTab(QWidget):
         self.source_lang_combo.currentIndexChanged.connect(
             self._handle_source_combo_change
         )
-
-        self.history_combo.currentIndexChanged.connect(self.apply_history_selection)
         self._currency_order = ["USD", "EUR", "RUB", "CNY"]
         self._currency_labels = {
             "USD": "Долл США (USD)",
@@ -394,7 +345,6 @@ class RateTab(QWidget):
         self._rate_labels = {1: "Client rates 1", 2: "Client rates 2"}
 
         self._update_language_texts()
-        self.load_history_combo()
 
     # ------------------------------------------------------------------
     # Language helpers
@@ -406,26 +356,18 @@ class RateTab(QWidget):
         """Update visible texts when the application language changes."""
         self._current_lang = lang
         self._update_language_texts()
-        self.load_history_combo()
 
     def _update_language_texts(self) -> None:
         lang = self._lang()
         self.load_url_button.setText(tr("Загрузить", lang))
         self.source_lang_label.setText(tr("Исходный язык", lang) + ":")
-        self.selected_label.setText(tr("Выбранные языки", lang) + ":")
         self.available_label.setText(tr("Доступные языки", lang) + ":")
         self.available_search.setPlaceholderText(tr("Поиск...", lang))
-        self.select_all_button.setText(tr("Выбрать все", lang))
-        self.deselect_all_button.setText(tr("Снять выбор", lang))
-        self.rate_label.setText(tr("Выберите ставки", lang) + ":")
-        self.currency_label.setText(tr("Выберите валюту", lang) + ":")
-        self.history_label.setText(tr("История", lang) + ":")
         self.export_button.setText(tr("Экспорт в Excel", lang))
 
         self._populate_rate_combo(lang)
         self._populate_currency_combo(lang)
         self._update_selection_summary()
-        self._update_history_placeholder(lang)
 
     def _populate_rate_combo(self, lang: str) -> None:
         current_rate = self.rate_combo.currentData()
@@ -453,17 +395,22 @@ class RateTab(QWidget):
         self.currency_combo.setCurrentIndex(index if index >= 0 else 0)
         self.currency_combo.blockSignals(False)
 
-    def _update_history_placeholder(self, lang: str) -> None:
-        if self.history_combo.count() == 0:
-            return
-        self.history_combo.setItemText(0, tr("История...", lang))
-
     def _update_selection_summary(self) -> None:
         lang = self._lang()
         count = self.selected_lang_list.count()
-        self.selected_target_lang_label.setText(
-            tr("Выбрано языков: {0}", lang).format(count)
-        )
+        total = count + self.available_lang_list.count()
+        self.selected_label.setText(f"{tr('Выбранные языки', lang)}: {count}")
+        if not hasattr(self, "toggle_selection_button"):
+            return
+        if total <= 0:
+            self.toggle_selection_button.setEnabled(False)
+            self.toggle_selection_button.setText(tr("Выбрать все", lang))
+            return
+        self.toggle_selection_button.setEnabled(True)
+        if count < total:
+            self.toggle_selection_button.setText(tr("Выбрать все", lang))
+        else:
+            self.toggle_selection_button.setText(tr("Снять выбор", lang))
 
     # ------------------------------------------------------------------
     # Source language helpers
@@ -478,70 +425,7 @@ class RateTab(QWidget):
             self._store_targets_for_source(previous_source, previous_targets)
 
         current = self.source_lang_combo.currentText().strip()
-        self._sync_source_selection_controls(current)
         self.update_target_languages()
-
-    def _handle_source_selection_changed(self) -> None:
-        if self._block_source_item_signal:
-            return
-        item = self.source_selection_list.currentItem()
-        if item is None:
-            return
-        text = item.text().strip()
-        if not text:
-            return
-        index = self.source_lang_combo.findText(text)
-        if index < 0:
-            return
-        self.source_lang_combo.blockSignals(True)
-        self.source_lang_combo.setCurrentIndex(index)
-        self.source_lang_combo.blockSignals(False)
-        self._handle_source_combo_change(index)
-
-    def _handle_source_item_changed(self, item: QListWidgetItem) -> None:
-        if self._block_source_item_signal or item is None:
-            return
-        source = item.text().strip()
-        expected = bool(self._selected_targets_by_source.get(source))
-        desired_state = Qt.Checked if expected else Qt.Unchecked
-        if item.checkState() != desired_state:
-            self._block_source_item_signal = True
-            item.setCheckState(desired_state)
-            self._block_source_item_signal = False
-
-    def _sync_source_selection_controls(self, active: str) -> None:
-        if self._block_source_item_signal:
-            return
-        self._block_source_item_signal = True
-        try:
-            if active:
-                for row in range(self.source_selection_list.count()):
-                    item = self.source_selection_list.item(row)
-                    if item and item.text() == active:
-                        self.source_selection_list.setCurrentRow(row)
-                        break
-            else:
-                self.source_selection_list.clearSelection()
-        finally:
-            self._block_source_item_signal = False
-
-    def _find_source_item(self, text: str) -> Optional[QListWidgetItem]:
-        for row in range(self.source_selection_list.count()):
-            item = self.source_selection_list.item(row)
-            if item and item.text() == text:
-                return item
-        return None
-
-    def _set_source_checked(self, source: str, checked: bool) -> None:
-        item = self._find_source_item(source)
-        if item is None:
-            return
-        state = Qt.Checked if checked else Qt.Unchecked
-        if item.checkState() == state:
-            return
-        self._block_source_item_signal = True
-        item.setCheckState(state)
-        self._block_source_item_signal = False
 
     def _store_targets_for_source(
         self, source: str, targets: Optional[List[str]] = None
@@ -567,10 +451,8 @@ class RateTab(QWidget):
 
         if unique_targets:
             self._selected_targets_by_source[source] = unique_targets
-            self._set_source_checked(source, True)
         else:
             self._selected_targets_by_source.pop(source, None)
-            self._set_source_checked(source, False)
 
     def _sync_active_source_selection(self) -> None:
         current = self._active_source or self.source_lang_combo.currentText().strip()
@@ -582,9 +464,6 @@ class RateTab(QWidget):
         self.source_lang_combo.blockSignals(True)
         self.source_lang_combo.clear()
         self.source_lang_combo.blockSignals(False)
-        self._block_source_item_signal = True
-        self.source_selection_list.clear()
-        self._block_source_item_signal = False
         self._active_source = None
         self._source_order = []
 
@@ -601,19 +480,6 @@ class RateTab(QWidget):
         self.source_lang_combo.addItems(sources)
         self.source_lang_combo.setCurrentIndex(0)
         self.source_lang_combo.blockSignals(False)
-
-        self._block_source_item_signal = True
-        for text in sources:
-            item = QListWidgetItem(text)
-            item.setFlags(
-                item.flags()
-                | Qt.ItemIsUserCheckable
-                | Qt.ItemIsEnabled
-                | Qt.ItemIsSelectable
-            )
-            item.setCheckState(Qt.Unchecked)
-            self.source_selection_list.addItem(item)
-        self._block_source_item_signal = False
 
         self._handle_source_combo_change(0)
 
@@ -754,7 +620,6 @@ class RateTab(QWidget):
         self._selected_targets_by_source.clear()
         self._active_source = None
         self._source_order = []
-        self.last_saved_selection = None
 
         if not self.is_second_file:
             # MLV_Rates_USD_EUR_RUR_CNY
@@ -824,9 +689,6 @@ class RateTab(QWidget):
                     self.selected_lang_list.addItem(item.text())
                     self.available_lang_list.takeItem(row)
             self.selected_lang_list.sortItems()
-            self._set_source_checked(source_lang, True)
-        else:
-            self._set_source_checked(source_lang, False)
         self._update_selection_summary()
 
     def set_gui_pairs(self, pairs: Iterable[Tuple[str, str]]):
@@ -853,8 +715,6 @@ class RateTab(QWidget):
         self._gui_pairs = []
         self._excel_matches = []
         self._auto_selection_done = False
-        self.last_saved_selection = None
-
         self.available_search.clear()
         self._clear_source_controls()
         self._selected_targets_by_source.clear()
@@ -865,10 +725,7 @@ class RateTab(QWidget):
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
 
-        self.load_history_combo()
         self._update_language_texts()
-        if self.history_combo.count() > 0:
-            self.history_combo.setCurrentIndex(0)
 
         self.rates_updated.emit(
             {
@@ -1112,6 +969,15 @@ class RateTab(QWidget):
         except Exception as e:
             print("move_to_available => исключение:", e)
 
+    def toggle_selection_state(self) -> None:
+        total = self.available_lang_list.count() + self.selected_lang_list.count()
+        if total == 0:
+            return
+        if self.selected_lang_list.count() < total:
+            self.select_all_available()
+        else:
+            self.deselect_all_available()
+
     def select_all_available(self):
         while self.available_lang_list.count() > 0:
             it = self.available_lang_list.item(0)
@@ -1333,7 +1199,6 @@ class RateTab(QWidget):
 
         header.setStretchLastSection(False)
         self.table.viewport().update()
-        self.save_current_selection()
         self._emit_current_selection(selected_currency, rate_number)
         print("=> process_data() done.")
 
@@ -1408,55 +1273,6 @@ class RateTab(QWidget):
             return float(value)
         except (TypeError, ValueError):
             return None
-
-    def load_history_combo(self):
-        self.history_combo.blockSignals(True)
-        self.history_combo.clear()
-        lang = self._lang()
-        self.history_combo.addItem(tr("История...", lang))
-        self.history_data = load_history()
-        for entry in self.history_data:
-            file_text = "TEP" if entry.get('file', 1) == 2 else "MLV"
-            txt = f"{entry['source']} -> {', '.join(entry['targets'])} [{file_text}]"
-            self.history_combo.addItem(txt)
-        self.history_combo.blockSignals(False)
-
-    def apply_history_selection(self, index):
-        if index <= 0:
-            return
-        entry = self.history_data[index - 1]
-
-        entry_file = entry.get('file', 1)
-        if self.df is None or ((entry_file == 2) != self.is_second_file):
-            if entry_file == 2:
-                self.load_url_2()
-            else:
-                self.load_url()
-
-        self.source_lang_combo.setCurrentText(entry['source'])
-        self.update_target_languages()
-        targets_set = set(entry['targets'])
-        for i in range(self.available_lang_list.count() - 1, -1, -1):
-            it = self.available_lang_list.item(i)
-            if it.text() in targets_set:
-                self.selected_lang_list.addItem(it.text())
-                self.available_lang_list.takeItem(i)
-        self.history_combo.setCurrentIndex(0)
-        self.process_data()
-
-    def save_current_selection(self):
-        selections = self._get_current_selections()
-        if not selections:
-            return
-
-        key = tuple((source, tuple(targets)) for source, targets in selections.items())
-        if key == self.last_saved_selection:
-            return
-
-        for source, targets in selections.items():
-            add_entry(source, targets, self.is_second_file)
-        self.last_saved_selection = key
-        self.load_history_combo()
 
     # ------------------------------------------------------------------
     # Экспорт ставок в Excel (все валюты и R1/R2)
