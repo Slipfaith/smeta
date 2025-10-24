@@ -27,6 +27,7 @@ from gui.styles import (
     EXCEL_COMBO_HIGHLIGHT_STYLE,
     IMPORT_BUTTON_DISABLED_STYLE,
     IMPORT_BUTTON_ENABLED_STYLE,
+    RATES_ACTION_BUTTON_WIDTH,
     RATES_IMPORT_DIALOG_STYLE,
     RATES_MAPPING_APPLY_COMBO_WIDTH,
     RATES_MAPPING_CONTROLS_SPACING,
@@ -245,6 +246,7 @@ class RatesMappingWidget(QWidget):
         import_layout.addStretch()
         self.import_btn = QPushButton()
         self.import_btn.clicked.connect(self.import_requested.emit)
+        self.set_import_button_width(RATES_ACTION_BUTTON_WIDTH)
         import_layout.addWidget(self.import_btn)
         layout.addLayout(import_layout)
 
@@ -296,8 +298,11 @@ class RatesMappingWidget(QWidget):
 
     def set_import_button_width(self, width: int) -> None:
         target = int(width) if isinstance(width, (int, float)) else 0
+        hint = self.import_btn.sizeHint().width()
         if target <= 0:
-            target = self.import_btn.sizeHint().width()
+            target = hint
+        else:
+            target = max(target, hint)
         self.import_btn.setFixedWidth(target)
 
     def _can_import(self) -> bool:
@@ -787,8 +792,8 @@ class RatesManagerWindow(QMainWindow):
         self._sync_action_button_widths()
 
     def _sync_action_button_widths(self) -> None:
-        export_width = self.rate_tab.export_button.sizeHint().width()
-        self.mapping_widget.set_import_button_width(export_width)
+        self.rate_tab.set_export_button_width(RATES_ACTION_BUTTON_WIDTH)
+        self.mapping_widget.set_import_button_width(RATES_ACTION_BUTTON_WIDTH)
 
     # ------------------------------------------------------------------
     # Public helpers

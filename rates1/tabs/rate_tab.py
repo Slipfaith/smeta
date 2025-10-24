@@ -14,6 +14,8 @@ from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 
 from gui.styles import (
     MLV_RATES_BUTTON_STYLE,
+    RATES_ACTION_BUTTON_WIDTH,
+    RATES_EXPORT_BUTTON_STYLE,
     RATE_SELECTION_ACTION_BUTTON_STYLE,
     RATE_TAB_AVAILABLE_LAYOUT_MARGINS,
     RATE_TAB_AVAILABLE_LAYOUT_SPACING,
@@ -292,6 +294,8 @@ class RateTab(QWidget):
         # --- Кнопка экспорта ---
         self.export_button = QPushButton()
         self.export_button.clicked.connect(self.export_rates_to_excel)
+        self.export_button.setStyleSheet(RATES_EXPORT_BUTTON_STYLE)
+        self.export_button.setFixedWidth(RATES_ACTION_BUTTON_WIDTH)
         self.layout_main.addWidget(self.export_button)
 
         self.delegate = CustomDelegate(
@@ -368,6 +372,15 @@ class RateTab(QWidget):
         self._populate_rate_combo(lang)
         self._populate_currency_combo(lang)
         self._update_selection_summary()
+
+    def set_export_button_width(self, width: int) -> None:
+        target = int(width) if isinstance(width, (int, float)) else 0
+        hint = self.export_button.sizeHint().width()
+        if target <= 0:
+            target = hint
+        else:
+            target = max(target, hint)
+        self.export_button.setFixedWidth(target)
 
     def _populate_rate_combo(self, lang: str) -> None:
         current_rate = self.rate_combo.currentData()
