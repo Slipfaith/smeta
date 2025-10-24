@@ -479,7 +479,32 @@ class RatesMappingWidget(QWidget):
         if not self._pairs:
             return
 
-        matches = rates_importer.match_pairs(self._pairs, self._rates)
+        manual_codes: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        manual_names: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        for row, pair in enumerate(self._pairs):
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                continue
+            gui_src, gui_tgt = pair
+            src_cell = self._ensure_lang_cell(row, 0)
+            tgt_cell = self._ensure_lang_cell(row, 1)
+            src_text = src_cell.excel_text().strip()
+            tgt_text = tgt_cell.excel_text().strip()
+            if not src_text and not tgt_text:
+                continue
+            if self._is_manual_excel_cell(row, 0) or self._is_manual_excel_cell(row, 1):
+                key = (gui_src, gui_tgt)
+                manual_names[key] = (src_text, tgt_text)
+                src_code = self._name_to_code.get(src_text)
+                tgt_code = self._name_to_code.get(tgt_text)
+                if src_code and tgt_code:
+                    manual_codes[key] = (src_code, tgt_code)
+
+        matches = rates_importer.match_pairs(
+            self._pairs,
+            self._rates,
+            manual_codes=manual_codes,
+            manual_names=manual_names,
+        )
         self._last_matches = matches
         for row, match in enumerate(matches):
             src_cell = self._ensure_lang_cell(row, 0)

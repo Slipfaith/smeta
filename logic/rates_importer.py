@@ -165,7 +165,12 @@ class PairMatch:
     rates: Optional[RateRecord]
 
 
-def match_pairs(gui_pairs: Iterable[Tuple[str, str]], rates: RatesMap) -> List[PairMatch]:
+def match_pairs(
+    gui_pairs: Iterable[Tuple[str, str]],
+    rates: RatesMap,
+    manual_codes: Optional[Dict[Tuple[str, str], Tuple[str, str]]] = None,
+    manual_names: Optional[Dict[Tuple[str, str], Tuple[str, str]]] = None,
+) -> List[PairMatch]:
     """Match GUI language pairs against loaded *rates*.
 
     Parameters
@@ -174,6 +179,14 @@ def match_pairs(gui_pairs: Iterable[Tuple[str, str]], rates: RatesMap) -> List[P
         Iterable of ``(source, target)`` language names as entered in the GUI.
     rates:
         Rates map produced by :func:`load_rates_from_excel`.
+    manual_codes:
+        Optional mapping of GUI pairs to explicit ``(src_code, tgt_code)`` tuples
+        chosen by the user.  When provided, the codes are used as-is without
+        applying language normalization.
+    manual_names:
+        Optional mapping of GUI pairs to the Excel display names chosen by the
+        user.  When present, these names are returned in the resulting
+        :class:`PairMatch` regardless of whether a rate is found.
 
     Returns
     -------
@@ -192,12 +205,30 @@ def match_pairs(gui_pairs: Iterable[Tuple[str, str]], rates: RatesMap) -> List[P
     targets_display = ", ".join(sorted(available_targets)) or "<none>"
     logger.debug("Available source codes: %s", sources_display)
     logger.debug("Available target codes: %s", targets_display)
+    manual_codes = manual_codes or {}
+    manual_names = manual_names or {}
+    manual_pairs = set(manual_codes) | set(manual_names)
+
     for gui_src, gui_tgt in gui_pairs:
-        src_code = _normalize_language(gui_src)
-        tgt_code = _normalize_language(gui_tgt)
-        rate = rates.get((src_code, tgt_code))
-        excel_src = _language_name(src_code) if src_code in available_sources else ""
-        excel_tgt = _language_name(tgt_code) if tgt_code in available_targets else ""
+        key = (gui_src, gui_tgt)
+        if key in manual_pairs:
+            override_codes = manual_codes.get(key)
+            override_names = manual_names.get(key, ("", ""))
+            src_code = override_codes[0] if override_codes else ""
+            tgt_code = override_codes[1] if override_codes else ""
+            rate = rates.get((src_code, tgt_code)) if override_codes else None
+            excel_src = override_names[0] or (
+                _language_name(src_code) if src_code in available_sources else ""
+            )
+            excel_tgt = override_names[1] or (
+                _language_name(tgt_code) if tgt_code in available_targets else ""
+            )
+        else:
+            src_code = _normalize_language(gui_src)
+            tgt_code = _normalize_language(gui_tgt)
+            rate = rates.get((src_code, tgt_code))
+            excel_src = _language_name(src_code) if src_code in available_sources else ""
+            excel_tgt = _language_name(tgt_code) if tgt_code in available_targets else ""
         logger.debug(
             "Pair matched: gui=(%s, %s) -> codes=(%s, %s), found_rate=%s, excel_names=(%s, %s)",
             gui_src,
