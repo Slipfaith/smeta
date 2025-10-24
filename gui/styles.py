@@ -384,8 +384,11 @@ SOURCE_TARGET_CELL_SPACING = 2
 EXCEL_COMBO_HIGHLIGHT_STYLE = "color: #d97706;"
 
 
-# Цвет текста кнопки «Импортировать в программу» в отключённом состоянии
-IMPORT_BUTTON_ENABLED_STYLE = """
+# Фиксированная ширина кнопок действий («Экспорт в Excel», «Импортировать в программу»)
+RATES_ACTION_BUTTON_WIDTH = 200
+
+# Базовый стиль кнопок действий панели ставок
+PRIMARY_RATES_ACTION_BUTTON_STYLE = """
 QPushButton {
     background-color: #2563eb;         /* насыщенный синий */
     color: #ffffff;
@@ -404,6 +407,11 @@ QPushButton:pressed {
     background-color: #1e40af;
 }
 """
+
+RATES_EXPORT_BUTTON_STYLE = PRIMARY_RATES_ACTION_BUTTON_STYLE
+
+# Стиль кнопки «Импортировать в программу» в активном состоянии
+IMPORT_BUTTON_ENABLED_STYLE = PRIMARY_RATES_ACTION_BUTTON_STYLE
 
 IMPORT_BUTTON_DISABLED_STYLE = """
 QPushButton {
