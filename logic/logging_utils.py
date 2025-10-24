@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
+from datetime import datetime
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Optional
 
 
 LOG_DIR_NAME = "logs"
-LAST_RUN_LOG_NAME = "last_run.log"
-ROTATING_LOG_NAME = "app.log"
+LAST_RUN_LOG_NAME = "last_run.md"
+ROTATING_LOG_NAME = "app.md"
 ROTATING_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 ROTATING_BACKUP_COUNT = 5
 
@@ -39,6 +40,27 @@ def _ensure_log_directory() -> Path:
     return Path.cwd()
 
 
+class _MarkdownFormatter(logging.Formatter):
+    """Render log records as Markdown blocks."""
+
+    def format(self, record: logging.LogRecord) -> str:  # pragma: no cover - formatting
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        message = super().format(record).rstrip()
+        if message:
+            message = f"{message}\n"
+        return f"---\n### {timestamp} · {record.levelname}\n\n{message}"
+
+
+def _initialise_markdown_file(path: Path, title: str, fresh: bool) -> None:
+    """Ensure *path* starts with a Markdown heading."""
+
+    header = f"# {title}\n\n"
+    if fresh:
+        path.write_text(header, encoding="utf-8")
+    elif not path.exists() or path.stat().st_size == 0:
+        path.write_text(header, encoding="utf-8")
+
+
 def setup_logging() -> Path:
     """Configure logging handlers for the application.
 
@@ -64,16 +86,20 @@ def setup_logging() -> Path:
     for handler in list(root_logger.handlers):
         root_logger.removeHandler(handler)
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    )
+    formatter = _MarkdownFormatter("%(message)s")
 
+    _initialise_markdown_file(last_run_log, "Журнал последнего запуска", fresh=True)
     last_run_handler = logging.FileHandler(
-        last_run_log, mode="w", encoding="utf-8"
+        last_run_log, mode="a", encoding="utf-8"
     )
     last_run_handler.setLevel(logging.DEBUG)
     last_run_handler.setFormatter(formatter)
 
+    _initialise_markdown_file(
+        rotating_log,
+        "История активности приложения",
+        fresh=not rotating_log.exists(),
+    )
     rotating_handler = RotatingFileHandler(
         rotating_log,
         maxBytes=ROTATING_MAX_BYTES,

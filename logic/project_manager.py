@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import subprocess
@@ -5,6 +6,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtCore import QTimer
@@ -19,6 +21,7 @@ from logic.project_io import (
     save_project as save_project_file,
 )
 from logic.translation_config import tr
+from logic.activity_logger import log_user_action, log_window_action
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from gui.main_window import TranslationCostCalculator
@@ -51,12 +54,36 @@ class ProjectManager:
             filename=filename,
             filter_pattern="JSON files (*.json)",
         )
+        project_snapshot = project_data.to_mapping()
+
+        log_user_action(
+            "Запрошено сохранение проекта",
+            details={"Предложенное имя": filename},
+            snapshot=project_snapshot,
+        )
+
         if not file_path:
+            log_user_action(
+                "Сохранение проекта отменено",
+                details={"Предложенное имя": filename},
+                snapshot=project_snapshot,
+            )
             return
-        if save_project_file(project_data.to_mapping(), str(file_path)):
+        if save_project_file(project_snapshot, str(file_path)):
             QMessageBox.information(window, "Успех", f"Проект сохранен: {file_path}")
+            log_user_action(
+                "Проект сохранён",
+                details={"Файл": str(file_path)},
+                snapshot=project_snapshot,
+            )
         else:
             QMessageBox.critical(window, "Ошибка", "Не удалось сохранить проект")
+            log_user_action(
+                "Ошибка при сохранении проекта",
+                details={"Файл": str(file_path)},
+                snapshot=project_snapshot,
+                level=logging.ERROR,
+            )
 
     def load_project(self) -> None:
         window = self.window
@@ -64,13 +91,25 @@ class ProjectManager:
             caption="Загрузить проект", filter_pattern="JSON files (*.json)"
         )
         if not file_path:
+            log_user_action("Загрузка проекта отменена пользователем")
             return
         project_data = load_project_file(str(file_path))
         if project_data is None:
             QMessageBox.critical(window, "Ошибка", "Не удалось загрузить проект")
+            log_user_action(
+                "Ошибка загрузки проекта",
+                details={"Файл": str(file_path)},
+                level=logging.ERROR,
+            )
             return
         window.load_project_data(project_data)
         QMessageBox.information(window, "Успех", "Проект загружен")
+        log_window_action(
+            "Проект загружен",
+            window,
+            details={"Файл": str(file_path)},
+            include_snapshot=True,
+        )
 
     # ------------------------------------------------------------------
     # Export
@@ -82,6 +121,10 @@ class ProjectManager:
             require_project_name=False, require_services=True
         )
         if project_data is None:
+            log_user_action(
+                "Экспорт в Excel недоступен",
+                details={"Причина": "Недостаточно данных"},
+            )
             return
 
         currency = project_data.currency
@@ -95,7 +138,19 @@ class ProjectManager:
             filename=filename,
             filter_pattern="Excel files (*.xlsx)",
         )
+        project_snapshot = project_data.to_mapping()
+        log_user_action(
+            "Выбор файла для экспорта Excel",
+            details={"Предложенное имя": filename},
+            snapshot=project_snapshot,
+        )
+
         if not file_path:
+            log_user_action(
+                "Экспорт в Excel отменён пользователем",
+                details={"Предложенное имя": filename},
+                snapshot=project_snapshot,
+            )
             return
 
         template_path = window.legal_entities.get(project_data.legal_entity)
@@ -104,16 +159,40 @@ class ProjectManager:
             currency=currency,
             lang=export_lang,
         )
+        export_start = perf_counter()
+        log_user_action(
+            "Экспорт в Excel начат",
+            details={"Файл": str(file_path), "Шаблон": template_path or ""},
+            snapshot=project_snapshot,
+        )
         with Progress(parent=window) as progress:
             success = exporter.export_to_excel(
-                project_data.to_mapping(),
+                project_snapshot,
                 str(file_path),
                 progress_callback=progress.on_progress,
             )
+        duration = perf_counter() - export_start
         if success:
             self._schedule_file_saved_message(file_path)
+            log_user_action(
+                "Экспорт в Excel завершён",
+                details={
+                    "Файл": str(file_path),
+                    "Длительность, сек": round(duration, 2),
+                },
+                snapshot=project_snapshot,
+            )
         else:
             QMessageBox.critical(window, "Ошибка", "Не удалось сохранить файл")
+            log_user_action(
+                "Экспорт в Excel завершился ошибкой",
+                details={
+                    "Файл": str(file_path),
+                    "Длительность, сек": round(duration, 2),
+                },
+                snapshot=project_snapshot,
+                level=logging.ERROR,
+            )
 
     def save_pdf(self) -> None:
         window = self.window
@@ -122,6 +201,10 @@ class ProjectManager:
             require_project_name=True, require_services=False
         )
         if project_data is None:
+            log_user_action(
+                "Экспорт в PDF недоступен",
+                details={"Причина": "Недостаточно данных"},
+            )
             return
 
         currency = project_data.currency
@@ -134,13 +217,31 @@ class ProjectManager:
             filename=filename,
             filter_pattern="PDF files (*.pdf)",
         )
+        project_snapshot = project_data.to_mapping()
+        log_user_action(
+            "Выбор файла для экспорта PDF",
+            details={"Предложенное имя": filename},
+            snapshot=project_snapshot,
+        )
+
         if not file_path:
+            log_user_action(
+                "Экспорт в PDF отменён пользователем",
+                details={"Предложенное имя": filename},
+                snapshot=project_snapshot,
+            )
             return
         template_path = window.legal_entities.get(project_data.legal_entity)
         exporter = ExcelExporter(
             template_path,
             currency=currency,
             lang=export_lang,
+        )
+        overall_start = perf_counter()
+        log_user_action(
+            "Экспорт в PDF начат",
+            details={"Файл": str(file_path), "Шаблон": template_path or ""},
+            snapshot=project_snapshot,
         )
         with Progress(parent=window) as progress:
             def on_excel_progress(percent: int, message: str) -> None:
@@ -151,27 +252,64 @@ class ProjectManager:
                     tmp_dir_path = Path(tmpdir)
                     xlsx_path = tmp_dir_path / "quotation.xlsx"
                     pdf_path = tmp_dir_path / "quotation.pdf"
+                    excel_start = perf_counter()
                     if not exporter.export_to_excel(
-                        project_data.to_mapping(),
+                        project_snapshot,
                         str(xlsx_path),
                         fit_to_page=True,
                         progress_callback=on_excel_progress,
                     ):
                         QMessageBox.critical(window, "Ошибка", "Не удалось подготовить файл")
+                        log_user_action(
+                            "Подготовка Excel для PDF не удалась",
+                            details={"Временный файл": str(xlsx_path)},
+                            snapshot=project_snapshot,
+                            level=logging.ERROR,
+                        )
                         return
+                    excel_duration = perf_counter() - excel_start
                     progress.set_label("Конвертация в PDF")
                     progress.set_value(80)
+                    pdf_start = perf_counter()
                     if not xlsx_to_pdf(str(xlsx_path), str(pdf_path), lang=export_lang):
                         QMessageBox.critical(
                             window, "Ошибка", "Не удалось конвертировать в PDF"
                         )
+                        log_user_action(
+                            "Конвертация в PDF не удалась",
+                            details={
+                                "Excel": str(xlsx_path),
+                                "PDF": str(pdf_path),
+                                "Excel, сек": round(excel_duration, 2),
+                            },
+                            snapshot=project_snapshot,
+                            level=logging.ERROR,
+                        )
                         return
+                    pdf_duration = perf_counter() - pdf_start
                     progress.set_value(100)
                     shutil.copyfile(str(pdf_path), str(file_path))
                 self._schedule_file_saved_message(file_path)
+                total_duration = perf_counter() - overall_start
+                log_user_action(
+                    "Экспорт в PDF завершён",
+                    details={
+                        "Файл": str(file_path),
+                        "Excel, сек": round(excel_duration, 2),
+                        "PDF, сек": round(pdf_duration, 2),
+                        "Итого, сек": round(total_duration, 2),
+                    },
+                    snapshot=project_snapshot,
+                )
             except Exception as exc:  # pragma: no cover - defensive
                 QMessageBox.critical(
                     window, "Ошибка", f"Не удалось сохранить PDF: {exc}"
+                )
+                log_user_action(
+                    "Экспорт в PDF завершился исключением",
+                    details={"Файл": str(file_path), "Ошибка": str(exc)},
+                    snapshot=project_snapshot,
+                    level=logging.ERROR,
                 )
 
     # ------------------------------------------------------------------

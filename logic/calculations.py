@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QInputDialog
 
 from gui.utils import format_amount
 from logic.translation_config import tr
+from logic.activity_logger import log_user_action, log_window_action
 
 CURRENCY_SYMBOLS = {"RUB": "₽", "EUR": "€", "USD": "$"}
 
@@ -55,6 +56,12 @@ def on_currency_changed(window, code: str):
     if getattr(window, "convert_btn", None):
         window.convert_btn.setEnabled(code == "USD")
 
+    log_window_action(
+        "Изменена валюта проекта",
+        window,
+        details={"Новый код": code or ""},
+    )
+
 
 def convert_to_rub(window):
     """Convert all rates from USD to RUB using a provided rate."""
@@ -73,6 +80,10 @@ def convert_to_rub(window):
         4,
     )
     if not ok or rate <= 0:
+        log_user_action(
+            "Конвертация USD→RUB отменена",
+            details={"Подтверждение": ok, "Введённый курс": rate},
+        )
         return
 
     if getattr(window, "project_setup_widget", None):
@@ -84,6 +95,12 @@ def convert_to_rub(window):
 
     set_currency_code(window, "RUB")
     update_total(window)
+
+    log_window_action(
+        "Все ставки пересчитаны в рубли",
+        window,
+        details={"Курс": rate},
+    )
 
 
 def update_total(window, *_):
@@ -140,3 +157,14 @@ def update_total(window, *_):
         window.total_label.setText(
             f"{tr('Итого', lang)}: {format_amount(total, lang)}{symbol_suffix}"
         )
+
+    log_window_action(
+        "Пересчитаны итоги",
+        window,
+        details={
+            "Итого": round(total, 2),
+            "Скидки": round(discount_total, 2),
+            "Наценки": round(markup_total, 2),
+            "НДС": round(vat_rate * 100, 2),
+        },
+    )
