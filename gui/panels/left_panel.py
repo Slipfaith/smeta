@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QScrollArea,
     QSlider,
     QTextEdit,
@@ -146,27 +145,23 @@ def create_left_panel(window: "TranslationCostCalculator") -> QWidget:
     window.add_pair_btn.clicked.connect(window.add_language_pair)
     pairs_layout.addWidget(window.add_pair_btn)
 
-    window.current_pairs_label = QLabel(tr("Текущие пары", lang) + ":")
+    window.current_pairs_label = QLabel(
+        f"{tr('Текущие пары', lang)}: 0"
+    )
     pairs_layout.addWidget(window.current_pairs_label)
     window.pairs_list = QTextEdit()
     window.pairs_list.setMaximumHeight(LEFT_PANEL_PAIRS_LIST_MAX_HEIGHT)
     window.pairs_list.setReadOnly(True)
     pairs_layout.addWidget(window.pairs_list)
 
-    info_layout = QHBoxLayout()
-    window.language_pairs_count_label = QLabel(
-        f"{tr('Загружено языковых пар', lang)}: 0"
-    )
-    info_layout.addWidget(window.language_pairs_count_label)
-    info_layout.addStretch()
-    window.clear_pairs_btn = QPushButton(tr("Очистить", lang))
-    window.clear_pairs_btn.clicked.connect(window.clear_language_pairs)
-    info_layout.addWidget(window.clear_pairs_btn)
-    pairs_layout.addLayout(info_layout)
+    pairs_layout.addSpacing(LEFT_PANEL_PAIRS_SECTION_SPACING)
 
     setup_layout = QHBoxLayout()
     window.project_setup_label = QLabel(
         tr("Запуск и управление проектом", lang) + ":",
+    )
+    window.project_setup_label.setToolTip(
+        window._project_setup_formula_text(lang)
     )
     setup_layout.addWidget(window.project_setup_label)
     window.project_setup_fee_spin = QDoubleSpinBox()

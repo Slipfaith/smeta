@@ -358,9 +358,9 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.vat_label.setText(tr("НДС, %", lang) + ":")
         self.language_names_label.setText(tr("Названия языков", lang) + ":")
         self.add_pair_btn.setText(tr("Добавить языковую пару", lang))
-        self.current_pairs_label.setText(tr("Текущие пары", lang) + ":")
-        self.clear_pairs_btn.setText(tr("Очистить", lang))
+        self._update_current_pairs_label()
         self.project_setup_label.setText(tr("Запуск и управление проектом", lang) + ":")
+        self._update_project_setup_tooltip()
         self.add_lang_group.setTitle(tr("Добавить язык в справочник", lang))
         self.lang_ru_label.setText(tr("Название RU", lang) + ":")
         self.lang_en_label.setText(tr("Название EN", lang) + ":")
@@ -411,6 +411,26 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.language_menu.menuAction().setToolTip(tr("Язык", lang))
         self.lang_ru_action.setText("русский")
         self.lang_en_action.setText("english")
+
+    def _update_current_pairs_label(self, pair_count: Optional[int] = None) -> None:
+        if not getattr(self, "current_pairs_label", None):
+            return
+        if pair_count is None:
+            pair_count = len(self.language_pairs)
+        lang = self.gui_lang
+        self.current_pairs_label.setText(
+            f"{tr('Текущие пары', lang)}: {pair_count}"
+        )
+
+    def _project_setup_formula_text(self, lang: Optional[str] = None) -> str:
+        lang = lang or self.gui_lang
+        return tr("(кол-во языков + 1) / 4", lang)
+
+    def _update_project_setup_tooltip(self) -> None:
+        if getattr(self, "project_setup_label", None):
+            self.project_setup_label.setToolTip(
+                self._project_setup_formula_text()
+            )
 
     def show_about_dialog(self):
         lang = self.gui_lang
@@ -954,9 +974,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         lang = self.gui_lang
         if getattr(self, "delete_all_pairs_btn", None):
             self.delete_all_pairs_btn.setEnabled(pair_count > 0)
-        self.language_pairs_count_label.setText(
-            f"{tr('Загружено языковых пар', lang)}: {pair_count}"
-        )
+        self._update_current_pairs_label(pair_count)
         auto_fee = max(0.5, round((pair_count + 1) / 4 * 4) / 4)
         self.project_setup_fee_spin.blockSignals(True)
         self.project_setup_fee_spin.setValue(auto_fee)
