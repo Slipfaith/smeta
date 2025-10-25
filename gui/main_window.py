@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import threading
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from PySide6.QtWidgets import (
@@ -13,7 +12,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QComboBox,
 )
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal, QEvent
+from PySide6.QtCore import Qt, QUrl, QEvent
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -24,13 +23,7 @@ from PySide6.QtGui import (
 )
 
 from logic.project_manager import ProjectManager
-from updater import (
-    APP_VERSION,
-    AUTHOR,
-    RELEASE_DATE,
-    check_for_updates,
-    check_for_updates_background,
-)
+from logic.app_info import APP_VERSION, AUTHOR, RELEASE_DATE
 from gui.language_pair import LanguagePairWidget
 from gui.drop_areas import (
     DropArea,
@@ -66,8 +59,6 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
-    update_available = Signal(str)
-
     def __init__(self):
         super().__init__()
         self.language_pairs: Dict[str, LanguagePairWidget] = {}
@@ -76,15 +67,14 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self._language_variant_regions: Dict[Tuple[str, str], Set[str]] = {}
         self.lang_display_ru: bool = True  # Controls language for quotation/Excel
         self.gui_lang: str = "ru"  # Controls application GUI language
-        self._languages: List[Dict[str, str]] = load_languages()
-        self.pm_managers, self.pm_last_index = load_pm_history()
-        if 0 <= self.pm_last_index < len(self.pm_managers):
-            self.current_pm = self.pm_managers[self.pm_last_index]
-        else:
-            self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
+        self._languages: Optional[List[Dict[str, str]]] = None
+        self.pm_managers: List[Dict[str, str]] = []
+        self.pm_last_index: int = -1
+        self._pm_history_loaded: bool = False
+        self.current_pm: Dict[str, str] = {"name_ru": "", "name_en": "", "email": ""}
         self.only_new_repeats_mode = False
-        self.legal_entities = load_legal_entities()
-        self.legal_entity_meta = get_legal_entity_metadata()
+        self._legal_entities: Optional[Dict[str, str]] = None
+        self._legal_entity_meta: Optional[Dict[str, Dict[str, Any]]] = None
         self.currency_symbol = ""
         self.rates_window: Optional[RatesManagerWindow] = None
         self._import_pair_map: Dict[Tuple[str, str], str] = {}
@@ -102,13 +92,11 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         if app is not None:
             app.installEventFilter(self)
             self._clipboard_filter_installed = True
-        self.update_available.connect(self._handle_background_update_available)
         log_window_action(
             "Главное окно инициализировано",
             self,
             details={"GUI язык": self.gui_lang},
         )
-        QTimer.singleShot(0, self.auto_check_for_updates)
 
     def setup_ui(self):
         self.setGeometry(100, 100, 1000, 600)
@@ -143,7 +131,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.rates_menu = self._create_rates_menu(lang)
         self.pm_action = self._make_action(tr("Проджект менеджер", lang), self.show_pm_dialog)
         self.menuBar().addAction(self.pm_action)
-        self.update_menu = self._create_update_menu(lang)
         self.about_action = self._make_action(tr("О программе", lang), self.show_about_dialog)
         self.menuBar().addAction(self.about_action)
         self._configure_language_menu(lang)
@@ -173,12 +160,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         menu.addAction(self.import_rates_action)
         return menu
 
-    def _create_update_menu(self, lang: str):
-        menu = self.menuBar().addMenu(tr("Обновление", lang))
-        self.check_updates_action = self._make_action(tr("Проверить обновления", lang), self.manual_update_check)
-        menu.addAction(self.check_updates_action)
-        return menu
-
     def _configure_language_menu(self, lang: str) -> None:
         self.language_menu = self.menuBar().addMenu("Lang")
         self.language_menu.setToolTip(tr("Язык", lang))
@@ -198,6 +179,36 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         action = QAction(text, self)
         action.triggered.connect(slot)
         return action
+
+    def _get_languages(self) -> List[Dict[str, str]]:
+        if self._languages is None:
+            self._languages = load_languages()
+        return self._languages
+
+    def _ensure_pm_history_loaded(self) -> None:
+        if self._pm_history_loaded:
+            return
+        self.pm_managers, self.pm_last_index = load_pm_history()
+        if 0 <= self.pm_last_index < len(self.pm_managers):
+            self.current_pm = self.pm_managers[self.pm_last_index]
+        else:
+            self.current_pm = {"name_ru": "", "name_en": "", "email": ""}
+        self._pm_history_loaded = True
+
+    def _ensure_legal_entities_loaded(self) -> None:
+        if self._legal_entities is None:
+            self._legal_entities = load_legal_entities()
+            self._legal_entity_meta = get_legal_entity_metadata()
+
+    @property
+    def legal_entities(self) -> Dict[str, str]:
+        self._ensure_legal_entities_loaded()
+        return self._legal_entities or {}
+
+    @property
+    def legal_entity_meta(self) -> Dict[str, Dict[str, Any]]:
+        self._ensure_legal_entities_loaded()
+        return self._legal_entity_meta or {}
 
     def open_last_run_log(self):
         """Open the last run log file in the system text editor."""
@@ -254,7 +265,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
         combo.blockSignals(True)
         combo.clear()
-        for lang in self._languages:
+        for lang in self._get_languages():
             name = lang["ru"] if self.lang_display_ru else lang["en"]
             locale = "ru" if self.lang_display_ru else "en"
             name = self._prepare_language_label(name, locale)
@@ -393,8 +404,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.rates_menu.setTitle(tr("Импорт ставок", lang))
         self.import_rates_action.setText(tr("Импортировать из Excel", lang))
         self.pm_action.setText(tr("Проджект менеджер", lang))
-        self.update_menu.setTitle(tr("Обновление", lang))
-        self.check_updates_action.setText(tr("Проверить обновления", lang))
         self.about_action.setText(tr("О программе", lang))
         self.language_menu.setTitle("Lang")
         self.language_menu.setToolTip(tr("Язык", lang))
@@ -402,32 +411,6 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.language_menu.menuAction().setToolTip(tr("Язык", lang))
         self.lang_ru_action.setText("русский")
         self.lang_en_action.setText("english")
-
-    def manual_update_check(self):
-        log_user_action("Ручная проверка обновлений")
-        check_for_updates(self, force=True)
-
-    def auto_check_for_updates(self):
-        def worker():
-            try:
-                version = check_for_updates_background(force=False)
-            except Exception:  # pragma: no cover - network errors, etc.
-                logger.debug("Background update check failed", exc_info=True)
-                return
-            if version:
-                self.update_available.emit(version)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _handle_background_update_available(self, version: str):
-        lang = self.gui_lang
-        reply = QMessageBox.question(
-            self,
-            tr("Доступно обновление", lang),
-            tr("Доступна новая версия {0}. Проверить обновление сейчас?", lang).format(version),
-        )
-        if reply == QMessageBox.Yes:
-            self.manual_update_check()
 
     def show_about_dialog(self):
         lang = self.gui_lang
@@ -753,6 +736,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.setStyleSheet(APP_STYLE)
 
     def update_title(self):
+        if not self._pm_history_loaded:
+            self._ensure_pm_history_loaded()
         lang = getattr(self, "gui_lang", "ru")
         name = ""
         preferred_keys = ("name_en", "name_ru") if lang == "en" else ("name_ru", "name_en")
@@ -766,11 +751,13 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.setWindowTitle("RateApp")
 
     def show_pm_dialog(self):
+        self._ensure_pm_history_loaded()
         lang = self.gui_lang
         dlg = ProjectManagerDialog(self.pm_managers, self.pm_last_index, lang, self)
         if dlg.exec():
             self.pm_managers, self.pm_last_index = dlg.result()
             save_pm_history(self.pm_managers, self.pm_last_index)
+            self._pm_history_loaded = True
             if 0 <= self.pm_last_index < len(self.pm_managers):
                 self.current_pm = self.pm_managers[self.pm_last_index]
             else:
@@ -823,7 +810,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             QMessageBox.information(
                 self, tr("Готово", lang), tr("Язык сохранён в конфиг.", lang)
             )
-            self._languages = load_languages()
+            self._languages = None
             self.populate_lang_combo(self.source_lang_combo)
             self.populate_lang_combo(self.target_lang_combo)
             self.new_lang_ru.clear()
@@ -922,7 +909,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
 
     def _find_language_by_key(self, key: str) -> Dict[str, str]:
         norm = key.strip().lower()
-        for lang in self._languages:
+        for lang in self._get_languages():
             if norm == lang["en"].lower() or norm == lang["ru"].lower():
                 return {
                     "en": self._prepare_language_label(lang["en"], "en"),
