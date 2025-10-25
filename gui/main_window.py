@@ -1329,7 +1329,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                     else:
                         new_total += add_val
                 repeat_row = table.rowCount() - 1
-                unit_text = tr("Слово", self.gui_lang)
+                unit_text = tr("слово", self.gui_lang)
                 if table.item(0, 1):
                     table.item(0, 1).setText(unit_text)
                 if table.item(repeat_row, 1):
@@ -1359,7 +1359,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                     if table.item(repeat_row, 2):
                         table.item(repeat_row, 2).setText(str(prev_rep + repeat_total))
             else:
-                unit_text = tr("Слово", self.gui_lang)
+                unit_text = tr("слово", self.gui_lang)
                 for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
                     row_name = row_info["name"]
                     add_val = volumes.get(row_name, 0)

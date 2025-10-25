@@ -139,7 +139,7 @@ class LanguagePairWidget(QWidget):
         base_rate_row = None
         for i, row_info in enumerate(rows):
             table.setItem(i, 0, QTableWidgetItem(tr(row_info["name"], self.lang)))
-            unit_item = QTableWidgetItem(tr("Слово", self.lang))
+            unit_item = QTableWidgetItem(tr("слово", self.lang))
             table.setItem(i, 1, unit_item)
             table.setItem(i, 2, QTableWidgetItem("0"))
 
@@ -300,7 +300,7 @@ class LanguagePairWidget(QWidget):
         rows.insert(insert_at, new_cfg)
         table.blockSignals(True)
         table.setItem(insert_at, 0, QTableWidgetItem(name))
-        table.setItem(insert_at, 1, QTableWidgetItem(tr("Слово", self.lang)))
+        table.setItem(insert_at, 1, QTableWidgetItem(tr("слово", self.lang)))
         table.setItem(insert_at, 2, QTableWidgetItem("0"))
         rate_item = QTableWidgetItem("0")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -856,7 +856,7 @@ class LanguagePairWidget(QWidget):
             r = table.rowCount()
             table.insertRow(r)
             table.setItem(r, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
-            table.setItem(r, 1, QTableWidgetItem(tr("Слово", self.lang)))
+            table.setItem(r, 1, QTableWidgetItem(tr("слово", self.lang)))
             table.setItem(r, 2, QTableWidgetItem("0"))
             rate_item = QTableWidgetItem("0")
             rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -871,7 +871,7 @@ class LanguagePairWidget(QWidget):
             if row_data is None:
                 continue
             table.item(row, 0).setText(row_data.get("parameter", ""))
-            unit_value = row_data.get("unit") or tr("Слово", self.lang)
+            unit_value = row_data.get("unit") or tr("слово", self.lang)
             table.item(row, 1).setText(str(unit_value))
             table.item(row, 2).setText(str(row_data.get("volume", 0)))
             sep = "." if self.lang == "en" else None
