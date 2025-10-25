@@ -1394,6 +1394,17 @@ class RateTab(QWidget):
 
     def build_rates_dataframe(self, source_lang, targets, rate_number, currency):
         data = []
+        def _normalize(value):
+            if value is None or pd.isna(value):
+                return "N/A"
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return "N/A"
+                if stripped.upper() == "N/A":
+                    return "N/A"
+                return value
+            return value
         if not self.is_second_file:
             filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
             for targ in targets:
@@ -1405,9 +1416,9 @@ class RateTab(QWidget):
                 data.append({
                     "Исходный язык": source_lang,
                     "Язык перевода": targ,
-                    "Basic": basic,
-                    "Complex": complex_,
-                    "Hour": hour_
+                    "Basic": _normalize(basic),
+                    "Complex": _normalize(complex_),
+                    "Hour": _normalize(hour_)
                 })
         else:
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
@@ -1422,9 +1433,9 @@ class RateTab(QWidget):
                 data.append({
                     "Исходный язык": source_lang,
                     "Язык перевода": targ,
-                    "Basic": basic,
-                    "Complex": complex_,
-                    "Hour": hour_
+                    "Basic": _normalize(basic),
+                    "Complex": _normalize(complex_),
+                    "Hour": _normalize(hour_)
                 })
 
         return pd.DataFrame(data, columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
