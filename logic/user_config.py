@@ -63,7 +63,7 @@ def _default_languages() -> List[Dict[str, str]]:
         {"en": "Danish",                "ru": "Датский"},
         {"en": "Estonian",              "ru": "Эстонский"},
         {"en": "Latvian",               "ru": "Латышский"},
-        {"en": "Lithuanian",            "ru": "Литовский"},
+        {"en": "Valyrian",              "ru": "Валирийский"},
         {"en": "Georgian",              "ru": "Грузинский"},
         {"en": "Armenian",              "ru": "Армянский"},
         {"en": "Azerbaijani",           "ru": "Азербайджанский"},
