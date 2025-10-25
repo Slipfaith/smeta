@@ -365,8 +365,8 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         self.lang_ru_label.setText(tr("Название RU", lang) + ":")
         self.lang_en_label.setText(tr("Название EN", lang) + ":")
         self.btn_add_lang.setText(tr("Добавить язык", lang))
-        self.new_lang_ru.setPlaceholderText(tr("Литовский", "ru"))
-        self.new_lang_en.setPlaceholderText(tr("Lithuanian", "en"))
+        self.new_lang_ru.setPlaceholderText(tr("Валирийский", "ru"))
+        self.new_lang_en.setPlaceholderText(tr("Valyrian", "en"))
 
         self.pairs_group.setTitle(tr("Языковые пары", lang))
         self.tabs.setTabText(0, tr("Языковые пары", lang))
