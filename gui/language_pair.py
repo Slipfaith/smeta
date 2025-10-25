@@ -119,9 +119,10 @@ class LanguagePairWidget(QWidget):
         for r in rows:
             r['deleted'] = False
 
-        table = QTableWidget(len(rows), 4)
+        table = QTableWidget(len(rows), 5)
         table.setHorizontalHeaderLabels([
             tr("Параметр", self.lang),
+            tr("Ед-ца", self.lang),
             tr("Объем", self.lang),
             f"{tr('Ставка', self.lang)} ({self.currency_symbol})",
             f"{tr('Сумма', self.lang)} ({self.currency_symbol})",
@@ -138,7 +139,9 @@ class LanguagePairWidget(QWidget):
         base_rate_row = None
         for i, row_info in enumerate(rows):
             table.setItem(i, 0, QTableWidgetItem(tr(row_info["name"], self.lang)))
-            table.setItem(i, 1, QTableWidgetItem("0"))
+            unit_item = QTableWidgetItem(tr("Слово", self.lang))
+            table.setItem(i, 1, unit_item)
+            table.setItem(i, 2, QTableWidgetItem("0"))
 
             rate_item = QTableWidgetItem("0")
             if not row_info["is_base"]:
@@ -146,11 +149,11 @@ class LanguagePairWidget(QWidget):
             else:
                 if base_rate_row is None:
                     base_rate_row = i
-            table.setItem(i, 2, rate_item)
+            table.setItem(i, 3, rate_item)
 
             sum_item = QTableWidgetItem("0.00")
             sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            table.setItem(i, 3, sum_item)
+            table.setItem(i, 4, sum_item)
 
         # Автоподгон ширин
         header = table.horizontalHeader()
@@ -158,6 +161,7 @@ class LanguagePairWidget(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
         # Пересчёт ставок/сумм
         table.itemChanged.connect(
@@ -296,13 +300,14 @@ class LanguagePairWidget(QWidget):
         rows.insert(insert_at, new_cfg)
         table.blockSignals(True)
         table.setItem(insert_at, 0, QTableWidgetItem(name))
-        table.setItem(insert_at, 1, QTableWidgetItem("0"))
+        table.setItem(insert_at, 1, QTableWidgetItem(tr("Слово", self.lang)))
+        table.setItem(insert_at, 2, QTableWidgetItem("0"))
         rate_item = QTableWidgetItem("0")
         rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-        table.setItem(insert_at, 2, rate_item)
+        table.setItem(insert_at, 3, rate_item)
         sum_item = QTableWidgetItem("0.00")
         sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-        table.setItem(insert_at, 3, sum_item)
+        table.setItem(insert_at, 4, sum_item)
         table.blockSignals(False)
         if base_rate_row is not None and insert_at <= base_rate_row:
             base_rate_row += 1
@@ -321,12 +326,12 @@ class LanguagePairWidget(QWidget):
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             else:
                 item.setForeground(Qt.black)
-                if col == 2:
+                if col == 3:
                     if rows[row]['is_base']:
                         item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                     else:
                         item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                elif col == 3:
+                elif col == 4:
                     item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 else:
                     item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -395,11 +400,11 @@ class LanguagePairWidget(QWidget):
         if enabled and not self.only_new_repeats_mode:
             # сохраняем текущие значения для восстановления
             self._backup_volumes = [
-                table.item(i, 1).text() if table.item(i, 1) else "0"
+                table.item(i, 2).text() if table.item(i, 2) else "0"
                 for i in range(table.rowCount())
             ]
             self._backup_rates = [
-                table.item(i, 2).text() if table.item(i, 2) else "0"
+                table.item(i, 3).text() if table.item(i, 3) else "0"
                 for i in range(table.rowCount())
             ]
 
@@ -409,8 +414,8 @@ class LanguagePairWidget(QWidget):
                     total_new += _to_float(self._backup_volumes[idx])
                 except ValueError:
                     pass
-            if table.item(0, 1):
-                table.item(0, 1).setText(str(total_new))
+            if table.item(0, 2):
+                table.item(0, 2).setText(str(total_new))
 
             if table.rowCount() > 1:
                 table.setRowHidden(1, True)
@@ -422,10 +427,10 @@ class LanguagePairWidget(QWidget):
 
         elif not enabled and self.only_new_repeats_mode:
             for idx in range(min(len(self._backup_volumes), table.rowCount())):
-                if table.item(idx, 1):
-                    table.item(idx, 1).setText(self._backup_volumes[idx])
                 if table.item(idx, 2):
-                    table.item(idx, 2).setText(self._backup_rates[idx])
+                    table.item(idx, 2).setText(self._backup_volumes[idx])
+                if table.item(idx, 3):
+                    table.item(idx, 3).setText(self._backup_rates[idx])
             if table.rowCount() > 1:
                 table.setRowHidden(1, False)
                 rows[1]['deleted'] = False
@@ -674,6 +679,7 @@ class LanguagePairWidget(QWidget):
         table: QTableWidget = group.table
         table.setHorizontalHeaderLabels([
             tr("Параметр", lang),
+            tr("Ед-ца", lang),
             tr("Объем", lang),
             f"{tr('Ставка', lang)} ({self.currency_symbol})",
             f"{tr('Сумма', lang)} ({self.currency_symbol})",
@@ -702,37 +708,37 @@ class LanguagePairWidget(QWidget):
             base_sep = "."
             if base_rate_row is not None and rows[base_rate_row].get('deleted'):
                 base_rate_row = None
-            if base_rate_row is not None and table.item(base_rate_row, 2):
-                base_text = table.item(base_rate_row, 2).text()
+            if base_rate_row is not None and table.item(base_rate_row, 3):
+                base_text = table.item(base_rate_row, 3).text()
                 if self.lang == "en":
                     base_sep = "."
                 else:
                     base_sep = "," if "," in base_text else "."
                 base_rate = _to_float(base_text)
                 table.blockSignals(True)
-                table.item(base_rate_row, 2).setText(self._format_rate(base_text, base_sep))
+                table.item(base_rate_row, 3).setText(self._format_rate(base_text, base_sep))
                 table.blockSignals(False)
 
             subtotal = 0.0
             for row in range(min(table.rowCount(), len(rows))):
                 row_cfg = rows[row]
                 if row_cfg.get('deleted'):
-                    if table.item(row, 3):
+                    if table.item(row, 4):
                         table.blockSignals(True)
-                        table.item(row, 3).setText("0.00")
+                        table.item(row, 4).setText("0.00")
                         table.blockSignals(False)
                     continue
 
                 # авто-ставки для непервой строки
                 if not row_cfg["is_base"] and base_rate_row is not None:
                     auto_rate = base_rate * row_cfg["multiplier"]
-                    if table.item(row, 2):
+                    if table.item(row, 3):
                         table.blockSignals(True)
-                        table.item(row, 2).setText(self._format_rate(auto_rate, base_sep))
+                        table.item(row, 3).setText(self._format_rate(auto_rate, base_sep))
                         table.blockSignals(False)
 
-                volume = _to_float(table.item(row, 1).text() if table.item(row, 1) else "0")
-                rate_item = table.item(row, 2)
+                volume = _to_float(table.item(row, 2).text() if table.item(row, 2) else "0")
+                rate_item = table.item(row, 3)
                 rate_text = rate_item.text() if rate_item else "0"
                 if self.lang == "en":
                     sep = "."
@@ -743,9 +749,9 @@ class LanguagePairWidget(QWidget):
                 rate_item.setText(self._format_rate(rate_text, sep))
                 table.blockSignals(False)
                 total = volume * rate
-                if table.item(row, 3):
+                if table.item(row, 4):
                     table.blockSignals(True)
-                    table.item(row, 3).setText(format_amount(total, self.lang))
+                    table.item(row, 4).setText(format_amount(total, self.lang))
                     table.blockSignals(False)
                 subtotal += total
 
@@ -808,9 +814,10 @@ class LanguagePairWidget(QWidget):
                 "key": row_cfg.get("key"),
                 "name": row_cfg.get("name"),
                 "parameter": table.item(row, 0).text() if table.item(row, 0) else "",
-                "volume": _to_float(table.item(row, 1).text() if table.item(row, 1) else "0"),
-                "rate": _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
-                "total": _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
+                "unit": table.item(row, 1).text() if table.item(row, 1) else "",
+                "volume": _to_float(table.item(row, 2).text() if table.item(row, 2) else "0"),
+                "rate": _to_float(table.item(row, 3).text() if table.item(row, 3) else "0"),
+                "total": _to_float(table.item(row, 4).text() if table.item(row, 4) else "0"),
                 "is_base": row_cfg.get("is_base", False),
                 "multiplier": row_cfg.get("multiplier"),
                 "deleted": row_cfg.get("deleted", False),
@@ -849,13 +856,14 @@ class LanguagePairWidget(QWidget):
             r = table.rowCount()
             table.insertRow(r)
             table.setItem(r, 0, QTableWidgetItem(tr("Новая строка", self.lang)))
-            table.setItem(r, 1, QTableWidgetItem("0"))
+            table.setItem(r, 1, QTableWidgetItem(tr("Слово", self.lang)))
+            table.setItem(r, 2, QTableWidgetItem("0"))
             rate_item = QTableWidgetItem("0")
             rate_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            table.setItem(r, 2, rate_item)
+            table.setItem(r, 3, rate_item)
             sum_item = QTableWidgetItem("0.00")
             sum_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            table.setItem(r, 3, sum_item)
+            table.setItem(r, 4, sum_item)
             rows.append({"name": "Новая строка", "is_base": False, "multiplier": 1.0, "deleted": False})
             assigned_rows.append(remaining.pop(0))
 
@@ -863,10 +871,12 @@ class LanguagePairWidget(QWidget):
             if row_data is None:
                 continue
             table.item(row, 0).setText(row_data.get("parameter", ""))
-            table.item(row, 1).setText(str(row_data.get("volume", 0)))
+            unit_value = row_data.get("unit") or tr("Слово", self.lang)
+            table.item(row, 1).setText(str(unit_value))
+            table.item(row, 2).setText(str(row_data.get("volume", 0)))
             sep = "." if self.lang == "en" else None
-            table.item(row, 2).setText(self._format_rate(row_data.get('rate', 0), sep))
-            table.item(row, 3).setText(format_amount(row_data.get('total', 0), self.lang))
+            table.item(row, 3).setText(self._format_rate(row_data.get('rate', 0), sep))
+            table.item(row, 4).setText(format_amount(row_data.get('total', 0), self.lang))
             rows[row]["is_base"] = row_data.get("is_base", rows[row].get("is_base", False))
             rows[row]["multiplier"] = row_data.get("multiplier", rows[row].get("multiplier", 1.0))
             rows[row]["key"] = row_data.get("key", rows[row].get("key"))
@@ -919,10 +929,10 @@ class LanguagePairWidget(QWidget):
         if table is None or rows is None or base_row is None:
             return
         sep = "." if self.lang == "en" else None
-        item = table.item(base_row, 2)
+        item = table.item(base_row, 3)
         if item is None:
             item = QTableWidgetItem()
-            table.setItem(base_row, 2, item)
+            table.setItem(base_row, 3, item)
         item.setText(self._format_rate(value, sep))
         self.update_rates_and_sums(table, rows, base_row)
 
@@ -932,6 +942,7 @@ class LanguagePairWidget(QWidget):
         if hasattr(self.translation_group, 'table'):
             self.translation_group.table.setHorizontalHeaderLabels([
                 tr("Параметр", self.lang),
+                tr("Ед-ца", self.lang),
                 tr("Объем", self.lang),
                 f"{tr('Ставка', self.lang)} ({symbol})",
                 f"{tr('Сумма', self.lang)} ({symbol})",
@@ -952,7 +963,7 @@ class LanguagePairWidget(QWidget):
         for row in range(table.rowCount()):
             if rows[row].get('deleted'):
                 continue
-            item = table.item(row, 2)
+            item = table.item(row, 3)
             if item is None:
                 continue
             rate = _to_float(item.text())
