@@ -161,6 +161,11 @@ class TranslationBlockRenderer(BlockRenderer):
         deleted_keys = set()
         deleted_names = set()
         filtered_rows: List[Dict[str, Any]] = []
+        def resolve_unit(row: Dict[str, Any]) -> str:
+            unit_value = row.get("unit")
+            if unit_value:
+                return tr(unit_value, self.exporter.lang)
+            return tr("Слово", self.exporter.lang)
         for row in translation_rows:
             if row.get("deleted"):
                 key = row.get("key")
@@ -183,7 +188,7 @@ class TranslationBlockRenderer(BlockRenderer):
                     {
                         "parameter": row.get("parameter")
                         or tr(row.get("name"), self.exporter.lang),
-                        "unit": tr("Слово", self.exporter.lang),
+                        "unit": resolve_unit(row),
                         "volume": self.exporter._to_number(row.get("volume") or 0),
                         "rate": self.exporter._to_number(row.get("rate") or 0),
                         "multiplier": row.get("multiplier"),
@@ -226,7 +231,7 @@ class TranslationBlockRenderer(BlockRenderer):
                 {
                     "parameter": src.get("parameter")
                     or tr(cfg.get("name"), self.exporter.lang),
-                    "unit": tr("Слово", self.exporter.lang),
+                    "unit": resolve_unit(src),
                     "volume": self.exporter._to_number(src.get("volume") or 0),
                     "rate": self.exporter._to_number(src.get("rate") or 0),
                     "multiplier": src.get("multiplier", cfg.get("multiplier")),
@@ -239,7 +244,7 @@ class TranslationBlockRenderer(BlockRenderer):
                 {
                     "parameter": row.get("parameter")
                     or tr(row.get("name"), self.exporter.lang),
-                    "unit": tr("Слово", self.exporter.lang),
+                    "unit": resolve_unit(row),
                     "volume": self.exporter._to_number(row.get("volume") or 0),
                     "rate": self.exporter._to_number(row.get("rate") or 0),
                     "multiplier": row.get("multiplier"),
