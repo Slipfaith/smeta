@@ -814,8 +814,13 @@ class LanguagePairWidget(QWidget):
             "markup_percent": self.get_markup_percent(),
             "markup_amount": self.get_markup_amount(),
         }
-        if self.translation_group.isChecked():
-            data["services"]["translation"] = self._get_table_data(self.translation_group.table)
+        translation_rows = self._get_table_data(self.translation_group.table)
+        if self.translation_group.isChecked() or any(
+            not row.get("deleted")
+            and ((row.get("rate") or 0.0) != 0.0 or (row.get("volume") or 0.0) != 0.0)
+            for row in translation_rows
+        ):
+            data["services"]["translation"] = translation_rows
         return data
 
     def _get_table_data(self, table: QTableWidget) -> List[Dict[str, Any]]:
