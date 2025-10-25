@@ -7,11 +7,13 @@ from PySide6.QtGui import QIcon
 
 from gui.main_window import TranslationCostCalculator
 from logic.excel_process import close_excel_processes
+from logic.env_loader import load_application_env
 from logic.logging_utils import setup_logging
 from logic.activity_logger import log_user_action
 
 
 def main() -> int:
+    load_application_env()
     log_path = setup_logging()
     log_user_action(
         "Запуск приложения",

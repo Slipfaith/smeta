@@ -59,9 +59,9 @@ from services.ms_graph import (
 from services.excel_export import export_rate_tables
 
 # =================== dotenv ===================
-from dotenv import load_dotenv
+from logic.env_loader import load_application_env
 
-load_dotenv()
+load_application_env()
 
 # --------------------------------------------------------------
 # Функция для удаления ".0" при выводе

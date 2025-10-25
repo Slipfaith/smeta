@@ -58,6 +58,10 @@ additional_datas = [
     *language_data_files,
 ]
 
+dotenv_path = project_root / ".env"
+if dotenv_path.exists():
+    additional_datas.append((str(dotenv_path), "."))
+
 
 a = Analysis(
     ['main.py'],
