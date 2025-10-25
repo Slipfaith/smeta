@@ -1370,7 +1370,14 @@ class RateTab(QWidget):
         if not file_path.endswith(".xlsx"):
             file_path += ".xlsx"
 
-        sheets = {}
+        sheets: Dict[str, pd.DataFrame] = {}
+        headers = [
+            tr("Исходный язык", lang),
+            tr("Язык перевода", lang),
+            tr("Basic", lang),
+            tr("Complex", lang),
+            tr("Hour", lang),
+        ]
         for rate_number in [1, 2]:
             for currency in ["USD", "EUR", "RUB", "CNY"]:
                 frames = []
@@ -1378,7 +1385,11 @@ class RateTab(QWidget):
                     if not target_languages:
                         continue
                     df_rates = self.build_rates_dataframe(
-                        source_lang, target_languages, rate_number, currency
+                        source_lang,
+                        target_languages,
+                        rate_number,
+                        currency,
+                        lang=lang,
                     )
                     if not df_rates.empty:
                         frames.append(df_rates)
@@ -1386,14 +1397,33 @@ class RateTab(QWidget):
                 if frames:
                     sheets[sheet_name] = pd.concat(frames, ignore_index=True)
                 else:
-                    sheets[sheet_name] = pd.DataFrame(
-                        columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"]
-                    )
+                    sheets[sheet_name] = pd.DataFrame(columns=headers)
 
         export_rate_tables(sheets, file_path)
 
-    def build_rates_dataframe(self, source_lang, targets, rate_number, currency):
+    def build_rates_dataframe(
+        self,
+        source_lang,
+        targets,
+        rate_number,
+        currency,
+        *,
+        lang: Optional[str] = None,
+    ):
+        if lang is None:
+            lang = self._lang()
+
+        headers = [
+            tr("Исходный язык", lang),
+            tr("Язык перевода", lang),
+            tr("Basic", lang),
+            tr("Complex", lang),
+            tr("Hour", lang),
+        ]
+        source_key, target_key, basic_key, complex_key, hour_key = headers
+
         data = []
+
         def _normalize(value):
             if value is None or pd.isna(value):
                 return "N/A"
@@ -1406,39 +1436,72 @@ class RateTab(QWidget):
                 return value
             return value
         if not self.is_second_file:
-            filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
+            source_text = str(source_lang).strip()
+            if self.df is None:
+                filtered_df = pd.DataFrame()
+            else:
+                source_series = (
+                    self.df.iloc[:, 0]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+                filtered_df = self.df[source_series == source_text]
+
             for targ in targets:
-                row_series = filtered_df[filtered_df.iloc[:, 1] == targ]
+                target_text = str(targ).strip()
+                if filtered_df.empty:
+                    row_series = filtered_df
+                else:
+                    target_series = (
+                        filtered_df.iloc[:, 1]
+                        .fillna("")
+                        .astype(str)
+                        .str.strip()
+                    )
+                    row_series = filtered_df[target_series == target_text]
                 if not row_series.empty:
                     basic, complex_, hour_ = self._extract_mlv_rates(row_series.iloc[0], currency, rate_number)
                 else:
                     basic = complex_ = hour_ = None
                 data.append({
-                    "Исходный язык": source_lang,
-                    "Язык перевода": targ,
-                    "Basic": _normalize(basic),
-                    "Complex": _normalize(complex_),
-                    "Hour": _normalize(hour_)
+                    source_key: source_text,
+                    target_key: target_text,
+                    basic_key: _normalize(basic),
+                    complex_key: _normalize(complex_),
+                    hour_key: _normalize(hour_),
                 })
         else:
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                return pd.DataFrame(columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
-            filtered_df = self.df[self.df["SourceLang"] == source_lang]
+                return pd.DataFrame(columns=headers)
+
+            source_series = (
+                self.df["SourceLang"].fillna("").astype(str).str.strip()
+            )
+            source_text = str(source_lang).strip()
+            filtered_df = self.df[source_series == source_text]
             for targ in targets:
-                row_series = filtered_df[filtered_df["TargetLang"].astype(str) == str(targ)]
+                target_text = str(targ).strip()
+                if filtered_df.empty:
+                    row_series = filtered_df
+                else:
+                    target_series = (
+                        filtered_df["TargetLang"].fillna("").astype(str).str.strip()
+                    )
+                    row_series = filtered_df[target_series == target_text]
                 if not row_series.empty:
                     basic, complex_, hour_ = self._extract_tep_rates(row_series.iloc[0], currency, rate_number)
                 else:
                     basic = complex_ = hour_ = None
                 data.append({
-                    "Исходный язык": source_lang,
-                    "Язык перевода": targ,
-                    "Basic": _normalize(basic),
-                    "Complex": _normalize(complex_),
-                    "Hour": _normalize(hour_)
+                    source_key: source_text,
+                    target_key: target_text,
+                    basic_key: _normalize(basic),
+                    complex_key: _normalize(complex_),
+                    hour_key: _normalize(hour_),
                 })
 
-        return pd.DataFrame(data, columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
+        return pd.DataFrame(data, columns=headers)
 
     def _extract_mlv_rates(self, row_, currency, rate_number):
         col_base = None
