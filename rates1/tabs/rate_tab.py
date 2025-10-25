@@ -1409,6 +1409,7 @@ class RateTab(QWidget):
             )
             return
 
+        self._sync_active_source_selection()
         selections = self._get_current_selections()
         if not selections:
             log_user_action(
@@ -1437,77 +1438,57 @@ class RateTab(QWidget):
 
         sheets: Dict[str, pd.DataFrame] = {}
         export_summary: List[Dict[str, object]] = []
-        headers = [
-            tr("Исходный язык", lang),
-            tr("Язык перевода", lang),
-            tr("Basic", lang),
-            tr("Complex", lang),
-            tr("Hour", lang),
-        ]
-        source_key, target_key, basic_key, complex_key, hour_key = headers
-        for rate_number in [1, 2]:
-            for currency in ["USD", "EUR", "RUB", "CNY"]:
-                frames = []
-                sheet_details = {
-                    "лист": f"R{rate_number}_{currency}",
-                    "ставки": [],
-                    "ставки_отсутствуют": [],
-                }
-                for source_lang, target_languages in selections.items():
-                    if not target_languages:
-                        sheet_details["ставки_отсутствуют"].append(
-                            {
-                                "source": source_lang,
-                                "targets": target_languages,
-                                "причина": "не выбраны языки перевода",
-                            }
-                        )
+
+        def _set_combo_index(combo: QComboBox, index: int) -> bool:
+            if index < 0:
+                return False
+            if combo.currentIndex() == index:
+                return True
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+            return True
+
+        original_rate_index = self.rate_combo.currentIndex()
+        original_currency_index = self.currency_combo.currentIndex()
+
+        try:
+            for rate_number in [1, 2]:
+                rate_index = self.rate_combo.findData(rate_number)
+                if rate_index < 0:
+                    continue
+                _set_combo_index(self.rate_combo, rate_index)
+
+                for currency in ["USD", "EUR", "RUB", "CNY"]:
+                    currency_index = self.currency_combo.findData(currency)
+                    if currency_index < 0:
                         continue
-                    df_rates = self.build_rates_dataframe(
-                        source_lang,
-                        target_languages,
-                        rate_number,
-                        currency,
-                        lang=lang,
+                    _set_combo_index(self.currency_combo, currency_index)
+
+                    # Обновляем таблицу для текущих параметров
+                    self.process_data()
+                    QApplication.processEvents()
+
+                    dataframe, sheet_rates, missing_rates = self._collect_current_table_dataframe(
+                        lang=lang
                     )
-                    if not df_rates.empty:
-                        frames.append(df_rates)
-                    records = df_rates.to_dict("records")
-                    if records:
-                        for record in records:
-                            entry = {
-                                "source": record.get(source_key, ""),
-                                "target": record.get(target_key, ""),
-                                "Basic": format_value(record.get(basic_key)),
-                                "Complex": format_value(record.get(complex_key)),
-                                "Hour": format_value(record.get(hour_key)),
-                            }
-                            sheet_details["ставки"].append(entry)
-                            if all(
-                                (entry[key] == "" or str(entry[key]).strip().upper() == "N/A")
-                                for key in ("Basic", "Complex", "Hour")
-                            ):
-                                sheet_details["ставки_отсутствуют"].append(
-                                    {
-                                        "source": entry["source"],
-                                        "target": entry["target"],
-                                        "причина": "ставки отсутствуют",
-                                    }
-                                )
-                    else:
-                        sheet_details["ставки_отсутствуют"].append(
-                            {
-                                "source": source_lang,
-                                "targets": list(target_languages),
-                                "причина": "нет данных для выбранных языков",
-                            }
-                        )
-                sheet_name = f"R{rate_number}_{currency}"
-                if frames:
-                    sheets[sheet_name] = pd.concat(frames, ignore_index=True)
-                else:
-                    sheets[sheet_name] = pd.DataFrame(columns=headers)
-                export_summary.append(sheet_details)
+
+                    sheet_name = f"R{rate_number}_{currency}"
+                    sheets[sheet_name] = dataframe
+                    export_summary.append(
+                        {
+                            "лист": sheet_name,
+                            "ставки": sheet_rates,
+                            "ставки_отсутствуют": missing_rates,
+                        }
+                    )
+        finally:
+            # Восстанавливаем исходный выбор пользователя
+            if original_rate_index >= 0:
+                _set_combo_index(self.rate_combo, original_rate_index)
+            if original_currency_index >= 0:
+                _set_combo_index(self.currency_combo, original_currency_index)
+            self.process_data()
 
         log_user_action(
             "Экспорт ставок в Excel",
@@ -1518,15 +1499,11 @@ class RateTab(QWidget):
         )
         export_rate_tables(sheets, file_path)
 
-    def build_rates_dataframe(
+    def _collect_current_table_dataframe(
         self,
-        source_lang,
-        targets,
-        rate_number,
-        currency,
         *,
         lang: Optional[str] = None,
-    ):
+    ) -> Tuple[pd.DataFrame, List[Dict[str, str]], List[Dict[str, str]]]:
         if lang is None:
             lang = self._lang()
 
@@ -1539,86 +1516,71 @@ class RateTab(QWidget):
         ]
         source_key, target_key, basic_key, complex_key, hour_key = headers
 
-        data = []
+        rows: List[Dict[str, object]] = []
+        sheet_rates: List[Dict[str, str]] = []
+        missing_rates: List[Dict[str, str]] = []
 
-        def _normalize(value):
-            if value is None or pd.isna(value):
-                return "N/A"
-            if isinstance(value, str):
-                stripped = value.strip()
-                if not stripped:
-                    return "N/A"
-                if stripped.upper() == "N/A":
-                    return "N/A"
-                return value
-            return value
-        if not self.is_second_file:
-            source_text = str(source_lang).strip()
-            if self.df is None:
-                filtered_df = pd.DataFrame()
-            else:
-                source_series = (
-                    self.df.iloc[:, 0]
-                    .fillna("")
-                    .astype(str)
-                    .str.strip()
+        def _display_value(text: str) -> str:
+            stripped = text.strip()
+            return stripped if stripped else "N/A"
+
+        def _coerce_numeric(text: str, *, for_hours: bool = False):
+            stripped = text.strip()
+            if not stripped or stripped.upper() == "N/A":
+                return None
+            parsed = self._parse_float(stripped)
+            if parsed is None:
+                return stripped
+            if for_hours:
+                return int(round(parsed))
+            if float(parsed).is_integer():
+                return int(parsed)
+            return parsed
+
+        for row_index in range(self.table.rowCount()):
+            source_text = self._safe_text(self.table.item(row_index, 0)).strip()
+            target_text = self._safe_text(self.table.item(row_index, 1)).strip()
+            basic_text = self._safe_text(self.table.item(row_index, 2))
+            complex_text = self._safe_text(self.table.item(row_index, 3))
+            hour_text = self._safe_text(self.table.item(row_index, 4))
+
+            sheet_entry = {
+                "source": source_text,
+                "target": target_text,
+                "Basic": _display_value(basic_text),
+                "Complex": _display_value(complex_text),
+                "Hour": _display_value(hour_text),
+            }
+            sheet_rates.append(sheet_entry)
+
+            if all(
+                (sheet_entry[key].strip() == "" or sheet_entry[key].strip().upper() == "N/A")
+                for key in ("Basic", "Complex", "Hour")
+            ):
+                missing_rates.append(
+                    {
+                        "source": source_text,
+                        "target": target_text,
+                        "причина": "ставки отсутствуют",
+                    }
                 )
-                filtered_df = self.df[source_series == source_text]
 
-            for targ in targets:
-                target_text = str(targ).strip()
-                if filtered_df.empty:
-                    row_series = filtered_df
-                else:
-                    target_series = (
-                        filtered_df.iloc[:, 1]
-                        .fillna("")
-                        .astype(str)
-                        .str.strip()
-                    )
-                    row_series = filtered_df[target_series == target_text]
-                if not row_series.empty:
-                    basic, complex_, hour_ = self._extract_mlv_rates(row_series.iloc[0], currency, rate_number)
-                else:
-                    basic = complex_ = hour_ = None
-                data.append({
+            rows.append(
+                {
                     source_key: source_text,
                     target_key: target_text,
-                    basic_key: _normalize(basic),
-                    complex_key: _normalize(complex_),
-                    hour_key: _normalize(hour_),
-                })
-        else:
-            if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                return pd.DataFrame(columns=headers)
-
-            source_series = (
-                self.df["SourceLang"].fillna("").astype(str).str.strip()
+                    basic_key: _coerce_numeric(basic_text),
+                    complex_key: _coerce_numeric(complex_text),
+                    hour_key: _coerce_numeric(hour_text, for_hours=True),
+                }
             )
-            source_text = str(source_lang).strip()
-            filtered_df = self.df[source_series == source_text]
-            for targ in targets:
-                target_text = str(targ).strip()
-                if filtered_df.empty:
-                    row_series = filtered_df
-                else:
-                    target_series = (
-                        filtered_df["TargetLang"].fillna("").astype(str).str.strip()
-                    )
-                    row_series = filtered_df[target_series == target_text]
-                if not row_series.empty:
-                    basic, complex_, hour_ = self._extract_tep_rates(row_series.iloc[0], currency, rate_number)
-                else:
-                    basic = complex_ = hour_ = None
-                data.append({
-                    source_key: source_text,
-                    target_key: target_text,
-                    basic_key: _normalize(basic),
-                    complex_key: _normalize(complex_),
-                    hour_key: _normalize(hour_),
-                })
 
-        return pd.DataFrame(data, columns=headers)
+        if rows:
+            dataframe = pd.DataFrame(rows, columns=headers)
+        else:
+            dataframe = pd.DataFrame(columns=headers)
+
+        return dataframe, sheet_rates, missing_rates
 
     def _extract_mlv_rates(self, row_, currency, rate_number):
         col_base = None
