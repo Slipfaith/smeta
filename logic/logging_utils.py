@@ -3,19 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Optional
-
-if os.name == "nt":  # pragma: no cover - Windows-specific behaviour
-    from ctypes import windll
-
-
-_CONSOLE_HANDLER_MARK = "__smeta_console_handler__"
 
 
 LOG_DIR_NAME = "logs"
@@ -67,68 +59,6 @@ def _initialise_markdown_file(path: Path, title: str, fresh: bool) -> None:
         path.write_text(header, encoding="utf-8")
     elif not path.exists() or path.stat().st_size == 0:
         path.write_text(header, encoding="utf-8")
-
-
-def _attach_to_parent_console() -> bool:  # pragma: no cover - requires Windows
-    """Attach the process to the parent console if possible."""
-
-    if os.name != "nt":
-        return False
-
-    ATTACH_PARENT_PROCESS = -1
-    try:
-        attached = bool(windll.kernel32.AttachConsole(ATTACH_PARENT_PROCESS))
-    except OSError:
-        return False
-
-    if not attached:
-        return False
-
-    # ``AttachConsole`` succeeds but standard streams may still be missing.
-    # Re-open them against the console device so ``print`` / logging works.
-    if getattr(sys, "stdout", None) is None:
-        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
-    if getattr(sys, "stderr", None) is None:
-        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
-    if getattr(sys, "stdin", None) is None:
-        sys.stdin = open("CONIN$", "r", encoding="utf-8", buffering=1)
-
-    return True
-
-
-def enable_console_logging() -> bool:
-    """Stream log records to the console when available.
-
-    Returns
-    -------
-    bool
-        ``True`` when logging to a console stream is now active.
-    """
-
-    root_logger = logging.getLogger()
-
-    # Avoid configuring duplicate console handlers on repeated calls.
-    for handler in root_logger.handlers:
-        if getattr(handler, _CONSOLE_HANDLER_MARK, False):
-            return True
-
-    stream = sys.stderr if sys.stderr is not None else sys.stdout
-
-    if stream is None and not _attach_to_parent_console():
-        return False
-
-    stream = sys.stderr if sys.stderr is not None else sys.stdout
-    if stream is None:
-        return False
-
-    console_handler = logging.StreamHandler(stream)
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(
-        logging.Formatter("[%(levelname)s] %(message)s")
-    )
-    setattr(console_handler, _CONSOLE_HANDLER_MARK, True)
-    root_logger.addHandler(console_handler)
-    return True
 
 
 def setup_logging() -> Path:

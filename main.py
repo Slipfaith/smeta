@@ -1,4 +1,3 @@
-import argparse
 import sys
 
 from resource_utils import resource_path
@@ -8,30 +7,11 @@ from PySide6.QtGui import QIcon
 
 from gui.main_window import TranslationCostCalculator
 from logic.excel_process import close_excel_processes
-from logic.logging_utils import enable_console_logging, setup_logging
+from logic.logging_utils import setup_logging
 from logic.activity_logger import log_user_action
 
 
-def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="RateApp launcher")
-    parser.add_argument(
-        "--console-log",
-        action="store_true",
-        help=(
-            "stream log messages to the invoking console when possible; "
-            "useful for debugging packaged builds"
-        ),
-    )
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = _build_arg_parser()
-    args = parser.parse_args(argv)
-
-    if args.console_log:
-        enable_console_logging()
-
+def main() -> int:
     log_path = setup_logging()
     log_user_action(
         "Запуск приложения",
