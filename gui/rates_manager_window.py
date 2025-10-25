@@ -366,6 +366,7 @@ class RatesMappingWidget(QWidget):
         currency: str,
         rate_type: str,
     ) -> None:
+        manual_entries = self._collect_manual_excel_entries()
         self._clear_previous_rates()
         self._rates = rates or {}
         self._source_label = source_label
@@ -384,6 +385,7 @@ class RatesMappingWidget(QWidget):
 
         self._refresh_language_combos()
         self._apply_matches(auto_fill=True)
+        self._restore_manual_excel_entries(manual_entries)
         self._update_status()
         self._refresh_all_rate_display()
         self._force_table_refresh()
@@ -589,6 +591,55 @@ class RatesMappingWidget(QWidget):
 
     def _is_manual_excel_cell(self, row: int, column: int) -> bool:
         return (row, column) in self._manual_excel_cells
+
+    def _collect_manual_excel_entries(self) -> Dict[int, Tuple[str, str]]:
+        entries: Dict[int, Tuple[str, str]] = {}
+        row_count = self.table.rowCount()
+        for row in range(row_count):
+            values = ["", ""]
+            has_manual = False
+            for column in (0, 1):
+                if not self._is_manual_excel_cell(row, column):
+                    continue
+                widget = self.table.cellWidget(row, column)
+                if not isinstance(widget, SourceTargetCell):
+                    continue
+                values[column] = widget.excel_text()
+                has_manual = True
+            if has_manual:
+                entries[row] = (values[0], values[1])
+        return entries
+
+    def _restore_manual_excel_entries(
+        self, entries: Dict[int, Tuple[str, str]]
+    ) -> None:
+        if not entries:
+            return
+
+        previous_flag = self._updating_excel_from_matches
+        try:
+            row_count = min(self.table.rowCount(), len(self._pairs))
+            for row in range(row_count):
+                values = entries.get(row)
+                if not values:
+                    continue
+                for column, text in enumerate(values):
+                    if text is None:
+                        continue
+                    cell = self._ensure_lang_cell(row, column)
+                    self._updating_excel_from_matches = True
+                    try:
+                        cell.set_excel_text(text or "")
+                    finally:
+                        self._updating_excel_from_matches = previous_flag
+                    if text and text.strip():
+                        self._manual_excel_cells.add((row, column))
+                    else:
+                        self._manual_excel_cells.discard((row, column))
+                self._update_rate_from_row(row)
+        finally:
+            self._updating_excel_from_matches = previous_flag
+        self._update_import_button_state()
 
     def _handle_rate_mode_change(self, _text: str) -> None:
         self._update_table_headers()
