@@ -27,7 +27,7 @@ from PySide6.QtGui import QFont
 import copy
 
 from logic.service_config import ServiceConfig
-from logic.translation_config import tr
+from logic.translation_config import TRANSLATIONS, tr
 from gui.styles import (
     GROUP_SECTION_MARGINS,
     GROUP_SECTION_SPACING,
@@ -36,6 +36,16 @@ from gui.styles import (
     REPORTS_LABEL_STYLE,
 )
 from .utils import format_rate, _to_float, format_amount
+
+
+def _translate_known_unit(text: str, lang: str) -> str:
+    """Translate known unit labels like «слово»/«час» when language changes."""
+
+    for key in ("слово", "Слово", "час", "Час"):
+        translations = TRANSLATIONS.get(key, {})
+        if text in (translations.get("ru"), translations.get("en")):
+            return translations.get(lang, text)
+    return text
 
 
 class LanguagePairWidget(QWidget):
@@ -689,6 +699,9 @@ class LanguagePairWidget(QWidget):
             item = table.item(i, 0)
             if item:
                 item.setText(tr(row_info["name"], lang))
+            unit_item = table.item(i, 1)
+            if unit_item:
+                unit_item.setText(_translate_known_unit(unit_item.text(), lang))
         self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
         self._update_reports_label()
 
@@ -970,3 +983,4 @@ class LanguagePairWidget(QWidget):
             sep = '.' if self.lang == 'en' else ','
             item.setText(self._format_rate(rate * multiplier, sep))
         self.update_rates_and_sums(table, rows, getattr(group, 'base_rate_row'))
+
