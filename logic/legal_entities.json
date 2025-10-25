@@ -2,7 +2,8 @@
   "Артфест": {
     "template": "templates/Артфест.xlsx",
     "vat_enabled": true,
-    "default_vat": 20.0
+    "default_vat": 20.0,
+    "default_currency": "RUB"
   },
   "Бикрон": {
     "template": "templates/Бикрон.xlsx"
