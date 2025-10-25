@@ -1001,8 +1001,55 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                 lang_inputs = self._pair_language_inputs.pop(key, None)
                 if lang_inputs is not None:
                     self._pair_language_inputs[new_name] = lang_inputs
+                self._synchronize_pair_inputs_after_rename(key, new_name)
                 break
+        self._update_language_variant_regions_from_pairs(self.language_pairs.keys())
         self.update_pairs_list()
+
+    def _synchronize_pair_inputs_after_rename(
+        self, old_key: str, new_key: str
+    ) -> None:
+        """Update stored language metadata to reflect a renamed pair."""
+
+        entries = self._pair_language_inputs.get(new_key)
+        if not isinstance(entries, dict):
+            entries = {}
+            self._pair_language_inputs[new_key] = entries
+
+        new_left, new_right = self._extract_pair_parts(new_key)
+
+        def ensure_entry(entry: Optional[Dict[str, Any]], value: str) -> Dict[str, Any]:
+            result: Dict[str, Any] = dict(entry or {})
+            result["key"] = value
+            if not str(result.get("text", "")).strip():
+                result["text"] = value
+            if "dict" not in result:
+                result["dict"] = False
+            return result
+
+        if new_right:
+            if new_left:
+                entries["source"] = ensure_entry(entries.get("source"), new_left)
+            entries["target"] = ensure_entry(entries.get("target"), new_right)
+        elif new_left:
+            entries["target"] = ensure_entry(entries.get("target"), new_left)
+            source_entry = entries.get("source")
+            if not source_entry or not str(source_entry.get("key", "")).strip():
+                entries["source"] = ensure_entry(source_entry, new_left)
+
+        target_entry = entries.get("target")
+        if target_entry:
+            labels = self._labels_from_entry(target_entry)
+            lang_key = "ru" if self.lang_display_ru else "en"
+            header_title = labels.get(lang_key)
+            if not header_title:
+                locale = "ru" if self.lang_display_ru else "en"
+                header_title = self._prepare_language_label(
+                    target_entry.get("text", "") or target_entry.get("key", ""),
+                    locale,
+                )
+            if header_title:
+                self.pair_headers[new_key] = header_title
 
     def clear_all_data(self):
         """Reset all user-entered and loaded data."""
@@ -1062,28 +1109,7 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         log_window_action("Все данные очищены", self)
 
     def open_rates_panel(self) -> None:
-        if not self.language_pairs:
-            lang = self.gui_lang
-            QMessageBox.warning(
-                self,
-                tr("Ошибка", lang),
-                tr("Сначала добавьте языковые пары", lang),
-            )
-            log_user_action(
-                "Открытие панели ставок отменено",
-                details={"Причина": "Нет языковых пар"},
-                level=logging.ERROR,
-            )
-            return
-
         pairs, pair_map = self._collect_pairs_for_rates()
-        if not pairs:
-            log_user_action(
-                "Открытие панели ставок отменено",
-                details={"Причина": "Не удалось собрать пары"},
-                level=logging.ERROR,
-            )
-            return
 
         self._import_pair_map = pair_map
 
@@ -1303,45 +1329,60 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
                     else:
                         new_total += add_val
                 repeat_row = table.rowCount() - 1
+                unit_text = tr("Слово", self.gui_lang)
+                if table.item(0, 1):
+                    table.item(0, 1).setText(unit_text)
+                if table.item(repeat_row, 1):
+                    table.item(repeat_row, 1).setText(unit_text)
                 if replace:
-                    table.item(0, 1).setText(str(new_total))
-                    table.item(repeat_row, 1).setText(str(repeat_total))
+                    if table.item(0, 2):
+                        table.item(0, 2).setText(str(new_total))
+                    if table.item(repeat_row, 2):
+                        table.item(repeat_row, 2).setText(str(repeat_total))
                 else:
                     try:
                         prev_new = float(
-                            table.item(0, 1).text() if table.item(0, 1) else "0"
+                            table.item(0, 2).text() if table.item(0, 2) else "0"
                         )
                     except ValueError:
                         prev_new = 0
                     try:
                         prev_rep = float(
-                            table.item(repeat_row, 1).text()
-                            if table.item(repeat_row, 1)
+                            table.item(repeat_row, 2).text()
+                            if table.item(repeat_row, 2)
                             else "0"
                         )
                     except ValueError:
                         prev_rep = 0
-                    table.item(0, 1).setText(str(prev_new + new_total))
-                    table.item(repeat_row, 1).setText(str(prev_rep + repeat_total))
+                    if table.item(0, 2):
+                        table.item(0, 2).setText(str(prev_new + new_total))
+                    if table.item(repeat_row, 2):
+                        table.item(repeat_row, 2).setText(str(prev_rep + repeat_total))
             else:
+                unit_text = tr("Слово", self.gui_lang)
                 for idx, row_info in enumerate(ServiceConfig.TRANSLATION_ROWS):
                     row_name = row_info["name"]
                     add_val = volumes.get(row_name, 0)
 
+                    if table.item(idx, 1):
+                        table.item(idx, 1).setText(unit_text)
                     if replace:
-                        table.item(idx, 1).setText(str(add_val))
+                        if table.item(idx, 2):
+                            table.item(idx, 2).setText(str(add_val))
                     else:
                         try:
                             prev_text = (
-                                table.item(idx, 1).text()
-                                if table.item(idx, 1)
+                                table.item(idx, 2).text()
+                                if table.item(idx, 2)
                                 else "0"
                             )
                             prev = float(prev_text or "0")
                             new_val = prev + add_val
-                            table.item(idx, 1).setText(str(new_val))
+                            if table.item(idx, 2):
+                                table.item(idx, 2).setText(str(new_val))
                         except (ValueError, TypeError):
-                            table.item(idx, 1).setText(str(add_val))
+                            if table.item(idx, 2):
+                                table.item(idx, 2).setText(str(add_val))
 
             widget.update_rates_and_sums(
                 table, group.rows_config, group.base_rate_row
