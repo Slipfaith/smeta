@@ -459,6 +459,17 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
             self.lang_mode_slider.setValue(0)
 
         meta = self.legal_entity_meta.get(entity, {}) if entity else {}
+        default_currency = str(meta.get("default_currency", "")) if meta else ""
+        default_currency = default_currency.strip().upper()
+        auto_currency_applied = False
+        if default_currency:
+            available_currencies = {
+                self.currency_combo.itemText(i).strip().upper()
+                for i in range(1, self.currency_combo.count())
+            }
+            if default_currency in available_currencies:
+                auto_currency_applied = self.set_currency_code(default_currency)
+
         vat_enabled = bool(meta.get("vat_enabled"))
         self.vat_spin.setEnabled(vat_enabled)
         if vat_enabled:
@@ -472,15 +483,16 @@ class TranslationCostCalculator(QMainWindow, LanguagePairsMixin):
         else:
             self.vat_spin.setValue(0.0)
 
-        log_window_action(
-            "Изменено юридическое лицо",
-            self,
-            details={
-                "Юрлицо": normalized_entity,
-                "НДС включён": vat_enabled,
-                "Ставка НДС": self.vat_spin.value(),
-            },
-        )
+        details = {
+            "Юрлицо": normalized_entity,
+            "НДС включён": vat_enabled,
+            "Ставка НДС": self.vat_spin.value(),
+        }
+        if default_currency:
+            details["Валюта по умолчанию"] = default_currency
+            details["Валюта установлена автоматически"] = auto_currency_applied
+
+        log_window_action("Изменено юридическое лицо", self, details=details)
 
     def setup_drag_drop(self):
         drop_area = DropArea(self.handle_xml_drop, lambda: self.gui_lang)
