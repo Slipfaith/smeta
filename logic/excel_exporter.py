@@ -1061,7 +1061,7 @@ class ExcelExporter:
             if it.get("unit"):
                 unit_cell.alignment = Alignment(horizontal="center", vertical="center")
             qty_cell = ws.cell(r, col_qty, self._to_number(it.get("volume", 0)))
-            qty_cell.alignment = Alignment(horizontal="right", vertical="top")
+            qty_cell.alignment = Alignment(horizontal="center", vertical="center")
             qty_cell.number_format = "General"
             r += 1
 
