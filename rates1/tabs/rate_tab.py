@@ -56,7 +56,7 @@ from services.ms_graph import (
     download_excel_from_sharepoint,
     download_excel_by_fileid
 )
-from services.excel_export import apply_excel_styles, table_to_df
+from services.excel_export import export_rate_tables
 
 # =================== dotenv ===================
 from dotenv import load_dotenv
@@ -1350,10 +1350,14 @@ class RateTab(QWidget):
             return None
 
     # ------------------------------------------------------------------
-    # Экспорт ставок в Excel (как отображено в таблице GUI)
+    # Экспорт ставок в Excel (все валюты и R1/R2)
     # ------------------------------------------------------------------
     def export_rates_to_excel(self):
-        if self.table.columnCount() == 0:
+        if self.df is None:
+            return
+
+        selections = self._get_current_selections()
+        if not selections:
             return
 
         lang = self._lang()
@@ -1370,44 +1374,37 @@ class RateTab(QWidget):
 
         current_currency = self.currency_combo.currentData() or "USD"
         current_rate = self.rate_combo.currentData() or 1
+        self._emit_current_selection(current_currency, current_rate)
 
-        sheet_name = f"R{current_rate}_{current_currency}"
-        dataframe_display = table_to_df(self.table)
-        numeric_columns = list(dataframe_display.columns[2:])
-
-        dataframe_to_write = dataframe_display.copy()
-        na_positions: Dict[str, List[int]] = {}
-
-        for column in numeric_columns:
-            values: List[object] = []
-            na_rows: List[int] = []
-            for row_index, value in enumerate(dataframe_display[column]):
-                text = str(value).strip()
-                if text.upper() == "N/A":
-                    values.append(None)
-                    na_rows.append(row_index)
+        sheets = {}
+        for rate_number in [1, 2]:
+            for currency in ["USD", "EUR", "RUB", "CNY"]:
+                sheet_name = f"R{rate_number}_{currency}"
+                if currency == current_currency and rate_number == current_rate:
+                    rows = self._export_payloads.get((currency, rate_number), [])
+                    sheets[sheet_name] = self._dataframe_from_rows(rows, lang)
                     continue
-                if text == "":
-                    values.append(None)
-                    continue
-                try:
-                    values.append(float(text))
-                except ValueError:
-                    values.append(value)
-            dataframe_to_write[column] = values
-            na_positions[column] = na_rows
 
-        with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
-            dataframe_to_write.to_excel(writer, sheet_name=sheet_name, index=False)
-            worksheet = writer.sheets[sheet_name]
+                frames = []
+                for source_lang, target_languages in selections.items():
+                    if not target_languages:
+                        continue
+                    df_rates = self.build_rates_dataframe(
+                        source_lang,
+                        target_languages,
+                        rate_number,
+                        currency,
+                        lang=lang,
+                    )
+                    if not df_rates.empty:
+                        frames.append(df_rates)
 
-            apply_excel_styles(worksheet, dataframe_to_write, numeric_columns)
+                if frames:
+                    sheets[sheet_name] = pd.concat(frames, ignore_index=True)
+                else:
+                    sheets[sheet_name] = self._empty_rates_dataframe(lang)
 
-            for column_index, column_name in enumerate(dataframe_display.columns, start=1):
-                na_rows = na_positions.get(column_name, [])
-                for row_index in na_rows:
-                    cell = worksheet.cell(row=row_index + 2, column=column_index)
-                    cell.value = "N/A"
+        export_rate_tables(sheets, file_path)
 
     def _localized_columns(self, lang: str) -> Tuple[str, str, List[str]]:
         source_col = tr("Исходный язык", lang)
