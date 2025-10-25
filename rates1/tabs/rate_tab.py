@@ -321,7 +321,6 @@ class RateTab(QWidget):
         self._selected_targets_by_source: Dict[str, List[str]] = {}
         self._active_source: Optional[str] = None
         self._source_order: List[str] = []
-        self._export_payloads: Dict[Tuple[str, int], List[Dict[str, object]]] = {}
 
         # MS Graph настройки через .env
         self.client_id = os.getenv('CLIENT_ID')
@@ -1296,7 +1295,6 @@ class RateTab(QWidget):
             rows_map.pop(key, None)
             rows_map[key] = entry
         rows = list(rows_map.values())
-        self._export_payloads[(selected_currency, rate_number)] = rows
 
         selections = self._get_current_selections()
         payload = {
@@ -1372,71 +1370,29 @@ class RateTab(QWidget):
         if not file_path.endswith(".xlsx"):
             file_path += ".xlsx"
 
-        current_currency = self.currency_combo.currentData() or "USD"
-        current_rate = self.rate_combo.currentData() or 1
-        self._emit_current_selection(current_currency, current_rate)
-
         sheets = {}
         for rate_number in [1, 2]:
             for currency in ["USD", "EUR", "RUB", "CNY"]:
-                sheet_name = f"R{rate_number}_{currency}"
-                if currency == current_currency and rate_number == current_rate:
-                    rows = self._export_payloads.get((currency, rate_number), [])
-                    sheets[sheet_name] = self._dataframe_from_rows(rows, lang)
-                    continue
-
                 frames = []
                 for source_lang, target_languages in selections.items():
                     if not target_languages:
                         continue
                     df_rates = self.build_rates_dataframe(
-                        source_lang,
-                        target_languages,
-                        rate_number,
-                        currency,
-                        lang=lang,
+                        source_lang, target_languages, rate_number, currency
                     )
                     if not df_rates.empty:
                         frames.append(df_rates)
-
+                sheet_name = f"R{rate_number}_{currency}"
                 if frames:
                     sheets[sheet_name] = pd.concat(frames, ignore_index=True)
                 else:
-                    sheets[sheet_name] = self._empty_rates_dataframe(lang)
+                    sheets[sheet_name] = pd.DataFrame(
+                        columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"]
+                    )
 
         export_rate_tables(sheets, file_path)
 
-    def _localized_columns(self, lang: str) -> Tuple[str, str, List[str]]:
-        source_col = tr("Исходный язык", lang)
-        target_col = tr("Язык перевода", lang)
-        columns = [source_col, target_col, "Basic", "Complex", "Hour"]
-        return source_col, target_col, columns
-
-    def _empty_rates_dataframe(self, lang: str) -> pd.DataFrame:
-        _, _, columns = self._localized_columns(lang)
-        return pd.DataFrame(columns=columns)
-
-    def _dataframe_from_rows(
-        self, rows: Iterable[Dict[str, object]], lang: str
-    ) -> pd.DataFrame:
-        source_col, target_col, columns = self._localized_columns(lang)
-        data = []
-        for entry in rows:
-            data.append(
-                {
-                    source_col: str(entry.get("source", "")),
-                    target_col: str(entry.get("target", "")),
-                    "Basic": entry.get("basic"),
-                    "Complex": entry.get("complex"),
-                    "Hour": entry.get("hour"),
-                }
-            )
-        return pd.DataFrame(data, columns=columns)
-
-    def build_rates_dataframe(
-        self, source_lang, targets, rate_number, currency, *, lang: str
-    ):
-        source_col, target_col, columns = self._localized_columns(lang)
+    def build_rates_dataframe(self, source_lang, targets, rate_number, currency):
         data = []
         if not self.is_second_file:
             filtered_df = self.df[self.df.iloc[:, 0] == source_lang]
@@ -1447,15 +1403,15 @@ class RateTab(QWidget):
                 else:
                     basic = complex_ = hour_ = None
                 data.append({
-                    source_col: source_lang,
-                    target_col: targ,
+                    "Исходный язык": source_lang,
+                    "Язык перевода": targ,
                     "Basic": basic,
                     "Complex": complex_,
                     "Hour": hour_
                 })
         else:
             if "SourceLang" not in self.df.columns or "TargetLang" not in self.df.columns:
-                return self._empty_rates_dataframe(lang)
+                return pd.DataFrame(columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
             filtered_df = self.df[self.df["SourceLang"] == source_lang]
             for targ in targets:
                 row_series = filtered_df[filtered_df["TargetLang"].astype(str) == str(targ)]
@@ -1464,14 +1420,14 @@ class RateTab(QWidget):
                 else:
                     basic = complex_ = hour_ = None
                 data.append({
-                    source_col: source_lang,
-                    target_col: targ,
+                    "Исходный язык": source_lang,
+                    "Язык перевода": targ,
                     "Basic": basic,
                     "Complex": complex_,
                     "Hour": hour_
                 })
 
-        return pd.DataFrame(data, columns=columns)
+        return pd.DataFrame(data, columns=["Исходный язык", "Язык перевода", "Basic", "Complex", "Hour"])
 
     def _extract_mlv_rates(self, row_, currency, rate_number):
         col_base = None
