@@ -336,6 +336,22 @@ After building, `dist/` will contain:
 - Required libraries and dependencies
 - Packaged resources
 
+### Splash Screen
+
+Use the lightweight [`splash.py`](splash.py) launcher to display a `.mov`
+animation immediately while the main application starts in the background. The
+window closes automatically once the main GUI is ready.
+
+```bash
+# Example: run the splash screen from sources
+python splash.py -- --animation /path/to/splash.mov python main.py
+```
+
+By default the script looks for `templates/splash.mov`. When building with
+PyInstaller, create two separate executables (`Splash.exe` and `RateApp.exe`)
+so that the splash screen can start instantly and hand over control to the main
+program.
+
 ---
 
 ## 🔄 Update System
