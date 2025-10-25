@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -58,11 +59,16 @@ def apply_excel_styles(
             max_width = len(column_name)
             for row_index in range(2, row_count + 2):
                 cell = worksheet.cell(row=row_index, column=column_index)
-                cell.number_format = format_string
-                cell.alignment = Alignment(horizontal="right", vertical="center")
                 value = cell.value
-                if value is not None:
-                    max_width = max(max_width, len(str(value)))
+                if isinstance(value, str) and value.strip().upper() == "N/A":
+                    cell.number_format = "@"
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    max_width = max(max_width, len(value))
+                else:
+                    cell.number_format = format_string
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                    if value is not None:
+                        max_width = max(max_width, len(str(value)))
             worksheet.column_dimensions[column_letter].width = max(10, max_width + 2)
         else:
             max_width = len(column_name)
@@ -81,8 +87,26 @@ def export_rate_tables(sheet_dfs: Mapping[str, pd.DataFrame], out_path: str | Pa
         for sheet_name, dataframe in sheet_dfs.items():
             frame = dataframe.copy()
             numeric_columns = list(frame.columns[2:])
+
+            def _normalize_rate_value(value: object) -> object:
+                if value is None or (isinstance(value, float) and math.isnan(value)):
+                    return "N/A"
+                if pd.isna(value):
+                    return "N/A"
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if not stripped or stripped.upper() == "N/A":
+                        return "N/A"
+                    try:
+                        numeric = float(stripped)
+                    except ValueError:
+                        return stripped
+                    else:
+                        return int(numeric) if numeric.is_integer() else numeric
+                return value
+
             for column in numeric_columns:
-                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+                frame[column] = frame[column].apply(_normalize_rate_value)
 
             frame.to_excel(writer, sheet_name=sheet_name, index=False)
             worksheet = writer.sheets[sheet_name]
