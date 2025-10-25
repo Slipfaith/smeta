@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Optional
+
+from .env_loader import load_application_env
 
 
 LOG_DIR_NAME = "logs"
@@ -61,6 +64,15 @@ def _initialise_markdown_file(path: Path, title: str, fresh: bool) -> None:
         path.write_text(header, encoding="utf-8")
 
 
+def _resolve_log_level() -> int:
+    load_application_env()
+    level_name = os.getenv("SMETA_LOG_LEVEL", "INFO").strip().upper()
+    level = logging.getLevelName(level_name)
+    if isinstance(level, int):
+        return level
+    return logging.INFO
+
+
 def setup_logging() -> Path:
     """Configure logging handlers for the application.
 
@@ -76,11 +88,12 @@ def setup_logging() -> Path:
         return _last_run_log_path
 
     log_dir = _ensure_log_directory()
+    log_level = _resolve_log_level()
     last_run_log = log_dir / LAST_RUN_LOG_NAME
     rotating_log = log_dir / ROTATING_LOG_NAME
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(log_level)
 
     # Remove any existing handlers to avoid duplicate logs when reconfiguring.
     for handler in list(root_logger.handlers):
@@ -92,7 +105,7 @@ def setup_logging() -> Path:
     last_run_handler = logging.FileHandler(
         last_run_log, mode="a", encoding="utf-8"
     )
-    last_run_handler.setLevel(logging.DEBUG)
+    last_run_handler.setLevel(log_level)
     last_run_handler.setFormatter(formatter)
 
     _initialise_markdown_file(
@@ -106,7 +119,7 @@ def setup_logging() -> Path:
         backupCount=ROTATING_BACKUP_COUNT,
         encoding="utf-8",
     )
-    rotating_handler.setLevel(logging.DEBUG)
+    rotating_handler.setLevel(log_level)
     rotating_handler.setFormatter(formatter)
 
     root_logger.addHandler(last_run_handler)
@@ -115,7 +128,7 @@ def setup_logging() -> Path:
     _configured = True
     _last_run_log_path = last_run_log
 
-    root_logger.debug("Logging configured. Logs directory: %s", log_dir)
+    root_logger.log(max(log_level, logging.INFO), "Logging configured. Logs directory: %s", log_dir)
 
     return last_run_log
 

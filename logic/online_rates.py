@@ -10,7 +10,6 @@ from io import BytesIO
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
-from dotenv import load_dotenv
 
 from . import rates_importer
 from .ms_graph_client import (
@@ -20,8 +19,10 @@ from .ms_graph_client import (
     download_excel_from_path,
 )
 
+from .env_loader import load_application_env
+
 logger = logging.getLogger(__name__)
-load_dotenv()
+load_application_env()
 
 RatesMap = rates_importer.RatesMap
 
