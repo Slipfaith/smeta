@@ -1443,8 +1443,12 @@ class ExcelExporter:
                 dst = ws.cell(total_row + 1 + r, c)
                 self._copy_style(src, dst)
 
+        vat_rate_display = vat_rate
+        if isinstance(vat_rate, float) and vat_rate.is_integer():
+            vat_rate_display = int(vat_rate)
+
         repl_map = {
-            "{{%vat}}": f"{vat_rate}%",
+            "{{%vat}}": f"{vat_rate_display}%",
             "{{total_vat}}": f"={total_cell_ref}*{vat_rate}/100",
             "{{total.with_vat}}": f"={total_cell_ref}*{100+vat_rate}/100",
             "{{$}}": self.currency,
