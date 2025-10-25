@@ -1283,18 +1283,33 @@ class RateTab(QWidget):
             rate_number = self.rate_combo.currentData() or 1
 
         rows_map: Dict[Tuple[str, str], Dict[str, object]] = {}
+        display_map: Dict[Tuple[str, str], Dict[str, str]] = {}
         for row in range(self.table.rowCount()):
+            source_text = self._safe_text(self.table.item(row, 0))
+            target_text = self._safe_text(self.table.item(row, 1))
+            basic_text = self._safe_text(self.table.item(row, 2))
+            complex_text = self._safe_text(self.table.item(row, 3))
+            hour_text = self._safe_text(self.table.item(row, 4))
+
             entry = {
-                "source": self._safe_text(self.table.item(row, 0)),
-                "target": self._safe_text(self.table.item(row, 1)),
-                "basic": self._parse_float(self._safe_text(self.table.item(row, 2))),
-                "complex": self._parse_float(self._safe_text(self.table.item(row, 3))),
-                "hour": self._parse_float(self._safe_text(self.table.item(row, 4))),
+                "source": source_text,
+                "target": target_text,
+                "basic": self._parse_float(basic_text),
+                "complex": self._parse_float(complex_text),
+                "hour": self._parse_float(hour_text),
             }
             key = (entry["source"], entry["target"])
             rows_map.pop(key, None)
             rows_map[key] = entry
+            display_map[key] = {
+                "source": source_text,
+                "target": target_text,
+                "Basic": basic_text or "N/A",
+                "Complex": complex_text or "N/A",
+                "Hour": hour_text or "N/A",
+            }
         rows = list(rows_map.values())
+        display_rows = list(display_map.values())
 
         selections = self._get_current_selections()
         payload = {
@@ -1311,6 +1326,41 @@ class RateTab(QWidget):
             },
         }
         self.rates_updated.emit(payload)
+
+        def _is_missing(entry: Dict[str, str]) -> bool:
+            return all(
+                (entry.get(key, "").strip() == "" or entry.get(key, "").strip().upper() == "N/A")
+                for key in ("Basic", "Complex", "Hour")
+            )
+
+        if display_rows:
+            missing_pairs = [
+                {
+                    "source": entry["source"],
+                    "target": entry["target"],
+                    "причина": "ставки отсутствуют",
+                }
+                for entry in display_rows
+                if _is_missing(entry)
+            ]
+            log_user_action(
+                "Отображение ставок",
+                details={
+                    "валюта": selected_currency,
+                    "ставка": rate_number,
+                    "пары": display_rows,
+                    "ставки_отсутствуют": missing_pairs,
+                },
+            )
+        else:
+            log_user_action(
+                "Отображение ставок",
+                details={
+                    "валюта": selected_currency,
+                    "ставка": rate_number,
+                    "причина": "в таблице нет данных",
+                },
+            )
 
     def _refresh_missing_rate_highlights(self) -> None:
         for row in range(self.table.rowCount()):
@@ -1352,10 +1402,20 @@ class RateTab(QWidget):
     # ------------------------------------------------------------------
     def export_rates_to_excel(self):
         if self.df is None:
+            log_user_action(
+                "Экспорт ставок в Excel не выполнен",
+                details={"причина": "данные не загружены"},
+                level=logging.WARNING,
+            )
             return
 
         selections = self._get_current_selections()
         if not selections:
+            log_user_action(
+                "Экспорт ставок в Excel не выполнен",
+                details={"причина": "не выбраны языковые пары"},
+                level=logging.WARNING,
+            )
             return
 
         lang = self._lang()
@@ -1366,11 +1426,17 @@ class RateTab(QWidget):
             "Excel Files (*.xlsx)",
         )
         if not file_path:
+            log_user_action(
+                "Экспорт ставок в Excel отменен",
+                details={"причина": "путь сохранения не выбран"},
+                level=logging.INFO,
+            )
             return
         if not file_path.endswith(".xlsx"):
             file_path += ".xlsx"
 
         sheets: Dict[str, pd.DataFrame] = {}
+        export_summary: List[Dict[str, object]] = []
         headers = [
             tr("Исходный язык", lang),
             tr("Язык перевода", lang),
@@ -1378,11 +1444,24 @@ class RateTab(QWidget):
             tr("Complex", lang),
             tr("Hour", lang),
         ]
+        source_key, target_key, basic_key, complex_key, hour_key = headers
         for rate_number in [1, 2]:
             for currency in ["USD", "EUR", "RUB", "CNY"]:
                 frames = []
+                sheet_details = {
+                    "лист": f"R{rate_number}_{currency}",
+                    "ставки": [],
+                    "ставки_отсутствуют": [],
+                }
                 for source_lang, target_languages in selections.items():
                     if not target_languages:
+                        sheet_details["ставки_отсутствуют"].append(
+                            {
+                                "source": source_lang,
+                                "targets": target_languages,
+                                "причина": "не выбраны языки перевода",
+                            }
+                        )
                         continue
                     df_rates = self.build_rates_dataframe(
                         source_lang,
@@ -1393,12 +1472,50 @@ class RateTab(QWidget):
                     )
                     if not df_rates.empty:
                         frames.append(df_rates)
+                    records = df_rates.to_dict("records")
+                    if records:
+                        for record in records:
+                            entry = {
+                                "source": record.get(source_key, ""),
+                                "target": record.get(target_key, ""),
+                                "Basic": format_value(record.get(basic_key)),
+                                "Complex": format_value(record.get(complex_key)),
+                                "Hour": format_value(record.get(hour_key)),
+                            }
+                            sheet_details["ставки"].append(entry)
+                            if all(
+                                (entry[key] == "" or str(entry[key]).strip().upper() == "N/A")
+                                for key in ("Basic", "Complex", "Hour")
+                            ):
+                                sheet_details["ставки_отсутствуют"].append(
+                                    {
+                                        "source": entry["source"],
+                                        "target": entry["target"],
+                                        "причина": "ставки отсутствуют",
+                                    }
+                                )
+                    else:
+                        sheet_details["ставки_отсутствуют"].append(
+                            {
+                                "source": source_lang,
+                                "targets": list(target_languages),
+                                "причина": "нет данных для выбранных языков",
+                            }
+                        )
                 sheet_name = f"R{rate_number}_{currency}"
                 if frames:
                     sheets[sheet_name] = pd.concat(frames, ignore_index=True)
                 else:
                     sheets[sheet_name] = pd.DataFrame(columns=headers)
+                export_summary.append(sheet_details)
 
+        log_user_action(
+            "Экспорт ставок в Excel",
+            details={
+                "файл": file_path,
+                "итоги": export_summary,
+            },
+        )
         export_rate_tables(sheets, file_path)
 
     def build_rates_dataframe(
