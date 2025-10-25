@@ -366,8 +366,9 @@ class RatesMappingWidget(QWidget):
         currency: str,
         rate_type: str,
     ) -> None:
-        manual_entries = self._collect_manual_excel_entries()
-        self._clear_previous_rates()
+        preserve_excel = bool(self._manual_excel_cells)
+        manual_entries = {} if preserve_excel else self._collect_manual_excel_entries()
+        self._clear_previous_rates(preserve_excel=preserve_excel)
         self._rates = rates or {}
         self._source_label = source_label
         self._currency = currency
@@ -385,7 +386,8 @@ class RatesMappingWidget(QWidget):
 
         self._refresh_language_combos()
         self._apply_matches(auto_fill=True)
-        self._restore_manual_excel_entries(manual_entries)
+        if manual_entries:
+            self._restore_manual_excel_entries(manual_entries)
         self._update_status()
         self._refresh_all_rate_display()
         self._force_table_refresh()
@@ -554,10 +556,20 @@ class RatesMappingWidget(QWidget):
         self._update_rate_from_row(row)
         self._update_import_button_state()
 
-    def _clear_previous_rates(self) -> None:
+    def _clear_previous_rates(self, preserve_excel: bool = False) -> None:
         if self.table.rowCount() == 0:
-            self._manual_excel_cells.clear()
+            if not preserve_excel:
+                self._manual_excel_cells.clear()
             self._rate_values.clear()
+            return
+
+        if preserve_excel:
+            self._rate_values = [self._empty_rate_dict() for _ in range(self.table.rowCount())]
+            for row in range(self.table.rowCount()):
+                self._refresh_rate_display(row)
+
+            self._force_table_refresh()
+            self._update_import_button_state()
             return
 
         self._manual_excel_cells.clear()
