@@ -698,7 +698,18 @@ class RatesMappingWidget(QWidget):
         if value is None:
             storage[key] = ""
         else:
-            storage[key] = f"{value:.2f}"
+            storage[key] = self._format_rate_value(key, value)
+
+    def _rate_precision(self, key: str) -> int:
+        if key in ("basic", "complex"):
+            currency = self.current_currency()
+            if currency and currency != "RUB":
+                return 3
+        return 2
+
+    def _format_rate_value(self, key: str, value: float) -> str:
+        decimals = self._rate_precision(key)
+        return f"{float(value):.{decimals}f}"
 
     def _ensure_rate_storage(self, row: int) -> Dict[str, str]:
         while len(self._rate_values) <= row:
