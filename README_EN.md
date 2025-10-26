@@ -1,380 +1,204 @@
 # RateApp
 
-> Professional translation project cost calculation tool
+> Professional toolkit for estimating translation projects
 
-RateApp is a Python/PySide6 desktop application that automates the preparation of commercial proposals for translation agencies. The application aggregates data from multiple sources (Trados, Smartcat, Outlook, Excel, SharePoint) and enables rapid generation of accurate cost estimates with discounts, markups, and additional services.
+RateApp is a Python/PySide6 desktop application that automates the preparation of commercial proposals for translation agencies. It consolidates data from Trados/Smartcat, Outlook, Excel, and SharePoint/OneDrive, calculates multilingual projects with discounts and markups, and produces client-ready deliverables.
 
 ---
 
 ## ✨ Key Features
 
-### 📋 Project Management
-- **Project Card** — Complete client information, contacts, legal entity, and currency
-- **Multilingual Interface** — Switch between Russian and English
-- **Flexible VAT Configuration** — Support for various tax rates
+### 📋 Project card & contacts
+- Store project name, client, contact person, email, legal entity, and billing currency
+- Switch the interface language (RU/EN) and report display language independently
+- Maintain a project manager directory with history and auto-fill
+- Configure VAT rates and "new words only" calculation mode
 
-### 🌍 Language Pairs
-- **Custom Directories** — Create and manage your own language lists
-- **Automatic Normalization** — Correct language code recognition via `langcodes` and `Babel`
-- **New Words Mode** — Calculate costs based only on new words and repetitions
-- **Cross-platform Storage** — Settings synchronization across devices
+### 🌍 Language pairs & rates
+- Create and edit pairs while keeping user-defined language dictionaries per platform
+- Normalise language codes via `langcodes` and `Babel`
+- Use the dedicated **Rates Panel** window to review grids, highlight mismatches, and map Excel values
+- Apply bulk edits for discounts, markups, and service blocks across multiple pairs
 
-### 📥 Smart Data Import
+### 📥 Data import
+#### CAT reports
+- Drag & drop Trados and Smartcat XML reports straight into the main window
+- Automatic distribution of volume categories with warning highlights
 
-#### CAT System Reports
-- **Drag & Drop Interface** — Simply drag XML files into the application window
-- **Supported Formats:**
-  - Trados Studio (all versions)
-  - Smartcat
-- **Automatic Distribution** — Volume categories detected automatically
-- **Data Validation** — Highlighting of warnings and potential errors
+#### Outlook emails
+- Parse `.msg` files (via `extract_msg`) to pre-fill project cards and service tables
+- Rebuild the Outlook COM cache on Windows when required for reliable parsing
 
-#### Outlook Emails
-- **`.msg` File Parsing** — Extract information from client correspondence
-- **Auto-fill** — Client data transferred to project card
-- **HTML Table Processing** — Recognition of structured data in email body
+#### Rate cards
+- Load Excel sheets (`R1_*`, `R2_*`) and apply them to the selected language pairs
+- Integrate with Microsoft 365 via Microsoft Graph using MSAL authentication by path or `fileId`
 
-#### Rate Cards
-- **Excel Import** — Load rates from corporate spreadsheets (`R1_*`, `R2_*` sheets)
-- **Multi-currency Support** — Price lists in different currencies
-- **Microsoft 365 Integration:**
-  - Direct access to SharePoint/OneDrive files
-  - OAuth 2.0 authentication via MSAL
-  - File search by path or `fileId`
-  - Interactive browser-based authorization
+### 💰 Financial tooling
+- Recalculate totals for every service block with discounts/markups and currency rounding
+- Convert currencies with `online_rates.py` while allowing manual overrides
+- Manage "Project setup & management" fees with flexible tasks, discounts, and markups
+- Track additional services with custom units and grouped tables
 
-### 💰 Financial Calculations
+### 📤 Export & templates
+- Save/load project snapshots in JSON with backward compatibility
+- Generate commercial offers and internal rate tables in Excel using branded templates
+- Export PDF documents through the Excel COM interface on Windows
+- Customise styles and resources stored in `templates/`
 
-- **Current Exchange Rates** — Automatic updates or manual input
-- **Flexible Discount System** — Individual terms for each client
-- **Markups and Services** — Add additional work with arbitrary units of measurement
-- **Transparent Calculations** — Detailed breakdown of all cost components
-- **Smart Rounding** — Correct handling of cents and kopecks
-
-### 📤 Professional Export
-
-#### Output Formats
-- **Excel Proposals** — Formatted commercial offers based on templates
-- **PDF Documents** — Ready for client delivery (requires Excel on Windows)
-- **JSON Projects** — Save and load current work state
-- **Operational Tables** — Internal calculation forms for team
-
-#### Template Capabilities
-- **Corporate Branding** — Logos, colors, company style
-- **Customizable Sections** — Add arbitrary sections
-- **Auto-formatting** — Currencies, numbers, percentages per regional standards
-- **Specialized Formats:**
-  - LogTab export
-  - MemoQ reports
-  - Styled sheets with conditional formatting
-
-### 🔄 Automatic Updates
-
-- **Release Monitoring** — Check for new versions on GitHub
-- **Smart Installation:**
-  - Windows: automatic installer launch
-  - macOS/Linux: notification with download link
-- **Security** — Digital signature verification for updates
-
-### 📊 Monitoring and Debugging
-
-- **Detailed Logging** — Record all operations for diagnostics
-- **Quick Access** — Open latest log via application menu
-- **File Rotation** — Automatic cleanup of old logs
-- **Flexible Location** — Choose directory for log storage
+### 📊 Logging & diagnostics
+- Structured Markdown logs for launches and user actions stored in `logs/` or `~/.smeta/logs`
+- Quick access to the latest log via **Project → Open Log**
+- Automatic cleanup of orphaned Excel processes on application exit
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Project layout
 
-### Project Structure
-
-```
-RateApp/
-│
-├── 📱 main.py                      # Application entry point
-│
-├── 🎨 gui/                         # User interface
-│   ├── main_window.py             # Main window
-│   ├── panels/                    # Functional panels
-│   │   ├── project_card.py        # Project card
-│   │   ├── language_pairs.py      # Language pair management
-│   │   ├── services.py            # Additional services
-│   │   └── log.py                 # Event log
-│   ├── dialogs/                   # Modal windows
-│   └── models/                    # Data models for UI
-│
-├── 🧠 logic/                       # Business logic
-│   ├── outlook_import/            # Outlook email parsing
-│   ├── calculations.py            # Financial calculations
-│   ├── excel_exporter.py          # Excel proposal generation
-│   ├── pdf_exporter.py            # PDF export
-│   ├── importers.py               # XML/MSG/Excel import
-│   ├── rates_importer.py          # Rate loading
-│   ├── ms_graph_client.py         # Microsoft Graph API
-│   ├── online_rates.py            # Currency exchange rates
-│   ├── project_manager.py         # Project management
-│   ├── project_io.py              # Project serialization
-│   ├── translation_config.py      # Interface localization
-│   ├── user_config.py             # User settings
-│   ├── legal_entities.py          # Legal entity directory
-│   └── language_codes.py          # Language normalization
-│
-├── 🔌 services/                    # Integration services
-│   ├── excel_export.py            # Table export
-│   └── ms_graph.py                # MS Graph wrapper
-│
-├── 📦 templates/                   # Export resources
-│   ├── excel/                     # Excel templates
-│   ├── images/                    # Logos and images
-│   └── fonts/                     # PDF fonts
-│
-├── 🔄 updater/                     # Update system
-│   ├── update_checker.py          # Version checking
-│   └── release_metadata.py        # Release metadata
-│
-├── 🧪 tests/                       # Test coverage
-│   ├── test_calculations.py
-│   ├── test_parsers.py
-│   └── test_importers.py
-│
-├── ⚙️ utils/                       # Helper utilities
-│   └── resource_utils.py          # Resource management
-│
-├── 📄 requirements.txt             # Project dependencies
-├── 🔧 main.spec                    # PyInstaller configuration
-├── 📖 ARCHITECTURE.md              # Architecture documentation
-└── 📝 README.md                    # This file
+```text
+.
+├── main.py                      # Application entry point
+├── gui/                         # PySide6 widgets and window composition
+│   ├── main_window.py           # Main window & menus
+│   ├── panels/                  # Left/right panels with forms and tables
+│   ├── additional_services.py   # Additional services widget
+│   ├── project_setup_widget.py  # Project setup & management costs
+│   ├── project_manager_dialog.py# Project manager selector dialog
+│   ├── rates_manager_window.py  # Embedded rates management window
+│   └── ...
+├── logic/                       # Business logic & services
+│   ├── calculations.py          # Totals, currency, discounts
+│   ├── project_manager.py       # File operations & exports
+│   ├── project_data.py          # Structured project snapshot
+│   ├── project_io.py            # JSON persistence helpers
+│   ├── rates_importer.py        # Excel rate import
+│   ├── outlook_import/          # Outlook `.msg` parsing
+│   ├── sc_xml_parser.py         # Smartcat report parser
+│   ├── trados_xml_parser.py     # Trados report parser
+│   ├── ms_graph_client.py       # Microsoft Graph client
+│   ├── online_rates.py          # Currency conversion utilities
+│   ├── activity_logger.py       # Markdown activity log writer
+│   ├── env_loader.py            # `.env` discovery helpers
+│   ├── service_config.py        # Environment configuration
+│   ├── logging_utils.py         # Logging configuration
+│   ├── user_config.py           # User preference storage
+│   └── ...
+├── services/                    # Integration adapters
+│   ├── excel_export.py          # Qt table exports (LogTab, MemoQ, legacy)
+│   └── ms_graph.py              # Wrapper around the Graph client
+├── rates1/                      # Embedded legacy rates tabs
+├── templates/                   # Excel/PDF templates and assets
+├── utils/                       # UI helpers (history, theme)
+├── tests/                       # Pytest suite
+├── requirements.txt             # Dependency list
+├── main.spec                    # PyInstaller configuration
+└── resource_utils.py            # Resource lookup for dev & bundles
 ```
 
-**Detailed Description:** See [ARCHITECTURE.md](ARCHITECTURE.md) for in-depth explanation of layers, modules, and data flows.
+A detailed architecture description is available in [ARCHITECTURE_EN.md](ARCHITECTURE_EN.md).
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Getting started
 
-### System Requirements
+### Prerequisites
+- Python 3.11
 
-- **Python**: 3.11 or higher
-- **OS**: Windows 10/11, macOS 10.15+, Linux (Ubuntu 20.04+)
-- **Memory**: minimum 4 GB RAM
-- **Disk Space**: 500 MB
+### Installation
 
-### Installation from Source
+1. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   ```
 
-#### 1. Clone the Repository
-```bash
-git clone https://github.com/your-org/rateapp.git
-cd rateapp
-```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-#### 2. Create Virtual Environment
-```bash
-python -m venv .venv
+3. Run the application:
+   ```bash
+   python main.py
+   ```
 
-# Activation:
-# Windows:
-.venv\Scripts\activate
+### Additional requirements
 
-# macOS/Linux:
-source .venv/bin/activate
-```
-
-#### 3. Install Dependencies
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-#### 4. Run Application
-```bash
-python main.py
-```
-
-### Additional Components
-
-#### For Windows Users
-```bash
-# PDF export and Excel COM object interaction
-pip install pywin32
-```
-
-**Requirements:**
-- Microsoft Excel installed (any version)
-- Active Office license
-
-#### For Developers
-```bash
-# Development and testing tools
-pip install pytest pytest-cov black flake8 mypy
-```
+- **Windows + Excel** — needed for PDF export and COM interactions (`pywin32`).
+- **Outlook `.msg`** — handled through the bundled `extract_msg` dependency.
+- **Internet access** — required for Microsoft 365 rate downloads and manual currency updates.
 
 ---
 
 ## 🧪 Testing
 
-### Running Tests
+The project uses `pytest`:
 
 ```bash
-# All tests
 pytest
-
-# With code coverage
-pytest --cov=logic --cov=services --cov-report=html
-
-# Specific module
-pytest tests/test_calculations.py
-
-# With verbose output
-pytest -v
 ```
 
-### Test Coverage
-
-Tests cover:
-- ✅ Financial calculations and rounding
-- ✅ XML parsers (Trados, Smartcat)
-- ✅ Outlook email import
-- ✅ Language code normalization
-- ✅ Configuration utilities
-- ✅ Data export and formatting
-- ✅ User input validation
+Tests cover calculations, XML/Outlook parsing, configuration helpers, and import/export utilities.
 
 ---
 
-## 📦 Technology Stack
+## 📦 Technology stack
 
-### Core Libraries
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **UI Framework** | PySide6 6.5+ | Qt-based graphical interface |
-| **Data Processing** | pandas 2.0+ | Tabular calculations and transformations |
-| **Excel I/O** | openpyxl 3.1+ | Read and write Excel with formatting |
-| **Image Processing** | Pillow 10.0+ | Logo and image handling |
-| **Localization** | langcodes, Babel | Language normalization and localization |
-| **HTTP Client** | requests 2.31+ | API requests and update downloads |
-| **Authentication** | msal 1.24+ | OAuth 2.0 for Microsoft 365 |
-| **Email Parsing** | extract_msg 0.45+ | Parse Outlook `.msg` files |
-| **System Utils** | psutil 5.9+ | Process and resource monitoring |
-| **Configuration** | python-dotenv 1.0+ | Environment variable management |
-
-### Platform Dependencies
-
-| Platform | Library | What It's For |
-|----------|---------|---------------|
-| **Windows** | pywin32 | Excel COM interface, PDF export |
-| **macOS** | - | Native support via Qt |
-| **Linux** | - | Native support via Qt |
+- **Python 3.11** — primary runtime
+- **PySide6** — Qt-based desktop UI
+- **pandas** & **openpyxl** — tabular calculations and Excel I/O
+- **Pillow** — image/icon handling
+- **langcodes** & **Babel** — localisation and language code normalisation
+- **requests** — Microsoft Graph networking
+- **msal** — Microsoft 365 authentication
+- **psutil** — process diagnostics and Excel shutdown helpers
+- **extract_msg** — Outlook `.msg` parsing
+- **python-dotenv** — environment configuration loading
+- **pywin32** *(Windows only)* — COM interop for PDF export
 
 ---
 
-## 💾 Data Storage
+## 💾 User data storage
 
-### User Settings
+### Configuration files
 
-#### Configuration File Locations
+**`languages.json`** — custom language directory, stored in:
+- Windows: `%APPDATA%/ProjectCalculator`
+- macOS: `~/Library/Application Support/ProjectCalculator`
+- Linux: `~/.config/ProjectCalculator`
 
-| File | Contents | Path |
-|------|----------|------|
-| `languages.json` | Language directory | See below |
-| `pm_history.json` | Manager history | See below |
-| `user_settings.json` | Interface settings | See below |
+**`pm_history.json`** — project manager history, stored alongside `languages.json`.
 
-**Directories by Platform:**
-
-- **Windows**: `%APPDATA%\ProjectCalculator`
-- **macOS**: `~/Library/Application Support/ProjectCalculator`
-- **Linux**: `~/.config/ProjectCalculator`
-
-#### System Data
-
-| File | Purpose | Location |
-|------|---------|----------|
-| `legal_entities.json` | Legal entities | Application directory |
-| `templates/` | Export templates | Application directory |
-
-### Log Files
-
-Logs are saved in the first available directory:
-1. `./logs` (project directory)
-2. `~/.smeta/logs` (home directory)
-3. System temporary directory
-
-**Access:** Menu → Project → Open Log
+**`logic/legal_entities.json`** — bundled legal entity reference shipped with the app.
 
 ---
 
-## 🔨 Building Application
+## 🔨 Building a standalone bundle
 
-### PyInstaller Build
+Use the provided PyInstaller spec:
 
 ```bash
-# Simple build
 pyinstaller main.spec
-
-# With cleanup of previous artifacts
-pyinstaller --clean main.spec
-
-# With verbose output
-pyinstaller --clean --log-level=DEBUG main.spec
 ```
 
-### `main.spec` Structure
-
-The spec file automatically includes:
-- ✅ Excel/PDF templates from `templates/`
-- ✅ Babel and langcodes localization data
-- ✅ Application icon and metadata
-- ✅ Legal entity and language directories
-- ✅ Configuration files
-
-### Output Artifacts
-
-After building, `dist/` will contain:
-- `RateApp.exe` (Windows) or `RateApp` (macOS/Linux)
-- Required libraries and dependencies
-- Packaged resources
+The spec file packages templates, localisation data (Babel/langcodes), and the application icon. Adjust resource lists or output names as needed.
 
 ---
 
-## 🔄 Update System
+## 📝 Logs & feedback
 
-### Automatic Checking
-
-**Menu → Updates → Check for Updates**
-
-1. Application queries GitHub Releases
-2. Compares current version with latest available
-3. Offers download if update exists
-
-### Installing Updates
-
-#### Windows
-- Automatic `.exe` installer download
-- Digital signature verification
-- Launch installation with settings preservation
-
-#### macOS/Linux
-- Notification about new version availability
-- Link to download archive
-- Installation instructions
-
-### Manual Update
-
-```bash
-# Download latest version
-git pull origin main
-
-# Update dependencies
-pip install --upgrade -r requirements.txt
-
-# Restart application
-python main.py
-```
+- Access the latest log via **Project → Open Log**; files rotate between `./logs`, `~/.smeta/logs`, or the system temp directory.
+- The structured activity log (`activity.log`) records major actions together with optional data snapshots.
 
 ---
 
-## 📚 Documentation
+## 🤝 Contributing
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Detailed architecture description
+Pull requests are welcome. Before submitting changes:
+
+1. Run `pytest` and ensure the suite passes.
+2. Update the documentation if UI behaviour or import/export flows change.
+
+When reporting bugs, please include:
+- application version;
+- reproduction steps;
+- relevant log excerpts (if possible).

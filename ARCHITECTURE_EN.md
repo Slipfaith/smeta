@@ -2,249 +2,144 @@
 
 ## Overview
 
-RateApp is a desktop application built with PySide6 that follows a layered architecture pattern: **UI → Business Logic → Integration Services**. The application manages translation project data from multiple sources (Trados/Smartcat reports, Outlook emails, Excel files, SharePoint) and produces professional commercial proposals in Excel and PDF formats.
+RateApp follows a layered architecture (**UI → Business Logic → Integration Services**) built on top of PySide6. The user interface focuses on presentation, while calculations, import/export routines, and external integrations live in dedicated modules. Data from Trados/Smartcat, Outlook, Excel, and Microsoft 365 flows through a central pipeline and results in production-ready proposals.
 
-### Core Principles
-
-- **Separation of Concerns**: UI components delegate all business logic and I/O operations to dedicated modules
-- **Centralized Data Processing**: All project data flows through a unified processing pipeline
-- **Modular Integration**: External services are wrapped in lightweight adapters
-- **Resource Management**: Supports both development and PyInstaller-packaged deployment modes
+Guiding principles:
+- **Separation of concerns** — UI components delegate business rules and I/O to `logic/` and `services/`.
+- **Reusability** — import/export services power both the main window and embedded utilities such as the rates panel.
+- **Packaging readiness** — `resource_utils.py`, `env_loader.py`, and bundled templates guarantee identical behaviour in development and PyInstaller builds.
 
 ---
 
-## Architecture Layers
+## Application layers
 
-### 1. Entry Point
+### 1. Entry point
 **`main.py`**
-- Application initialization
-- Configuration and localization setup
-- Main window instantiation
+- loads environment variables and configures logging (`env_loader.load_application_env`, `logging_utils.setup_logging`);
+- records application launch via `activity_logger`;
+- creates `QApplication`, installs the icon, and shows `TranslationCostCalculator`;
+- ensures stray Excel processes are closed on exit (`excel_process.close_excel_processes`).
 
-### 2. User Interface Layer (`gui/`)
-Handles all user interactions and visual presentation using PySide6 widgets.
+### 2. User interface (`gui/`)
+PySide6 presentation layer:
+- **`main_window.py`** — main window composition, menus, drag & drop handling, integration with `ProjectManager`;
+- **`panels/`** — left/right panes hosting the project card, language pairs, and calculation summaries;
+- **`language_pair.py`**, **`additional_services.py`** — widgets for pair-specific and additional services calculations;
+- **`project_setup_widget.py`** — "Project setup & management" block with configurable tasks, discounts, and markups;
+- **`project_manager_dialog.py`** — project manager selector/editor dialog;
+- **`rates_manager_window.py`** — embedded rates panel with Excel mapping and mismatch highlighting;
+- **`drop_areas.py`** — drag & drop helpers for XML/MSG/Excel files;
+- **`styles.py`**, **`utils.py`** — shared styling and formatting helpers.
 
-**Structure:**
-```
-gui/
-├── __init__.py          # Widget registration
-├── main_window.py       # Main window composition
-├── panels/              # Feature-specific panels
-│   ├── Project card
-│   ├── Language pairs
-│   ├── Additional services
-│   └── Activity log
-├── dialogs/             # Modal dialogs
-│   ├── File selection
-│   ├── Settings
-│   └── Confirmations
-└── models/              # Qt data models
-    └── Tables and trees for calculations
-```
+Widgets rely on the `LanguagePairsMixin` and functions from `logic/` for calculations, imports, and exports.
 
-**Responsibilities:**
-- Render project data from `logic/` models
-- Capture user input and trigger business operations
-- Display progress indicators and validation feedback
+### 3. Business logic (`logic/`)
+Core domain, calculations, and integration logic.
 
-### 3. Business Logic Layer (`logic/`)
-Contains all core business rules, calculations, and data transformations.
+**Project management**
+- `project_manager.py` — orchestrates save/load, Excel/PDF export, and state resets;
+- `project_data.py` — immutable project snapshot consumed by exporters and logs;
+- `project_io.py` — JSON serialisation/deserialisation with compatibility checks;
+- `pm_store.py` — project manager history storage;
+- `user_config.py` — persisted user preferences (UI language, defaults).
 
-#### Core Modules
+**Calculations & reference data**
+- `calculations.py` — totals, discount/markup aggregation, VAT handling;
+- `online_rates.py` — exchange-rate storage and conversions;
+- `language_pairs.py`, `language_codes.py` — language pair models and normalisation utilities;
+- `legal_entities.py` + `legal_entities.json` — legal entity metadata and template paths.
 
-**Project Management:**
-- `project_manager.py` — Central project state aggregator, coordinates cards, language pairs, services, and calculations
-- `project_io.py` — Project serialization/deserialization with version compatibility
-- `pm_store.py` — Project manager contact history and auto-population
+**Import pipeline**
+- `importers.py` — high-level facades for reports and rate cards;
+- `sc_xml_parser.py`, `trados_xml_parser.py`, `xml_parser_common.py` — CAT report parsers;
+- `outlook_import/` — Outlook `.msg` processing (card fields, tables, attachments);
+- `excel_process.py`, `rates_importer.py` — Excel parsing, normalisation, and rate application;
+- `ms_graph_client.py` — Microsoft Graph access (MSAL auth, file lookup by path or `fileId`).
 
-**Calculations & Financial:**
-- `calculations.py` — Volume, currency, discount, tax, and total cost computations
-- `online_rates.py` — Currency exchange rates storage and updates
+**Export pipeline**
+- `excel_exporter.py` — template-driven Excel proposal generation;
+- `pdf_exporter.py` — Excel → PDF conversion via COM (Windows);
+- `activity_logger.py` — Markdown-formatted activity log for diagnostics.
 
-**Import Pipeline:**
-- `importers.py` — High-level import facades
-- `sc_xml_parser.py` — Smartcat report parser
-- `trados_xml_parser.py` — Trados report parser
-- `outlook_import/` — Email `.msg` file parser (headers, body, tables)
-- `xml_parser_common.py` — Shared XML parsing utilities
-- `excel_process.py` — Excel data reading and normalization
+**Infrastructure**
+- `env_loader.py`, `service_config.py` — environment and path configuration;
+- `logging_utils.py`, `activity_logger.py` — logging configuration and structured records;
+- `progress.py` — progress indicators for long-running tasks;
+- `outlook_com_cache.py` — Outlook COM cache maintenance on Windows;
+- `app_info.py` — application metadata (version, author).
 
-**Export Pipeline:**
-- `excel_exporter.py` — Commercial proposal generation from templates
-- Template-based rendering system
-
-**Reference Data:**
-- `language_pairs.py` — Language pair models and user directory management
-- `language_codes.py` — Language code normalization with `langcodes`/`Babel`
-- `legal_entities.py` + `legal_entities.json` — Legal entity reference data
-
-**Microsoft Graph Integration:**
-- `ms_graph_client.py` — Low-level MS Graph API client (MSAL authentication, file operations by path and `fileId`)
-
-**Infrastructure:**
-- `service_config.py` — Environment configuration (`.env` loading, paths)
-- `user_config.py` — User preferences (default currency, UI language)
-- `translation_config.py` — Interface and terminology localization
-- `logging_utils.py` — Logging configuration and log file management
-- `progress.py` — Long-running operation progress tracking
-
-### 4. Integration Services Layer (`services/`)
-Lightweight adapters for external APIs and legacy component support.
-
-**Modules:**
-- `excel_export.py` — Export Qt table models to Excel with auto-formatting (supports legacy tabs, LogTab, MemoQ)
-- `ms_graph.py` — Compatibility wrapper over `logic.ms_graph_client`, normalizes scopes, error logging, returns `DataFrame` objects
+### 4. Integration services (`services/`)
+Lightweight adapters that keep legacy components and external APIs isolated:
+- `excel_export.py` — exports Qt table models (LogTab, MemoQ, legacy tabs) to Excel with auto-formatting;
+- `ms_graph.py` — high-level wrapper over `ms_graph_client` returning `pandas.DataFrame` objects and logging failures.
 
 ---
 
-## Supporting Components
-
-### Resource Management
-**`utils/resource_utils.py`**
-- Locates templates and translations
-- Handles both development and PyInstaller bundle modes
-
-### Static Resources
-**`templates/`**
-- Excel templates for commercial proposals
-- PDF generation assets
-
-### Update System
-**`updater/`**
-- Release metadata management
-- Update package verification and installation
-- Version checking
-
-### Testing
-**`tests/`**
-- Unit tests for calculations
-- Parser validation
-- Service function coverage
-
-### Build & Deployment
-- `requirements.txt` — External dependencies with version constraints
-- `main.spec` — PyInstaller build configuration (binaries, templates, translations)
-- `rateapp.ico` — Application icon
-- `RateApp.exe.sha256` — Build artifact checksums
+## Supporting directories & assets
+- **`templates/`** — Excel templates, branding, and resources used by exporters.
+- **`rates1/`** — embedded legacy rate tabs reused inside `rates_manager_window.py`.
+- **`utils/`** — lightweight UI utilities (`history.py`, `theme.py`).
+- **`tests/`** — pytest suite covering calculations, importers, exporters, and helpers.
+- **`resource_utils.py`** — central resource locator for development and PyInstaller.
+- **`requirements.txt`**, **`main.spec`**, **`rateapp.ico`**, **`RateApp.exe.sha256`** — build infrastructure files.
 
 ---
 
-## Data Flow Architecture
+## Data flow
 
-### 1. Import Phase
+### 1. Import
+```text
+User action (Drag & Drop / file dialog / Microsoft Graph)
+    ↓
+logic/importers.py
+    ↓
+Format-specific parsers (XML, Outlook MSG, Excel)
+    ↓
+LanguagePair widgets / ProjectSetupWidget / AdditionalServicesWidget
+    ↓
+ProjectManager + ProjectData
 ```
-User Action (Drag & Drop / MS Graph)
-    ↓
-importers.py (Import Facade)
-    ↓
-Format-Specific Parsers (XML/MSG/Excel)
-    ↓
-Language Pair Models
-    ↓
-project_manager.py (Data Aggregation)
-```
-
 **Sources:**
-- Trados/Smartcat XML reports
-- Outlook `.msg` files
-- Excel spreadsheets
-- SharePoint via Microsoft Graph
+- Trados & Smartcat XML reports;
+- Outlook `.msg` files (project card, volume tables, attachments);
+- Local or Microsoft Graph Excel rate cards.
 
-### 2. Processing Phase
+### 2. Processing
+```text
+ProjectManager (state aggregation)
+    ↓
+calculations.py (totals, discounts, VAT)
+    ↓
+online_rates.py (currency conversion)
+    ↓
+project_data.py (snapshot for export/logging)
 ```
-project_manager.py (State Coordination)
-    ↓
-calculations.py (Cost Computation)
-    ↓
-online_rates.py (Currency Conversion)
-    ↓
-project_io.py (State Persistence)
-```
+Reference providers (`legal_entities`, `pm_store`, `user_config`) supply metadata and user defaults.
 
-**Reference Data Integration:**
-- `language_pairs.py` — Language combinations
-- `pm_store.py` — Project manager contacts
-- `user_config.py` — User preferences
-- `legal_entities.py` — Company information
+### 3. Export
+```text
+User request (Export menu)
+    ↓
+project_manager.py
+    ↓
+excel_exporter.py  ──→  templates/
+    └── pdf_exporter.py (optional, Windows)
+    ↓
+Output files (Excel / PDF / JSON)
+```
+`activity_logger` records structured entries alongside optional project snapshots.
 
-### 3. Export Phase
-```
-Export Request
+### 4. External integrations
+```text
+Microsoft Graph requests ← ms_graph_client.py → MSAL authentication
     ↓
-excel_exporter.py (Template Processing)
-    ├→ services/excel_export.py (Legacy Format Support)
-    └→ pdf_exporter.py (PDF Generation)
-    ↓
-Output Files (Excel/PDF)
-```
-
-### 4. External Integration
-```
-Update Checks → updater/ → Release Metadata
-    ↓
-ms_graph_client.py ← MSAL Auth → Microsoft Graph API
-    ↓
-services/ms_graph.py (Data Normalization)
+services/ms_graph.py (normalisation & caching)
 ```
 
 ---
 
-## Design Benefits
-
-### Maintainability
-- **Clear boundaries** between UI, logic, and services
-- **Independent evolution** of business rules without UI changes
-- **Testable components** with minimal mocking requirements
-
-### Extensibility
-- **Plugin-ready parser system** for new report formats
-- **Service abstraction** allows swapping integrations
-- **Template-based exports** enable customization without code changes
-
-### Reusability
-- **Service layer** supports both new and legacy components
-- **Shared utilities** prevent code duplication
-- **Modular importers** can be composed for complex workflows
-
----
-
-## Technology Stack
-
-- **UI Framework**: PySide6 (Qt for Python)
-- **Language Processing**: `langcodes`, `Babel`
-- **Excel Operations**: `openpyxl`, `pandas`
-- **Authentication**: MSAL (Microsoft Authentication Library)
-- **API Integration**: Microsoft Graph API
-- **Build Tool**: PyInstaller
-- **Testing**: `pytest` (standard unit testing)
-
----
-
-## Development Guidelines
-
-### Adding New Features
-1. Implement business logic in `logic/` with unit tests
-2. Create UI components in `gui/` that consume logic models
-3. Add integration adapters in `services/` if external APIs are needed
-4. Update configuration in `service_config.py` or `user_config.py`
-
-### Adding New Import Formats
-1. Create parser in `logic/` (follow existing XML parser patterns)
-2. Register parser in `importers.py` facade
-3. Add format detection logic
-4. Include test cases with sample files
-
-### Modifying Export Templates
-1. Update template files in `templates/`
-2. Adjust rendering logic in `excel_exporter.py`
-3. Test with various project configurations
-
----
-
-## Future Considerations
-
-- **API Layer**: RESTful API for external integrations
-- **Database Backend**: Replace JSON persistence with SQL database
-- **Cloud Storage**: Direct integration with cloud storage providers
-- **Collaborative Features**: Multi-user project editing
-- **Analytics**: Usage tracking and reporting dashboard
+## Design considerations
+- **Maintainability** — clear separation between UI, business logic, and services simplifies changes.
+- **Extensibility** — new parsers, templates, and data providers can be added without touching existing UI components.
+- **Diagnostics** — enhanced logging (`logging_utils`, `activity_logger`) captures user actions for troubleshooting.
+- **Packaging** — consistent resource discovery enables seamless PyInstaller builds.
